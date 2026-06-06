@@ -284,6 +284,57 @@ export async function createDataCatalog(
     restoreSource: (id: string) =>
       commit({ graph: snapshot.graph.restore(id) }),
 
+    /* ─── write commands (optimistic write-through) ──────────────────────── */
+    /**
+     * Toggle a transform-type audit entry — the catalog's FIRST optimistic
+     * write-through. The flow:
+     *   1. capture the prior `enabled` (for rollback);
+     *   2. OPTIMISTIC: commit the flipped graph for instant UI feedback;
+     *   3. PATCH via `primary.toggleAuditEntry?` (the backend write port);
+     *   4. on success, REVALIDATE the current project's audit + lineage so the
+     *      recompiled staging SQL/preview and the server `enabled` reflect truth
+     *      (reusing `revalidateScoped` under the captured-pid guard);
+     *   5. on rejection, ROLL BACK by committing the prior `enabled` (never
+     *      crashes — mirrors the SWR error contract).
+     * A no-op flip (graph reducer returns the same instance) is dropped by the
+     * commit guard, and no write is attempted.
+     */
+    toggleAudit: async (
+      nodeId: string,
+      auditEntryId: string,
+      enabled: boolean,
+    ): Promise<void> => {
+      const prior = snapshot.graph
+        .auditFor(nodeId)
+        .find((entry) => entry.auditEntryId === auditEntryId)?.enabled;
+      const optimistic = snapshot.graph.withAuditToggled(
+        nodeId,
+        auditEntryId,
+        enabled,
+      );
+      if (optimistic === snapshot.graph) return; // no-op flip — nothing to write
+      commit({ graph: optimistic });
+
+      if (!primary.toggleAuditEntry) return;
+      const requestedPid = currentScopedPid;
+      try {
+        await primary.toggleAuditEntry(auditEntryId, enabled);
+        // Revalidate only if still on the project the toggle targeted.
+        if (requestedPid !== undefined && requestedPid === currentScopedPid) {
+          await revalidateScoped(requestedPid);
+        }
+      } catch {
+        // Roll back the optimistic flip to the prior server value.
+        commit({
+          graph: snapshot.graph.withAuditToggled(
+            nodeId,
+            auditEntryId,
+            prior ?? false,
+          ),
+        });
+      }
+    },
+
     /* ─── project re-scope (project-in-path) ─────────────────────────────── */
     /**
      * Re-scope the catalog to a different project: set the scoped pid (the guard

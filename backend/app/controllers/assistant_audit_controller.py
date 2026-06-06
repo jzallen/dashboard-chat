@@ -41,6 +41,30 @@ class AssistantAuditController:
                 return error_response(error)
 
     @staticmethod
+    async def toggle_audit_entry(
+        assistant_audit_entry_id: str,
+        enabled: bool,
+        org_id: str,
+    ) -> tuple[dict, int]:
+        """Toggle a transform-type audit entry (rich-catalog §2.5-2.6).
+
+        Enables/disables the Transform pointing UP at the entry and returns the
+        toggled entry as a JSON:API single (so the UI knows which node's audit to
+        revalidate). 409 for log-only entries, 404 for out-of-scope/missing.
+        """
+        result = await _uc().toggle_audit_entry(
+            assistant_audit_entry_id,
+            enabled=enabled,
+            org_id=org_id,
+        )
+        match result:
+            case Success(record):
+                url = f"/api/projects/{record['project_id']}/audit/{record['id']}"
+                return wrap_jsonapi_single("audit-entries", serialize(record), url), 200
+            case Failure(error):
+                return error_response(error)
+
+    @staticmethod
     async def create_audit_entry(
         project_id: str,
         node_id: str,

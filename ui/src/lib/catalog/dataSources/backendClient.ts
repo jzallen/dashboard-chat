@@ -51,3 +51,30 @@ export async function apiGet<T>(
   }
   return json as T;
 }
+
+/**
+ * PATCH `path` with a JSON `body`. Mirrors {@link apiGet}: optional Bearer auth,
+ * JSON content type, and a throw on any non-2xx response so the caller (the
+ * catalog's optimistic write-through) can roll the optimistic state back. The
+ * response body is intentionally NOT returned — the write-through revalidates the
+ * affected scope from the read endpoints rather than trusting the PATCH echo.
+ */
+export async function apiPatch(
+  path: string,
+  body: unknown,
+  token?: string | null,
+): Promise<void> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(path, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(`PATCH ${path} failed with status ${response.status}`);
+  }
+}

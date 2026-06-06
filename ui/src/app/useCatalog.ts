@@ -99,3 +99,17 @@ export function useCatalog(): number {
     catalog.getSnapshot,
   );
 }
+
+/**
+ * Toggle a transform-type audit entry through the module-level catalog (the
+ * optimistic write-through). Delegates to `catalog.toggleAudit`, mirroring how
+ * {@link selectProject} delegates re-scope — components that prefer the module
+ * entry point over the bound `catalog` instance call this.
+ */
+export function toggleAudit(
+  nodeId: string,
+  auditEntryId: string,
+  enabled: boolean,
+): Promise<void> {
+  return catalog.toggleAudit(nodeId, auditEntryId, enabled);
+}

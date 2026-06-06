@@ -305,6 +305,122 @@ describe("createDataCatalog — stale-while-revalidate (lineage graph)", () => {
   });
 });
 
+describe("createDataCatalog — toggleAudit (optimistic write-through)", () => {
+  /**
+   * A primary backing the lineage triple with ONE toggleable audit entry on a
+   * mart, plus a spy-able `toggleAuditEntry` write. `getAudit` reflects the
+   * `serverEnabled` holder so a post-write revalidation can observe server truth.
+   */
+  function auditPrimary(opts: {
+    toggleAuditEntry: (id: string, enabled: boolean) => Promise<void>;
+    serverEnabled: () => boolean;
+  }): PartialCatalogSource {
+    const nodes: Record<string, LineageNode> = {
+      "ds.1": {
+        id: "ds.1",
+        label: "customers",
+        sub: "staging",
+        layer: "staging",
+        ref: { kind: "dataset", fields: [] },
+      },
+    };
+    return {
+      getCurrentProject: () =>
+        Promise.resolve({ id: "p1", name: "P1", description: "" }),
+      getNodes: () =>
+        new Promise((resolve) => setTimeout(() => resolve(nodes), 0)),
+      getEdges: () => new Promise((resolve) => setTimeout(() => resolve([]), 0)),
+      getAudit: () =>
+        new Promise((resolve) =>
+          setTimeout(
+            () =>
+              resolve({
+                "ds.1": [
+                  {
+                    tool: "trimWhitespace",
+                    say: "trimmed email",
+                    tag: "clean",
+                    auditEntryId: "ae1",
+                    transformId: "t1",
+                    enabled: opts.serverEnabled(),
+                  },
+                ],
+              }),
+            0,
+          ),
+        ),
+      toggleAuditEntry: opts.toggleAuditEntry,
+    };
+  }
+
+  it("optimistically flips enabled immediately, then calls the primary's toggleAuditEntry", async () => {
+    let server = true;
+    const toggleAuditEntry = vi.fn((_id: string, enabled: boolean) => {
+      server = enabled;
+      return Promise.resolve();
+    });
+    const catalog = await createDataCatalog(
+      auditPrimary({ toggleAuditEntry, serverEnabled: () => server }),
+      makeSource(),
+    );
+    await catalog.selectProject("p1");
+    await flush();
+    expect(catalog.auditFor("ds.1")[0].enabled).toBe(true);
+
+    // Do not await the revalidation yet — assert the OPTIMISTIC flip is instant.
+    const pending = catalog.toggleAudit("ds.1", "ae1", false);
+    expect(catalog.auditFor("ds.1")[0].enabled).toBe(false);
+    expect(toggleAuditEntry).toHaveBeenCalledWith("ae1", false);
+
+    await pending;
+    await flush();
+    // After success + revalidation the server-true value reflects the toggle.
+    expect(catalog.auditFor("ds.1")[0].enabled).toBe(false);
+  });
+
+  it("revalidates the audit from the backend after a successful toggle", async () => {
+    let server = true;
+    const toggleAuditEntry = vi.fn((_id: string, enabled: boolean) => {
+      server = enabled;
+      return Promise.resolve();
+    });
+    const primary = auditPrimary({
+      toggleAuditEntry,
+      serverEnabled: () => server,
+    });
+    const getAuditSpy = vi.spyOn(primary, "getAudit");
+    const catalog = await createDataCatalog(primary, makeSource());
+    await catalog.selectProject("p1");
+    await flush();
+    const callsAfterScope = getAuditSpy.mock.calls.length;
+
+    await catalog.toggleAudit("ds.1", "ae1", false);
+    await flush();
+
+    // The toggle re-ran getAudit (the revalidation), not just the optimistic flip.
+    expect(getAuditSpy.mock.calls.length).toBeGreaterThan(callsAfterScope);
+  });
+
+  it("rolls back the optimistic flip when the PATCH rejects (no crash)", async () => {
+    const toggleAuditEntry = vi.fn(() =>
+      Promise.reject(new Error("backend down")),
+    );
+    const catalog = await createDataCatalog(
+      auditPrimary({ toggleAuditEntry, serverEnabled: () => true }),
+      makeSource(),
+    );
+    await catalog.selectProject("p1");
+    await flush();
+    expect(catalog.auditFor("ds.1")[0].enabled).toBe(true);
+
+    await catalog.toggleAudit("ds.1", "ae1", false);
+    await flush();
+
+    // The rejection rolled the optimistic flip back to the prior value.
+    expect(catalog.auditFor("ds.1")[0].enabled).toBe(true);
+  });
+});
+
 describe("createDataCatalog — selectProject (per-project re-scope)", () => {
   /**
    * A primary whose lineage + currentProject reads are scoped by a mutable

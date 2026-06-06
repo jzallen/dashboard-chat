@@ -11,7 +11,7 @@ from app.use_cases.exceptions import DomainException
 from app.use_cases.project import export_dbt_project, get_dbt_manifest
 
 from .deps import authorize_project_access, get_current_user, use_db_context
-from .schemas import AuditEntryCreate, ProjectCreate, ProjectUpdate
+from .schemas import AuditEntryCreate, AuditEntryToggle, ProjectCreate, ProjectUpdate
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -91,6 +91,28 @@ async def create_audit_entry_route(
         node_id=data.node_id,
         node_kind=data.node_kind,
         payload=data.payload.model_dump(exclude_none=True),
+        org_id=user.org_id,
+    )
+    return JSONResponse(content=body, status_code=status_code)
+
+
+@router.patch("/{project_id}/audit/{audit_entry_id}")
+async def toggle_audit_entry_route(
+    audit_entry_id: str,
+    data: AuditEntryToggle,
+    auth: tuple[AuthUser, dict] = Depends(authorize_project_access),
+):
+    """Toggle a transform-type assistant-audit entry (rich-catalog §2.5-2.6).
+
+    Enables/disables the ``Transform`` pointing UP at the entry (the reversed FK),
+    which recompiles the dataset's staging SQL on read. Returns the toggled entry
+    (incl. ``node_id``) so the UI knows which node's audit to revalidate. 409 for
+    log-only entries, 404 for missing/out-of-scope.
+    """
+    user, _project = auth
+    body, status_code = await HTTPController.toggle_audit_entry(
+        audit_entry_id,
+        enabled=data.enabled,
         org_id=user.org_id,
     )
     return JSONResponse(content=body, status_code=status_code)

@@ -29,6 +29,14 @@ export interface CatalogSource {
   getAudit(): Promise<Record<string, AuditEntry[]>>;
   getChatScript(): Promise<ChatScript>;
   getDbtFiles(): Promise<DbtFile[]>;
+  /**
+   * The catalog's first WRITE port (optional — only backend sources implement
+   * it). Enable/disable the transform a transform-type audit entry produced.
+   * Resolves on success; REJECTS on failure so the optimistic write-through
+   * rolls the catalog's optimistic flip back. A source that does not back writes
+   * (the fixture fallback) simply omits it.
+   */
+  toggleAuditEntry?(auditEntryId: string, enabled: boolean): Promise<void>;
 }
 
 /**

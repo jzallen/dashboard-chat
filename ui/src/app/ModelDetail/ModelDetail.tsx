@@ -104,6 +104,18 @@ function AuditPanel({ node }: { node: LineageNode }) {
                 </div>
               )}
             </div>
+            {a.transformId != null && a.auditEntryId && (
+              <input
+                type="checkbox"
+                role="switch"
+                className={styles.audToggle}
+                aria-label={`Toggle ${a.say}`}
+                checked={a.enabled ?? false}
+                onChange={() =>
+                  catalog.toggleAudit(node.id, a.auditEntryId!, !a.enabled)
+                }
+              />
+            )}
             <span className={styles.audTag}>{a.tag}</span>
           </div>
         ))}

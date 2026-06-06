@@ -691,6 +691,80 @@ class MetadataRepository:
         }
 
     @handle_repository_exceptions
+    async def get_audit_entry(
+        self,
+        assistant_audit_entry_id: str,
+        org_id: str,
+    ) -> dict[str, Any] | None:
+        """Fetch a single assistant-audit entry, org-scoped.
+
+        Returns the entry as a dict (incl. ``node_id`` so the caller can tell the
+        UI which node's audit to revalidate), or ``None`` when the entry does not
+        exist OR belongs to another org (cross-org is indistinguishable from
+        not-found).
+        """
+        query = (
+            select(AssistantAuditEntry)
+            .where(AssistantAuditEntry.id == assistant_audit_entry_id)
+            .where(AssistantAuditEntry.org_id == org_id)
+        )
+        record = (await self._session.execute(query)).scalar_one_or_none()
+        if record is None:
+            return None
+        return {
+            "id": record.id,
+            "org_id": record.org_id,
+            "project_id": record.project_id,
+            "node_id": record.node_id,
+            "node_kind": record.node_kind,
+            "payload": record.payload,
+            "sequence": record.sequence,
+        }
+
+    @handle_repository_exceptions
+    async def get_transform_by_audit_entry(
+        self,
+        assistant_audit_entry_id: str,
+        org_id: str,
+    ) -> dict[str, Any] | None:
+        """Resolve the ``Transform`` that points UP at an audit entry (reversed FK).
+
+        Joins ``transforms → datasets → projects`` so the org scope is enforced
+        on the project the transform's dataset belongs to. Returns the transform
+        as a dict, or ``None`` when no transform references the entry (log-only)
+        or it is out of org scope.
+        """
+        query = (
+            select(TransformRecord)
+            .join(DatasetRecord, TransformRecord.dataset_id == DatasetRecord.id)
+            .join(ProjectRecord, DatasetRecord.project_id == ProjectRecord.id)
+            .where(TransformRecord.assistant_audit_entry_id == assistant_audit_entry_id)
+            .where(TransformRecord.status != "deleted")
+            .where(ProjectRecord.org_id == org_id)
+        )
+        transform = (await self._session.execute(query)).scalar_one_or_none()
+        if transform is None:
+            return None
+        return _mappers.transform_to_dict(transform)
+
+    @handle_repository_exceptions
+    async def update_transform_status(
+        self,
+        transform_id: str,
+        status: str,
+    ) -> None:
+        """Set a transform's status (the existing enable/disable write path).
+
+        Reuses the same status mutation as ``PATCH /api/datasets/{id}/transforms``;
+        ``Dataset.staging_sql`` recompiles from the ENABLED transforms on read, so
+        no recompile code is reimplemented here.
+        """
+        await self._session.execute(
+            update(TransformRecord).where(TransformRecord.id == transform_id).values(status=status)
+        )
+        await self._session.flush()
+
+    @handle_repository_exceptions
     async def list_audit_entries_for_project(
         self,
         project_id: str,

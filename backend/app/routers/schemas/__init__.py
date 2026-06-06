@@ -4,6 +4,7 @@
 from .assistant_audit import (
     AuditEntryCreate,
     AuditEntryPayload,
+    AuditEntryToggle,
 )
 from .dataset import (
     DatasetBase,
@@ -45,6 +46,7 @@ ProjectResponse.model_rebuild()
 __all__ = [
     "AuditEntryCreate",
     "AuditEntryPayload",
+    "AuditEntryToggle",
     "DatasetBase",
     "DatasetCreate",
     "DatasetResponse",

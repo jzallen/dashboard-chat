@@ -10,7 +10,7 @@
  */
 export type { DataCatalog } from "./client";
 export { createDataCatalog } from "./client";
-export { apiGet } from "./dataSources/backendClient";
+export { apiGet, apiPatch } from "./dataSources/backendClient";
 export { fixtureSource } from "./dataSources/fixtureSource";
 export type { MetadataApiSourceDeps } from "./dataSources/metadataApiSource";
 export { metadataApiSource } from "./dataSources/metadataApiSource";

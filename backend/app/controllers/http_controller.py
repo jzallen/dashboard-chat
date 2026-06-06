@@ -99,9 +99,10 @@ class HTTPController:
     post_organization = staticmethod(OrganizationController.post_organization)
     get_my_organization = staticmethod(OrganizationController.get_my_organization)
 
-    # Assistant audit — read (rich-catalog §2.11) + create (§2.7)
+    # Assistant audit — read (rich-catalog §2.11) + create (§2.7) + toggle (§2.6)
     list_audit_entries = staticmethod(AssistantAuditController.list_audit_entries)
     create_audit_entry = staticmethod(AssistantAuditController.create_audit_entry)
+    toggle_audit_entry = staticmethod(AssistantAuditController.toggle_audit_entry)
 
     # Analytics Authoring — Views (Seam 5a)
     list_views = staticmethod(ViewController.list_views)

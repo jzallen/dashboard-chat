@@ -240,6 +240,31 @@ export class LineageGraph {
     return new LineageGraph(nodes, this.edgeList, this.cold, this.addedIds);
   }
 
+  /**
+   * Flip the `enabled` flag of a node's matching {@link AuditEntry} (keyed by
+   * `auditEntryId`). Mirrors the other reducers: returns `this` (a referential
+   * no-op) when the node, the entry, or the value is unchanged, so the catalog's
+   * commit no-op guard suppresses a spurious render. The audit array and the
+   * touched entry are copied; siblings keep their identity.
+   */
+  withAuditToggled(
+    nodeId: string,
+    auditEntryId: string,
+    enabled: boolean,
+  ): LineageGraph {
+    const node = this.nodes.get(nodeId);
+    if (!node?.audit) return this;
+    const index = node.audit.findIndex((e) => e.auditEntryId === auditEntryId);
+    if (index === -1) return this;
+    if (node.audit[index].enabled === enabled) return this;
+    const audit = node.audit.map((entry, i) =>
+      i === index ? { ...entry, enabled } : entry,
+    );
+    const nodes = new Map(this.nodes);
+    nodes.set(nodeId, { ...node, audit });
+    return new LineageGraph(nodes, this.edgeList, this.cold, this.addedIds);
+  }
+
   /** Add a live source node (dedup by id). */
   addSource(node: LineageNode): LineageGraph {
     if (this.nodes.has(node.id)) return this;

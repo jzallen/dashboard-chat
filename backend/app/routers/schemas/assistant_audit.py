@@ -28,3 +28,14 @@ class AuditEntryCreate(BaseModel):
     node_id: str
     node_kind: str
     payload: AuditEntryPayload
+
+
+class AuditEntryToggle(BaseModel):
+    """Request body for PATCH /api/projects/{id}/audit/{audit_entry_id}.
+
+    ``enabled`` is the desired state of the transform the entry produced: ``True``
+    enables it, ``False`` disables it (recompiling the dataset's staging SQL on
+    read). Only transform-type entries are toggleable.
+    """
+
+    enabled: bool

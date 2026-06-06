@@ -212,3 +212,57 @@ describe("LineageGraph — immutability", () => {
     expect(graph.addSource(NODES["src.orders"])).toBe(graph); // already present
   });
 });
+
+describe("LineageGraph — withAuditToggled", () => {
+  /** A graph whose mart carries a toggleable (transform-type) audit entry. */
+  const makeToggleGraph = () =>
+    LineageGraph.fromSource({
+      getNodes: () => NODES,
+      getEdges: () => EDGES,
+      getAudit: () => ({
+        "mart.revenue": [
+          {
+            tool: "trimWhitespace",
+            say: "trimmed email",
+            tag: "clean",
+            auditEntryId: "ae1",
+            transformId: "t1",
+            enabled: true,
+          },
+        ],
+      }),
+    });
+
+  it("flips the matching entry's enabled flag, leaving the rest of the node intact", () => {
+    const toggled = makeToggleGraph().withAuditToggled(
+      "mart.revenue",
+      "ae1",
+      false,
+    );
+    const entry = toggled.auditFor("mart.revenue")[0];
+    expect(entry.enabled).toBe(false);
+    // identity of the other fields preserved
+    expect(entry.auditEntryId).toBe("ae1");
+    expect(entry.transformId).toBe("t1");
+  });
+
+  it("returns a new instance and does not mutate the receiver", () => {
+    const graph = makeToggleGraph();
+    const toggled = graph.withAuditToggled("mart.revenue", "ae1", false);
+    expect(toggled).not.toBe(graph);
+    expect(graph.auditFor("mart.revenue")[0].enabled).toBe(true);
+  });
+
+  it("is a referential no-op when the entry already has the requested state", () => {
+    const graph = makeToggleGraph();
+    expect(graph.withAuditToggled("mart.revenue", "ae1", true)).toBe(graph);
+  });
+
+  it("is a no-op for an unknown node or unknown audit-entry id", () => {
+    const graph = makeToggleGraph();
+    expect(graph.withAuditToggled("nope.node", "ae1", false)).toBe(graph);
+    expect(graph.withAuditToggled("mart.revenue", "nope.entry", false)).toBe(
+      graph,
+    );
+  });
+});

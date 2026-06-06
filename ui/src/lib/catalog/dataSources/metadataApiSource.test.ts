@@ -798,3 +798,45 @@ describe("metadataApiSource — audit (getAudit / audit)", () => {
     );
   });
 });
+
+describe("metadataApiSource — toggleAuditEntry (optimistic write-through PATCH)", () => {
+  /** A fetch stub that succeeds for any URL and records the request init. */
+  function stubPatch(ok = true) {
+    const fetchMock = vi.fn(async () => ({
+      ok,
+      status: ok ? 200 : 500,
+      json: async () => ({
+        data: { type: "audit-entries", id: "ae1", attributes: { node_id: "d1" } },
+      }),
+    }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    return fetchMock;
+  }
+
+  it("PATCHes the project-scoped audit-entry URL with the enabled body + Bearer", async () => {
+    const fetchMock = stubPatch();
+    const source = metadataApiSource({
+      getToken: () => "secret-token",
+      getProjectId: () => "p1",
+    });
+
+    await source.toggleAuditEntry!("ae1", false);
+
+    const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(call[0]).toBe("/api/projects/p1/audit/ae1");
+    expect(call[1].method).toBe("PATCH");
+    expect(JSON.parse(call[1].body as string)).toEqual({ enabled: false });
+    expect((call[1].headers as Record<string, string>).Authorization).toBe(
+      "Bearer secret-token",
+    );
+  });
+
+  it("rejects on a non-2xx PATCH response (drives the catalog rollback)", async () => {
+    stubPatch(false);
+    const source = metadataApiSource({
+      getToken: () => "tok",
+      getProjectId: () => "p1",
+    });
+    await expect(source.toggleAuditEntry!("ae1", true)).rejects.toThrow();
+  });
+});

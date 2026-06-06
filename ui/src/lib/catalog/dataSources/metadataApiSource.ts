@@ -40,7 +40,7 @@ import type {
   OrgSettings,
   ProjectSummary,
 } from "../models";
-import { apiGet } from "./backendClient";
+import { apiGet, apiPatch } from "./backendClient";
 import type {
   BackendDataset,
   BackendReport,
@@ -356,6 +356,21 @@ export function metadataApiSource(
         .sort((a, b) => recencyOf(b) - recencyOf(a))
         .slice(0, 5)
         .map((s) => toChatHistoryItem(s, now));
+    },
+
+    async toggleAuditEntry(auditEntryId: string, enabled: boolean): Promise<void> {
+      // The catalog's first WRITE: PATCH the project-scoped audit entry. The
+      // backend resolves the transform via the reversed FK and flips its status
+      // (recompiling the staging SQL on read). Project-scoped like the reads;
+      // rejects on a non-2xx (apiPatch throws) so the catalog rolls back its
+      // optimistic flip. The response body is ignored — the write-through
+      // revalidates the affected scope from the read endpoints instead.
+      const pid = await scopedProjectId();
+      await apiPatch(
+        `/api/projects/${encodeURIComponent(pid)}/audit/${encodeURIComponent(auditEntryId)}`,
+        { enabled },
+        deps.getToken(),
+      );
     },
   };
 }
