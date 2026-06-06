@@ -31,7 +31,7 @@
  * it still throws when there is no scoped (or first) project (an empty-shell
  * state is a separate follow-up).
  */
-import type { AuditEntry, Edge, Layer, LineageNode } from "../lineage";
+import type { AuditEntry, AuditTag, Edge, Layer, LineageNode } from "../lineage";
 import type {
   ChatHistoryItem,
   CurrentProject,
@@ -115,6 +115,47 @@ function toDbtFiles(manifest: BackendDbtManifest): DbtFile[] {
     layer: f.layer,
     ref: f.ref,
   }));
+}
+
+/**
+ * A tool-call audit row as the backend returns it (post envelope-unwrap): the
+ * record `id` flattened alongside the snake_case attributes from
+ * `GET /api/projects/{pid}/tool-calls`. `tool`/`say`/`tag` come from the
+ * record's JSON payload; `transform_id`/`enabled` from the reversed-FK join
+ * (`null` for log-only calls). Grouped by `node_id` + mapped to
+ * {@link AuditEntry} by {@link toAuditByNode}.
+ */
+interface BackendToolCall {
+  id: string;
+  node_id: string;
+  node_kind: string;
+  tool: string;
+  say: string;
+  tag: AuditTag;
+  transform_id?: string | null;
+  enabled?: boolean | null;
+}
+
+/**
+ * Fold a flat tool-call list into the `Record<nodeId, AuditEntry[]>` shape the
+ * graph expects, preserving the backend's `(node_id, sequence, created_at)`
+ * order within each node. snake_case → camelCase at the boundary.
+ */
+function toAuditByNode(
+  toolCalls: BackendToolCall[],
+): Record<string, AuditEntry[]> {
+  const byNode: Record<string, AuditEntry[]> = {};
+  for (const call of toolCalls) {
+    (byNode[call.node_id] ??= []).push({
+      tool: call.tool,
+      say: call.say,
+      tag: call.tag,
+      toolCallId: call.id,
+      transformId: call.transform_id,
+      enabled: call.enabled ?? undefined,
+    });
+  }
+  return byNode;
 }
 
 /** Dependencies the source needs from the app — kept minimal and injected. */
@@ -283,8 +324,19 @@ export function metadataApiSource(
     },
 
     async getAudit(): Promise<Record<string, AuditEntry[]>> {
-      // No backend audit narrative — resolve empty so the folded audit is clean.
-      return {};
+      // Project-scoped (the assistant tool-call audit), mirroring the lineage/
+      // sessions getters: scope to the injected pid, falling back to the first
+      // project only for the pre-first-paint instant. The backend returns a flat
+      // list ordered by (node_id, sequence, created_at); group it by node_id into
+      // the shape the graph folds per node. Resolves `{}` for an audit-less
+      // project (no throw); rejects only on a fetch/auth error (apiGet throws on
+      // non-2xx → the catalog keeps its fixtures).
+      const pid = await scopedProjectId();
+      const toolCalls = await apiGet<BackendToolCall[]>(
+        `/api/projects/${encodeURIComponent(pid)}/tool-calls`,
+        deps.getToken(),
+      );
+      return toAuditByNode(toolCalls);
     },
 
     async getAllChats(): Promise<ChatHistoryItem[]> {

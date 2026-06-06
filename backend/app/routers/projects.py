@@ -58,6 +58,21 @@ async def list_project_datasets(
     return JSONResponse(content=body, status_code=status_code)
 
 
+@router.get("/{project_id}/tool-calls")
+async def list_tool_calls_route(
+    auth: tuple[AuthUser, dict] = Depends(authorize_project_access),
+):
+    """List the project's assistant tool-call audit (backs the UI ``getAudit``).
+
+    A flat JSON:API list ordered by ``(node_id, sequence, created_at)``; the UI
+    groups by ``node_id``. Each item carries ``tool``/``say``/``tag`` plus the
+    joined ``transform_id``/``enabled`` (present iff the call is transform-type).
+    """
+    user, project = auth
+    body, status_code = await HTTPController.list_tool_calls(project["id"], org_id=user.org_id)
+    return JSONResponse(content=body, status_code=status_code)
+
+
 @router.get("/{project_id}/export/dbt")
 async def export_dbt_project_route(
     auth: tuple[AuthUser, dict] = Depends(authorize_project_access),

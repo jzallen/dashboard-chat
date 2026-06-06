@@ -30,6 +30,7 @@ from app.use_cases import project as project_use_cases  # noqa: F401
 from app.use_cases import query_engine as query_engine_use_cases  # noqa: F401
 from app.use_cases import report as report_use_cases  # noqa: F401
 from app.use_cases import sql_access as sql_access_use_cases  # noqa: F401
+from app.use_cases import tool_call as tool_call_use_cases  # noqa: F401
 from app.use_cases import upload as upload_use_cases  # noqa: F401
 from app.use_cases import view as view_use_cases  # noqa: F401
 from app.use_cases.dataset import search_datasets as search_datasets_uc  # noqa: F401
@@ -53,6 +54,7 @@ from .project_controller import ProjectController
 from .query_engine_controller import QueryEngineController
 from .report_controller import ReportController
 from .sql_access_controller import SQLAccessController
+from .tool_call_controller import ToolCallController
 from .view_controller import ViewController
 
 
@@ -96,6 +98,9 @@ class HTTPController:
     # Identity / Organization (Seam 4)
     post_organization = staticmethod(OrganizationController.post_organization)
     get_my_organization = staticmethod(OrganizationController.get_my_organization)
+
+    # Assistant audit — tool-call read (rich-catalog §2.11)
+    list_tool_calls = staticmethod(ToolCallController.list_tool_calls)
 
     # Analytics Authoring — Views (Seam 5a)
     list_views = staticmethod(ViewController.list_views)

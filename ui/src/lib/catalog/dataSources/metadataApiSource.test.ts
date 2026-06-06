@@ -241,13 +241,6 @@ describe("metadataApiSource — lineage core (getNodes/getEdges/getAudit)", () =
     expect(countPaths(fetchMock)[PROJECTS]).toBe(1);
   });
 
-  it("getAudit resolves {} with no fetch", async () => {
-    const fetchMock = stubFetch(LINEAGE_ROUTES);
-    const source = metadataApiSource({ getToken: () => "tok" });
-    await expect(source.getAudit!()).resolves.toEqual({});
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
   it("getNodes resolves {} when the backend is legitimately empty (does NOT reject)", async () => {
     stubFetch({
       [PROJECTS]: { data: [{ id: "p1", name: "Acme" }] },
@@ -663,5 +656,145 @@ describe("metadataApiSource — project sessions (getRecents/getAllChats)", () =
     const source = metadataApiSource({ getToken: () => "tok" });
     await Promise.all([source.getRecents!(), source.getAllChats!()]);
     expect(countPaths(fetchMock)["/api/projects/p1/sessions"]).toBe(1);
+  });
+});
+
+describe("metadataApiSource — audit (getAudit / tool-calls)", () => {
+  const TOOL_CALLS_P1 = "/api/projects/p1/tool-calls";
+
+  /** A flat JSON:API list of tool-call audit rows across two nodes. */
+  const TOOL_CALLS_BODY = {
+    data: [
+      {
+        type: "tool-calls",
+        id: "tc1",
+        attributes: {
+          node_id: "d1",
+          node_kind: "dataset",
+          tool: "trimWhitespace",
+          say: "Trimmed whitespace on email",
+          tag: "clean",
+          transform_id: "t1",
+          enabled: true,
+        },
+      },
+      {
+        type: "tool-calls",
+        id: "tc2",
+        attributes: {
+          node_id: "d1",
+          node_kind: "dataset",
+          tool: "fillNulls",
+          say: "Filled nulls in age",
+          tag: "fix",
+          transform_id: null,
+          enabled: null,
+        },
+      },
+      {
+        type: "tool-calls",
+        id: "tc3",
+        attributes: {
+          node_id: "v1",
+          node_kind: "view",
+          tool: "createView",
+          say: "Created active_customers",
+          tag: "create",
+          transform_id: null,
+          enabled: null,
+        },
+      },
+    ],
+  };
+
+  it("fetches the project-scoped tool-calls and groups them by node_id", async () => {
+    const fetchMock = stubFetch({
+      [PROJECTS]: { data: [{ id: "p1", name: "Acme" }] },
+      [TOOL_CALLS_P1]: TOOL_CALLS_BODY,
+    });
+    const source = metadataApiSource({ getToken: () => "tok" });
+
+    const audit = await source.getAudit!();
+
+    expect(fetchMock.mock.calls.map((c) => c[0] as string)).toContain(
+      TOOL_CALLS_P1,
+    );
+    expect(Object.keys(audit).sort()).toEqual(["d1", "v1"]);
+    expect(audit.d1).toHaveLength(2);
+    expect(audit.v1).toHaveLength(1);
+  });
+
+  it("maps the payload fields and the joined transform fields onto AuditEntry", async () => {
+    stubFetch({
+      [PROJECTS]: { data: [{ id: "p1", name: "Acme" }] },
+      [TOOL_CALLS_P1]: TOOL_CALLS_BODY,
+    });
+    const source = metadataApiSource({ getToken: () => "tok" });
+
+    const audit = await source.getAudit!();
+
+    expect(audit.d1[0]).toEqual({
+      tool: "trimWhitespace",
+      say: "Trimmed whitespace on email",
+      tag: "clean",
+      toolCallId: "tc1",
+      transformId: "t1",
+      enabled: true,
+    });
+    // Log-only entry: transformId null (passed through), enabled coerced to
+    // undefined (the AuditEntry type is `enabled?: boolean`, no null).
+    expect(audit.d1[1]).toEqual({
+      tool: "fillNulls",
+      say: "Filled nulls in age",
+      tag: "fix",
+      toolCallId: "tc2",
+      transformId: null,
+      enabled: undefined,
+    });
+  });
+
+  it("scopes the tool-calls URL to the injected project id (p2)", async () => {
+    const fetchMock = stubFetch({
+      [PROJECTS]: { data: [{ id: "p1", name: "Acme" }, { id: "p2", name: "Beta" }] },
+      "/api/projects/p2/tool-calls": { data: [] },
+    });
+    const source = metadataApiSource({
+      getToken: () => "tok",
+      getProjectId: () => "p2",
+    });
+    await source.getAudit!();
+    const urls = fetchMock.mock.calls.map((c) => c[0] as string);
+    expect(urls).toContain("/api/projects/p2/tool-calls");
+    expect(urls).not.toContain("/api/projects/p1/tool-calls");
+  });
+
+  it("resolves {} when the project has no tool-calls (no throw)", async () => {
+    stubFetch({
+      [PROJECTS]: { data: [{ id: "p1", name: "Acme" }] },
+      [TOOL_CALLS_P1]: { data: [] },
+    });
+    const source = metadataApiSource({ getToken: () => "tok" });
+    await expect(source.getAudit!()).resolves.toEqual({});
+  });
+
+  it("rejects on a non-2xx tool-calls response (fixtures kept upstream)", async () => {
+    stubFetch({ [TOOL_CALLS_P1]: TOOL_CALLS_BODY }, false);
+    const source = metadataApiSource({ getToken: () => "tok" });
+    await expect(source.getAudit!()).rejects.toThrow();
+  });
+
+  it("sends the Bearer token on the tool-calls request", async () => {
+    const fetchMock = stubFetch({
+      [PROJECTS]: { data: [{ id: "p1", name: "Acme" }] },
+      [TOOL_CALLS_P1]: { data: [] },
+    });
+    const source = metadataApiSource({ getToken: () => "secret-token" });
+    await source.getAudit!();
+    const call = fetchMock.mock.calls.find((c) =>
+      (c[0] as string).endsWith("/tool-calls"),
+    ) as unknown as [string, RequestInit];
+    expect((call[1].headers as Record<string, string>).Authorization).toBe(
+      "Bearer secret-token",
+    );
   });
 });

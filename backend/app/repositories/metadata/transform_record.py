@@ -58,6 +58,17 @@ class TransformRecord(Base):
     # Metadata from NL generation
     nl_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Reversed FK to the generic tool-call spine (rich-catalog §2.3): the
+    # transform points UP at the ToolCallRecord that produced it. Nullable —
+    # legacy transforms predate tool calls; ON DELETE SET NULL downgrades the
+    # transform to "no recorded provenance" rather than deleting it.
+    tool_call_id: Mapped[str | None] = mapped_column(
+        Text,
+        ForeignKey("tool_call_records.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False

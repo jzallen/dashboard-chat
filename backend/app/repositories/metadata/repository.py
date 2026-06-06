@@ -31,6 +31,7 @@ from .project_record import ProjectRecord
 from .project_repository import ProjectsWithDatasetsQuery
 from .report_record import ReportRecord
 from .session_record import SessionRecord
+from .tool_call_record import ToolCallRecord
 from .transform_record import TransformRecord
 from .view_record import ViewRecord
 
@@ -644,6 +645,54 @@ class MetadataRepository:
         await self._session.delete(transform)
         await self._session.flush()
         return True
+
+    # -------------------------------------------------------------------------
+    # Tool-call (assistant audit) operations
+    # -------------------------------------------------------------------------
+
+    @handle_repository_exceptions
+    async def list_tool_calls_for_project(
+        self,
+        project_id: str,
+        org_id: str,
+    ) -> list[dict[str, Any]]:
+        """List a project's tool-call audit records, joined to their transform.
+
+        LEFT-JOINs ``transforms`` on the reversed FK
+        (``transforms.tool_call_id = tool_call_records.id``) so each row carries
+        the joined ``transform_id`` (present iff a Transform points UP at the
+        record → toggleable) and ``enabled`` (``Transform.status == "enabled"``,
+        ``None`` for log-only calls). ``org_id``-scoped. Ordered by
+        ``(node_id, sequence, created_at)``.
+
+        Returns projection dicts: ``{id, node_id, node_kind, payload,
+        transform_id, enabled}`` — the use case maps ``payload`` → tool/say/tag.
+        """
+        query = (
+            select(ToolCallRecord, TransformRecord.id, TransformRecord.status)
+            .outerjoin(TransformRecord, TransformRecord.tool_call_id == ToolCallRecord.id)
+            .where(ToolCallRecord.project_id == project_id)
+            .where(ToolCallRecord.org_id == org_id)
+            .order_by(
+                ToolCallRecord.node_id,
+                ToolCallRecord.sequence,
+                ToolCallRecord.created_at,
+            )
+        )
+        result = await self._session.execute(query)
+        rows: list[dict[str, Any]] = []
+        for record, transform_id, transform_status in result.all():
+            rows.append(
+                {
+                    "id": record.id,
+                    "node_id": record.node_id,
+                    "node_kind": record.node_kind,
+                    "payload": record.payload,
+                    "transform_id": transform_id,
+                    "enabled": (transform_status == "enabled") if transform_id is not None else None,
+                }
+            )
+        return rows
 
     # -------------------------------------------------------------------------
     # Organization operations

@@ -53,6 +53,16 @@ export interface AuditEntry {
   tool: string;
   say: string;
   tag: AuditTag;
+  /** The backing ToolCallRecord id (the write target for the future toggle). */
+  toolCallId?: string;
+  /**
+   * The joined transform id — present (non-null) iff the call is transform-type
+   * (a Transform points UP at the record), i.e. the entry is toggleable. `null`
+   * for log-only calls; absent for fixture entries.
+   */
+  transformId?: string | null;
+  /** The joined transform's enabled state; absent/`null` for log-only calls. */
+  enabled?: boolean;
 }
 
 /**
