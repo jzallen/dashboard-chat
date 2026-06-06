@@ -126,7 +126,16 @@ def organization_to_dict(org: OrganizationRecord) -> dict[str, Any]:
 
 
 def view_to_dict(view: ViewRecord) -> dict[str, Any]:
-    """Convert ViewRecord to dictionary."""
+    """Convert ViewRecord to dictionary.
+
+    Unlike the wire-facing mappers (project/dataset/etc.), this dict is
+    re-hydrated into a ``View`` domain model by the create/get view use cases;
+    the model's ``serialize()`` is the actual response boundary that performs
+    the ISO-8601 conversion. Returning raw ``datetime`` values here (rather
+    than pre-stringifying via ``_iso``) keeps the conversion at the boundary
+    and avoids a ``str`` landing in ``View.created_at: datetime | None``,
+    which previously crashed ``serialize()`` with HTTP 500.
+    """
     return {
         "id": view.id,
         "project_id": view.project_id,
@@ -140,13 +149,21 @@ def view_to_dict(view: ViewRecord) -> dict[str, Any]:
         "filters": view.filters or [],
         "grain": view.grain,
         "materialization": view.materialization,
-        "created_at": _iso(view.created_at),
-        "updated_at": _iso(view.updated_at),
+        "created_at": view.created_at,
+        "updated_at": view.updated_at,
     }
 
 
 def report_to_dict(report: ReportRecord) -> dict[str, Any]:
-    """Convert ReportRecord to dictionary."""
+    """Convert ReportRecord to dictionary.
+
+    Like ``view_to_dict``, this dict is re-hydrated into a ``Report`` domain
+    model by the create/get report use cases; the model's ``serialize()`` is
+    the response boundary that performs the ISO-8601 conversion. Returning raw
+    ``datetime`` values here keeps the conversion at the boundary and avoids a
+    ``str`` landing in ``Report.created_at``, which previously crashed
+    ``serialize()`` with HTTP 500.
+    """
     return {
         "id": report.id,
         "project_id": report.project_id,
@@ -159,6 +176,6 @@ def report_to_dict(report: ReportRecord) -> dict[str, Any]:
         "domain": report.domain,
         "columns_metadata": report.columns_metadata,
         "materialization": report.materialization,
-        "created_at": _iso(report.created_at),
-        "updated_at": _iso(report.updated_at),
+        "created_at": report.created_at,
+        "updated_at": report.updated_at,
     }

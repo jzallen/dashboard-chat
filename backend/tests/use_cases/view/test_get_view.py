@@ -38,3 +38,31 @@ class TestGetView:
                 assert isinstance(error, ViewNotFound)
             case Success(_):
                 pytest.fail("get_view should fail for nonexistent view")
+
+    async def test_fetched_view_serializes_timestamps_at_boundary(self, seeded_db_with_view: AsyncSession):
+        """The View returned by get_view must serialize() without raising.
+
+        Regression for the latent HTTP 500 on GET /api/projects/{id}/view/{id}:
+        same root cause as create_view — the repository mapper stringified
+        timestamps too early, so the re-hydrated View held a ``str`` in
+        ``created_at`` and ``serialize()`` raised AttributeError.
+        """
+        set_session(seeded_db_with_view)
+
+        result = await get_view(VIEW_1)
+
+        match result:
+            case Success(view):
+                payload = view.serialize()  # must NOT raise
+                _assert_iso_8601(payload["created_at"])
+                _assert_iso_8601(payload["updated_at"])
+            case Failure(error):
+                pytest.fail(f"get_view should succeed, got: {error}")
+
+
+def _assert_iso_8601(value: object) -> None:
+    """Assert the value is an ISO-8601 datetime string parseable round-trip."""
+    from datetime import datetime
+
+    assert isinstance(value, str), f"expected ISO-8601 string, got {type(value).__name__}: {value!r}"
+    datetime.fromisoformat(value)  # raises ValueError if not ISO-8601

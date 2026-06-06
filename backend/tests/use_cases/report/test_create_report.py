@@ -285,3 +285,37 @@ class TestCreateReport:
                 assert "sql_definition" in str(error), f"deprecation message must name the deprecated field: {error}"
             case Success(_):
                 pytest.fail("create_report must reject the deprecated sql_definition input")
+
+    async def test_created_report_serializes_timestamps_at_boundary(self, seeded_db: AsyncSession):
+        """The Report returned by create_report must serialize() without raising.
+
+        Regression for the HTTP 500 on POST /api/projects/{id}/reports: the
+        repository mapper stringified timestamps too early, so the re-hydrated
+        Report held a ``str`` in ``created_at`` and ``serialize()`` crashed with
+        ``AttributeError: 'str' object has no attribute 'isoformat'``. The
+        ISO-8601 conversion belongs at the response boundary (model.serialize),
+        not in the repository mapper.
+        """
+        set_session(seeded_db)
+
+        result = await create_report(
+            project_id=PROJECT_1,
+            name="Serializable Report",
+            report_type="fact",
+        )
+
+        match result:
+            case Success(report):
+                payload = report.serialize()  # must NOT raise
+                _assert_iso_8601(payload["created_at"])
+                _assert_iso_8601(payload["updated_at"])
+            case Failure(error):
+                pytest.fail(f"create_report should succeed, got: {error}")
+
+
+def _assert_iso_8601(value: object) -> None:
+    """Assert the value is an ISO-8601 datetime string parseable round-trip."""
+    from datetime import datetime
+
+    assert isinstance(value, str), f"expected ISO-8601 string, got {type(value).__name__}: {value!r}"
+    datetime.fromisoformat(value)  # raises ValueError if not ISO-8601

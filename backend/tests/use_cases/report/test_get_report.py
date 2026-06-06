@@ -39,3 +39,31 @@ class TestGetReport:
                 assert isinstance(error, ReportNotFound)
             case Success(_):
                 pytest.fail("get_report should fail for nonexistent report")
+
+    async def test_fetched_report_serializes_timestamps_at_boundary(self, seeded_db_with_report: AsyncSession):
+        """The Report returned by get_report must serialize() without raising.
+
+        Regression for the latent HTTP 500 on GET /api/projects/{id}/report/{id}:
+        same root cause as create_report — the repository mapper stringified
+        timestamps too early, so the re-hydrated Report held a ``str`` in
+        ``created_at`` and ``serialize()`` raised AttributeError.
+        """
+        set_session(seeded_db_with_report)
+
+        result = await get_report(REPORT_1)
+
+        match result:
+            case Success(report):
+                payload = report.serialize()  # must NOT raise
+                _assert_iso_8601(payload["created_at"])
+                _assert_iso_8601(payload["updated_at"])
+            case Failure(error):
+                pytest.fail(f"get_report should succeed, got: {error}")
+
+
+def _assert_iso_8601(value: object) -> None:
+    """Assert the value is an ISO-8601 datetime string parseable round-trip."""
+    from datetime import datetime
+
+    assert isinstance(value, str), f"expected ISO-8601 string, got {type(value).__name__}: {value!r}"
+    datetime.fromisoformat(value)  # raises ValueError if not ISO-8601
