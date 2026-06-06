@@ -1,7 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createDataCatalog } from "./client";
-import { metadataApiSource } from "./dataSources/metadataApiSource";
 import type {
   CatalogSource,
   PartialCatalogSource,
@@ -220,87 +219,84 @@ describe("createDataCatalog — stale-while-revalidate (primary over fallback)",
   });
 });
 
-describe("metadataApiSource — backend project reads", () => {
-  const realFetch = globalThis.fetch;
-
-  afterEach(() => {
-    globalThis.fetch = realFetch;
-    vi.restoreAllMocks();
-  });
-
-  function stubFetch(body: unknown, ok = true) {
-    const fetchMock = vi.fn(async () => ({
-      ok,
-      status: ok ? 200 : 500,
-      json: async () => body,
-    }));
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-    return fetchMock;
+describe("createDataCatalog — stale-while-revalidate (lineage graph)", () => {
+  /** A primary backing all three lineage getters with a dataset→view graph. */
+  function lineagePrimary(): PartialCatalogSource {
+    const nodes: Record<string, LineageNode> = {
+      "ds.1": {
+        id: "ds.1",
+        label: "customers",
+        sub: "staging",
+        layer: "staging",
+        ref: { kind: "dataset", fields: [] },
+      },
+      "view.1": {
+        id: "view.1",
+        label: "active",
+        sub: "intermediate",
+        layer: "intermediate",
+        ref: { kind: "view", columns: [] },
+      },
+    };
+    const edges: Edge[] = [["ds.1", "view.1"]];
+    return {
+      getNodes: () =>
+        new Promise((resolve) => setTimeout(() => resolve(nodes), 0)),
+      getEdges: () =>
+        new Promise((resolve) => setTimeout(() => resolve(edges), 0)),
+      getAudit: () => new Promise((resolve) => setTimeout(() => resolve({}), 0)),
+    };
   }
 
-  it("maps a backend ProjectResponse to ProjectSummary and unwraps the envelope", async () => {
-    stubFetch({
-      data: [
-        {
-          id: "p1",
-          name: "Acme Warehouse",
-          description: "seeded",
-          datasets: [{ id: "d1" }, { id: "d2" }],
-        },
-      ],
-    });
-    const source = metadataApiSource({ getToken: () => "tok" });
-    const projects = await source.getProjects!();
-    expect(projects).toEqual([
-      { id: "p1", name: "Acme Warehouse", desc: "seeded", datasets: 2, models: 0 },
+  it("a primary backing all three lineage getters replaces the fixture graph after flush", async () => {
+    const catalog = await createDataCatalog(lineagePrimary(), makeSource());
+
+    // Mounts on the fallback graph (src.orders + mart.revenue)…
+    expect(catalog.listNodes().map((n) => n.id).sort()).toEqual([
+      "mart.revenue",
+      "src.orders",
     ]);
+
+    const fired = vi.fn();
+    catalog.subscribe(fired);
+    await flush();
+
+    // …then the backend graph lands and REPLACES the fixtures.
+    expect(catalog.listNodes().map((n) => n.id).sort()).toEqual([
+      "ds.1",
+      "view.1",
+    ]);
+    expect(catalog.listModels().map((m) => m.id).sort()).toEqual([
+      "ds.1",
+      "view.1",
+    ]);
+    expect(catalog.listEdges()).toContainEqual(["ds.1", "view.1"]);
+    expect(fired).toHaveBeenCalled();
   });
 
-  it("defaults missing description to '' and missing datasets to 0", async () => {
-    stubFetch({ data: [{ id: "p2", name: "Bare" }] });
-    const source = metadataApiSource({ getToken: () => "tok" });
-    const projects = await source.getProjects!();
-    expect(projects[0]).toEqual({
-      id: "p2",
-      name: "Bare",
-      desc: "",
-      datasets: 0,
-      models: 0,
-    });
+  it("a primary resolving an EMPTY lineage graph BLANKS the canvas (not fixtures)", async () => {
+    const primary: PartialCatalogSource = {
+      getNodes: () => new Promise((resolve) => setTimeout(() => resolve({}), 0)),
+      getEdges: () => new Promise((resolve) => setTimeout(() => resolve([]), 0)),
+      getAudit: () => new Promise((resolve) => setTimeout(() => resolve({}), 0)),
+    };
+    const catalog = await createDataCatalog(primary, makeSource());
+    await flush();
+    expect(catalog.listNodes()).toEqual([]);
+    expect(catalog.listEdges()).toEqual([]);
   });
 
-  it("sends the Bearer token on the request", async () => {
-    const fetchMock = stubFetch({ data: [{ id: "p1", name: "X" }] });
-    const source = metadataApiSource({ getToken: () => "secret-token" });
-    await source.getProjects!();
-    const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    const init = call[1];
-    expect((init.headers as Record<string, string>).Authorization).toBe(
-      "Bearer secret-token",
-    );
-  });
-
-  it("rejects on an empty project list so the fallback keeps showing fixtures", async () => {
-    stubFetch({ data: [] });
-    const source = metadataApiSource({ getToken: () => "tok" });
-    await expect(source.getProjects!()).rejects.toThrow();
-  });
-
-  it("rejects on a non-2xx response", async () => {
-    stubFetch({ detail: "boom" }, false);
-    const source = metadataApiSource({ getToken: () => "tok" });
-    await expect(source.getProjects!()).rejects.toThrow();
-  });
-
-  it("getCurrentProject derives identity from the first project", async () => {
-    stubFetch({
-      data: [
-        { id: "p1", name: "Acme", description: "first" },
-        { id: "p2", name: "Other" },
-      ],
-    });
-    const source = metadataApiSource({ getToken: () => "tok" });
-    const current = await source.getCurrentProject!();
-    expect(current).toEqual({ id: "p1", name: "Acme", description: "first" });
+  it("a getNodes-rejecting primary keeps the fixture graph (error path, no crash)", async () => {
+    const primary: PartialCatalogSource = {
+      getNodes: () => Promise.reject(new Error("backend down")),
+      getEdges: () => Promise.resolve([]),
+      getAudit: () => Promise.resolve({}),
+    };
+    const catalog = await createDataCatalog(primary, makeSource());
+    await flush();
+    expect(catalog.listNodes().map((n) => n.id).sort()).toEqual([
+      "mart.revenue",
+      "src.orders",
+    ]);
   });
 });

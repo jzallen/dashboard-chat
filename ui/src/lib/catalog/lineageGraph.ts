@@ -165,11 +165,20 @@ export class LineageGraph {
     return this.allNodes().filter((n) => n.layer === layer);
   }
 
-  /** Ids of non-source nodes with no incoming edge — dangling, unconnected models. */
+  /**
+   * Ids of non-root nodes with no incoming edge — dangling, unconnected models.
+   * Root layers (`source`, `staging`) legitimately have no parents: source
+   * uploads and staging datasets are the graph's entry points, so they are
+   * never orphans. Only `intermediate`/`mart` nodes with no inputs are.
+   */
   orphans(): Set<string> {
     const orphans = new Set<string>();
     for (const n of this.nodes.values()) {
-      if (n.layer !== "source" && !this.parents.get(n.id)?.length) {
+      if (
+        n.layer !== "source" &&
+        n.layer !== "staging" &&
+        !this.parents.get(n.id)?.length
+      ) {
         orphans.add(n.id);
       }
     }

@@ -97,6 +97,31 @@ describe("LineageGraph — topology + audit", () => {
     expect(orphans.has("src.orders")).toBe(false);
   });
 
+  it("orphans: a staging root with no parent is NOT an orphan; an intermediate/mart with no parent IS", () => {
+    const staging: LineageNode = {
+      id: "stg.customers",
+      label: "customers",
+      sub: "staging",
+      layer: "staging",
+      ref: { kind: "dataset", fields: [] },
+    };
+    const intermediate: LineageNode = {
+      id: "int.active",
+      label: "active",
+      sub: "intermediate",
+      layer: "intermediate",
+      ref: { columns: [] },
+    };
+    const orphans = makeGraph()
+      .addSource(staging)
+      .addSource(intermediate)
+      .orphans();
+    // staging datasets are graph roots — legitimately parentless, never dimmed.
+    expect(orphans.has("stg.customers")).toBe(false);
+    // an intermediate with no inputs is a true orphan.
+    expect(orphans.has("int.active")).toBe(true);
+  });
+
   it("isNodeAdjacent is true for a real edge in either direction, false otherwise", () => {
     const graph = makeGraph();
     expect(graph.isNodeAdjacent("src.orders", "mart.revenue")).toBe(true);
