@@ -42,15 +42,26 @@ function ModelTrailCard({
         {audit.length === 0 && (
           <div className={styles.emptySrc}>Raw upload — no transforms.</div>
         )}
-        {audit.map((a, i) => (
-          <div className={styles.auditLine} key={i}>
-            <span className={styles.ico}>
-              <Icon name={TAG_ICON[a.tag]} />
-            </span>
-            <span>{a.say}</span>
-            <span className={styles.tag}>{a.tag}</span>
-          </div>
-        ))}
+        {audit.map((a, i) => {
+          // A transform toggled off stays in the trail but reads as inactive:
+          // faded, with a "disabled" chip.
+          const disabled = a.transformId != null && a.enabled === false;
+          return (
+            <div
+              className={`${styles.auditLine}${disabled ? " " + styles.auditDisabled : ""}`}
+              key={i}
+            >
+              <span className={styles.ico}>
+                <Icon name={TAG_ICON[a.tag]} />
+              </span>
+              <span className={styles.auditSayText}>{a.say}</span>
+              {disabled && (
+                <span className={styles.auditDisabledChip}>disabled</span>
+              )}
+              <span className={styles.tag}>{a.tag}</span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

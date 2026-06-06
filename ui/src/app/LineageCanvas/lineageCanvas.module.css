@@ -385,6 +385,30 @@
   flex: 0 0 auto;
   padding-top: 2px;
 }
+.auditSayText {
+  flex: 1;
+  min-width: 0;
+}
+/* A disabled transform stays in the trail but reads as inactive — fade the
+   content while keeping the "disabled" chip legible. */
+.auditDisabled .ico,
+.auditDisabled .auditSayText,
+.auditDisabled .tag {
+  opacity: 0.4;
+}
+.auditDisabledChip {
+  flex: 0 0 auto;
+  align-self: center;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-500);
+  background: var(--surface-3);
+  border: 1.5px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
 .emptySrc {
   font-size: 12px;
   color: var(--text-400);
