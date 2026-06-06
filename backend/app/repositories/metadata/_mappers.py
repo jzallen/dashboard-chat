@@ -116,10 +116,21 @@ def transform_to_dict(transform: TransformRecord) -> dict[str, Any]:
 
 
 def organization_to_dict(org: OrganizationRecord) -> dict[str, Any]:
-    """Convert OrganizationRecord to dictionary."""
+    """Convert OrganizationRecord to dictionary.
+
+    Carries the org-settings columns (``slug``/``region``/``default_*``)
+    alongside identity so the org-settings assembly (see
+    ``get_org_settings`` use case) can read the persisted configuration. The
+    ``id``/``name``/``created_at`` keys remain for existing callers.
+    """
     return {
         "id": org.id,
         "name": org.name,
+        "slug": org.slug,
+        "region": org.region,
+        "default_engine": org.default_engine,
+        "default_materialization": org.default_materialization,
+        "default_model_prefix": org.default_model_prefix,
         "created_at": _iso(org.created_at),
         "updated_at": _iso(org.updated_at),
     }

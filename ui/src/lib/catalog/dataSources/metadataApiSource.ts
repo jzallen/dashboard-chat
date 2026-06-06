@@ -35,6 +35,8 @@ import type { AuditEntry, Edge, LineageNode } from "../lineage";
 import type {
   ChatHistoryItem,
   CurrentProject,
+  OrgMember,
+  OrgSettings,
   ProjectSummary,
 } from "../models";
 import { apiGet } from "./backendClient";
@@ -54,6 +56,43 @@ interface BackendProject {
   name: string;
   description?: string | null;
   datasets?: unknown[];
+}
+
+/**
+ * The org-settings resource as the backend returns it (post envelope-unwrap):
+ * snake_case attributes, flat alongside the resource `id`. Mapped to the
+ * camelCase {@link OrgSettings} by {@link toOrgSettings}.
+ */
+interface BackendOrg {
+  id: string;
+  name: string;
+  slug: string;
+  region: string;
+  plan: string;
+  seats: number;
+  used_seats: number;
+  created_at: string;
+  members: OrgMember[];
+  defaults: { engine: string; materialization: string; model_prefix: string };
+}
+
+/** Map the backend org payload (snake_case) to the catalog's {@link OrgSettings}. */
+function toOrgSettings(org: BackendOrg): OrgSettings {
+  return {
+    name: org.name,
+    slug: org.slug,
+    region: org.region,
+    plan: org.plan,
+    seats: org.seats,
+    usedSeats: org.used_seats,
+    created: org.created_at,
+    members: org.members,
+    defaults: {
+      engine: org.defaults.engine,
+      materialization: org.defaults.materialization,
+      modelPrefix: org.defaults.model_prefix,
+    },
+  };
 }
 
 /** Dependencies the source needs from the app — kept minimal and injected. */
@@ -186,6 +225,14 @@ export function metadataApiSource(
         name: scoped.name,
         description: scoped.description ?? "",
       };
+    },
+
+    async getOrg(): Promise<OrgSettings> {
+      // Org-global (not project-scoped). The org always exists for an
+      // authenticated user, so no empty-guard is needed; a fetch/auth error
+      // rejects (apiGet throws on non-2xx) → the catalog keeps its fixtures.
+      const org = await apiGet<BackendOrg>("/api/orgs/me", deps.getToken());
+      return toOrgSettings(org);
     },
 
     async getNodes(): Promise<Record<string, LineageNode>> {

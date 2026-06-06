@@ -366,6 +366,74 @@ describe("metadataApiSource — project-scoped lineage (project-in-path)", () =>
   });
 });
 
+describe("metadataApiSource — org settings (getOrg)", () => {
+  const ORG = "/api/orgs/me";
+
+  const ORG_BODY = {
+    data: {
+      type: "organizations",
+      id: "dev-org-001",
+      attributes: {
+        name: "Acme",
+        slug: "acme",
+        region: "us-east-1",
+        plan: "free",
+        seats: 5,
+        used_seats: 1,
+        created_at: "2026-01-01T00:00:00Z",
+        members: [{ name: "Dev User", email: "dev@example.com", role: "owner" }],
+        defaults: {
+          engine: "duckdb",
+          materialization: "view",
+          model_prefix: "acme_",
+        },
+      },
+    },
+  };
+
+  it("fetches /api/orgs/me and maps snake_case attributes to the OrgSettings camelCase shape", async () => {
+    const fetchMock = stubFetch({ [ORG]: ORG_BODY });
+    const source = metadataApiSource({ getToken: () => "tok" });
+
+    const org = await source.getOrg!();
+
+    expect(fetchMock.mock.calls.map((c) => c[0] as string)).toContain(ORG);
+    expect(org).toEqual({
+      name: "Acme",
+      slug: "acme",
+      region: "us-east-1",
+      plan: "free",
+      seats: 5,
+      usedSeats: 1,
+      created: "2026-01-01T00:00:00Z",
+      members: [{ name: "Dev User", email: "dev@example.com", role: "owner" }],
+      defaults: {
+        engine: "duckdb",
+        materialization: "view",
+        modelPrefix: "acme_",
+      },
+    });
+  });
+
+  it("sends the Bearer token on the org request", async () => {
+    const fetchMock = stubFetch({ [ORG]: ORG_BODY });
+    const source = metadataApiSource({ getToken: () => "secret-token" });
+    await source.getOrg!();
+    const orgCall = fetchMock.mock.calls.find(
+      (c) => (c[0] as string) === ORG,
+    ) as unknown as [string, RequestInit];
+    expect((orgCall[1].headers as Record<string, string>).Authorization).toBe(
+      "Bearer secret-token",
+    );
+  });
+
+  it("rejects on a non-2xx org response (fixtures kept upstream)", async () => {
+    stubFetch({ [ORG]: ORG_BODY }, false);
+    const source = metadataApiSource({ getToken: () => "tok" });
+    await expect(source.getOrg!()).rejects.toThrow();
+  });
+});
+
 describe("metadataApiSource — project sessions (getRecents/getAllChats)", () => {
   const SESSIONS_P1 = "/api/projects/p1/sessions";
 
