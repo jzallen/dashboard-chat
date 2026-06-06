@@ -434,6 +434,101 @@ describe("metadataApiSource — org settings (getOrg)", () => {
   });
 });
 
+describe("metadataApiSource — dbt manifest (getDbtFiles)", () => {
+  const MANIFEST_P1 = "/api/projects/p1/export/dbt/manifest";
+
+  const MANIFEST_BODY = {
+    data: {
+      type: "dbt-manifests",
+      id: "p1",
+      attributes: {
+        project_name: "acme_analytics",
+        layer_counts: { staging: 1, intermediate: 1, mart: 1, config: 4 },
+        files: [
+          { path: "dbt_project.yml", layer: "config" },
+          {
+            path: "models/staging/stg_leads.sql",
+            layer: "staging",
+            ref: "stg_leads",
+          },
+          {
+            path: "models/intermediate/int_active.sql",
+            layer: "intermediate",
+            ref: "int_active",
+          },
+          {
+            path: "models/marts/sales/fct_revenue.sql",
+            layer: "mart",
+            ref: "fct_revenue",
+          },
+        ],
+      },
+    },
+  };
+
+  it("fetches the project-scoped manifest and maps files[] to DbtFile[]", async () => {
+    const fetchMock = stubFetch({
+      [PROJECTS]: { data: [{ id: "p1", name: "Acme" }] },
+      [MANIFEST_P1]: MANIFEST_BODY,
+    });
+    const source = metadataApiSource({ getToken: () => "tok" });
+
+    const files = await source.getDbtFiles!();
+
+    expect(fetchMock.mock.calls.map((c) => c[0] as string)).toContain(
+      MANIFEST_P1,
+    );
+    expect(files).toEqual([
+      { path: "dbt_project.yml", layer: "config", ref: undefined },
+      { path: "models/staging/stg_leads.sql", layer: "staging", ref: "stg_leads" },
+      {
+        path: "models/intermediate/int_active.sql",
+        layer: "intermediate",
+        ref: "int_active",
+      },
+      {
+        path: "models/marts/sales/fct_revenue.sql",
+        layer: "mart",
+        ref: "fct_revenue",
+      },
+    ]);
+  });
+
+  it("scopes the manifest URL to the injected project id (p2)", async () => {
+    const fetchMock = stubFetch({
+      [PROJECTS]: { data: [{ id: "p1", name: "Acme" }, { id: "p2", name: "Beta" }] },
+      "/api/projects/p2/export/dbt/manifest": {
+        data: { type: "dbt-manifests", id: "p2", attributes: { files: [] } },
+      },
+    });
+    const source = metadataApiSource({
+      getToken: () => "tok",
+      getProjectId: () => "p2",
+    });
+    await source.getDbtFiles!();
+    const urls = fetchMock.mock.calls.map((c) => c[0] as string);
+    expect(urls).toContain("/api/projects/p2/export/dbt/manifest");
+    expect(urls).not.toContain("/api/projects/p1/export/dbt/manifest");
+  });
+
+  it("resolves the (possibly empty) file list when the manifest has no files", async () => {
+    stubFetch({
+      [PROJECTS]: { data: [{ id: "p1", name: "Acme" }] },
+      [MANIFEST_P1]: {
+        data: { type: "dbt-manifests", id: "p1", attributes: { files: [] } },
+      },
+    });
+    const source = metadataApiSource({ getToken: () => "tok" });
+    await expect(source.getDbtFiles!()).resolves.toEqual([]);
+  });
+
+  it("rejects on a non-2xx manifest response (fixtures kept upstream)", async () => {
+    stubFetch({ [MANIFEST_P1]: MANIFEST_BODY }, false);
+    const source = metadataApiSource({ getToken: () => "tok" });
+    await expect(source.getDbtFiles!()).rejects.toThrow();
+  });
+});
+
 describe("metadataApiSource — project sessions (getRecents/getAllChats)", () => {
   const SESSIONS_P1 = "/api/projects/p1/sessions";
 

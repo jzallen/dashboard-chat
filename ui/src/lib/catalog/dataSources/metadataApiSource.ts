@@ -31,10 +31,11 @@
  * it still throws when there is no scoped (or first) project (an empty-shell
  * state is a separate follow-up).
  */
-import type { AuditEntry, Edge, LineageNode } from "../lineage";
+import type { AuditEntry, Edge, Layer, LineageNode } from "../lineage";
 import type {
   ChatHistoryItem,
   CurrentProject,
+  DbtFile,
   OrgMember,
   OrgSettings,
   ProjectSummary,
@@ -93,6 +94,27 @@ function toOrgSettings(org: BackendOrg): OrgSettings {
       modelPrefix: org.defaults.model_prefix,
     },
   };
+}
+
+/**
+ * The dbt manifest resource as the backend returns it (post envelope-unwrap):
+ * the file index plus the extra `project_name`/`layer_counts` the current
+ * {@link DbtFile} consumer ignores. Mapped to `DbtFile[]` by {@link toDbtFiles}.
+ */
+interface BackendDbtManifest {
+  id: string;
+  project_name?: string;
+  layer_counts?: Record<string, number>;
+  files: { path: string; layer: Layer | "config"; ref?: string }[];
+}
+
+/** Map the backend manifest payload to the catalog's `DbtFile[]` (files only, 1:1). */
+function toDbtFiles(manifest: BackendDbtManifest): DbtFile[] {
+  return (manifest.files ?? []).map((f) => ({
+    path: f.path,
+    layer: f.layer,
+    ref: f.ref,
+  }));
 }
 
 /** Dependencies the source needs from the app — kept minimal and injected. */
@@ -233,6 +255,20 @@ export function metadataApiSource(
       // rejects (apiGet throws on non-2xx) → the catalog keeps its fixtures.
       const org = await apiGet<BackendOrg>("/api/orgs/me", deps.getToken());
       return toOrgSettings(org);
+    },
+
+    async getDbtFiles(): Promise<DbtFile[]> {
+      // Project-scoped (a per-project dbt manifest), mirroring the lineage/
+      // sessions getters: scope to the injected pid, falling back to the first
+      // project only for the pre-first-paint instant. Resolves the (possibly
+      // empty) file list; rejects only on a fetch/auth error (apiGet throws on
+      // non-2xx → the catalog keeps its fixtures).
+      const pid = await scopedProjectId();
+      const manifest = await apiGet<BackendDbtManifest>(
+        `/api/projects/${encodeURIComponent(pid)}/export/dbt/manifest`,
+        deps.getToken(),
+      );
+      return toDbtFiles(manifest);
     },
 
     async getNodes(): Promise<Record<string, LineageNode>> {

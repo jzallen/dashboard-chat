@@ -123,11 +123,11 @@ export async function createDataCatalog(
   // a stale commit. `undefined` until the first selectProject.
   let currentScopedPid: string | undefined;
 
-  // CONSTRUCTION revalidation — ORG-GLOBAL getters ONLY (projects/org/chatScript/
-  // dbtFiles). The PROJECT-SCOPED getters (currentProject/recents/chats/lineage)
-  // are NOT loaded here: the route is the single source of the current project, so
-  // they load exclusively via selectProject (the project-layout loader). That keeps
-  // one loader of project data — no seed-scope default racing a cold deep-link to a
+  // CONSTRUCTION revalidation — ORG-GLOBAL getters ONLY (projects/org/chatScript).
+  // The PROJECT-SCOPED getters (currentProject/recents/chats/lineage/dbtFiles) are
+  // NOT loaded here: the route is the single source of the current project, so they
+  // load exclusively via selectProject (the project-layout loader). That keeps one
+  // loader of project data — no seed-scope default racing a cold deep-link to a
   // different project. On rejection the seeded fallback value is kept.
   if (primary.getProjects) {
     primary
@@ -147,20 +147,14 @@ export async function createDataCatalog(
       .then((v) => commit({ chatScript: v }))
       .catch(() => {});
   }
-  if (primary.getDbtFiles) {
-    primary
-      .getDbtFiles()
-      .then((v) => commit({ dbtFiles: v }))
-      .catch(() => {});
-  }
   /**
    * Re-run only the PROJECT-SCOPED primary getters (currentProject, the lineage
-   * triple, and the sessions-backed recents/chats) and commit their results,
-   * building a FRESH {@link LineageGraph}. The org-global getters
-   * (getProjects/getOrg/getChatScript/getDbtFiles) are NOT re-run — they don't
-   * change with the scope. recents/chats ARE project-scoped (a project's sessions),
-   * so they re-derive here. Each `.then` is guarded by a captured-pid check so a
-   * superseded switch's late resolution is dropped.
+   * triple, the sessions-backed recents/chats, and the dbt manifest) and commit
+   * their results, building a FRESH {@link LineageGraph}. The org-global getters
+   * (getProjects/getOrg/getChatScript) are NOT re-run — they don't change with the
+   * scope. recents/chats ARE project-scoped (a project's sessions) and dbtFiles is
+   * a per-project manifest, so they re-derive here. Each `.then` is guarded by a
+   * captured-pid check so a superseded switch's late resolution is dropped.
    *
    * Note: because this builds a fresh graph, per-project working mutations
    * (rename/archive/live-add) and cold storage reset on switch — correct, since
@@ -208,6 +202,17 @@ export async function createDataCatalog(
           .then(([n, e, a]) => {
             if (!stillCurrent()) return;
             commit({ graph: LineageGraph.from(n, e, a) });
+          })
+          .catch(() => {}),
+      );
+    }
+    if (primary.getDbtFiles) {
+      tasks.push(
+        primary
+          .getDbtFiles()
+          .then((dbtFiles) => {
+            if (!stillCurrent()) return;
+            commit({ dbtFiles });
           })
           .catch(() => {}),
       );

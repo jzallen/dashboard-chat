@@ -6,9 +6,9 @@ from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.types import AuthUser
-from app.controllers import HTTPController
+from app.controllers import HTTPController, wrap_jsonapi_single
 from app.use_cases.exceptions import DomainException
-from app.use_cases.project import export_dbt_project
+from app.use_cases.project import export_dbt_project, get_dbt_manifest
 
 from .deps import authorize_project_access, get_current_user, use_db_context
 from .schemas import ProjectCreate, ProjectUpdate
@@ -90,6 +90,44 @@ async def export_dbt_project_route(
                     "detail": "An unexpected error occurred.",
                 }
                 return JSONResponse(content=body, status_code=500)
+
+
+@router.get("/{project_id}/export/dbt/manifest")
+async def get_dbt_manifest_route(
+    auth: tuple[AuthUser, dict] = Depends(authorize_project_access),
+):
+    """Return the dbt export manifest (DBTProjectDetails) for a project.
+
+    The browsable file index that backs the dbt export modal. Shares its file plan
+    with the zip download (``GET /api/projects/{id}/export/dbt``) so the manifest
+    can never drift from the archive's contents.
+    """
+    user, project = auth
+    result = await get_dbt_manifest(project["id"], user=user, project=project)
+    match result:
+        case Success(manifest):
+            body = wrap_jsonapi_single(
+                "dbt-manifests",
+                manifest,
+                f"/api/projects/{project['id']}/export/dbt/manifest",
+            )
+            return JSONResponse(content=body, status_code=200)
+        case Failure(error):
+            if isinstance(error, DomainException):
+                body = {
+                    "type": error._type,
+                    "title": error._title,
+                    "status": error._status_code,
+                    "detail": str(error),
+                }
+                return JSONResponse(content=body, status_code=error._status_code)
+            body = {
+                "type": "INTERNAL_SERVER_ERROR",
+                "title": "Internal Server Error",
+                "status": 500,
+                "detail": "An unexpected error occurred.",
+            }
+            return JSONResponse(content=body, status_code=500)
 
 
 @router.post("", status_code=201)

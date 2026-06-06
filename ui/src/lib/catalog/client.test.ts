@@ -6,7 +6,7 @@ import type {
   PartialCatalogSource,
 } from "./dataSources/source";
 import type { Edge, LineageNode } from "./lineage";
-import type { ChatHistoryItem, ProjectSummary } from "./models";
+import type { ChatHistoryItem, DbtFile, ProjectSummary } from "./models";
 
 /**
  * A tiny in-memory complete CatalogSource (the FALLBACK): one source node, one
@@ -472,6 +472,59 @@ describe("createDataCatalog — selectProject (per-project re-scope)", () => {
 
     expect(catalog.listRecents().map((r) => r.title)).toEqual(["p2 chat"]);
     expect(catalog.listChats().map((c) => c.title)).toEqual(["p2 chat"]);
+  });
+
+  it("re-derives dbtFiles for the newly scoped project (the manifest is project-scoped)", async () => {
+    let pid = "p1";
+    const dbtByPid: Record<string, DbtFile[]> = {
+      p1: [{ path: "models/staging/stg_p1.sql", layer: "staging", ref: "stg_p1" }],
+      p2: [{ path: "models/staging/stg_p2.sql", layer: "staging", ref: "stg_p2" }],
+    };
+    const { primary } = scopedPrimary(() => pid);
+    primary.getDbtFiles = () =>
+      new Promise((resolve) => setTimeout(() => resolve(dbtByPid[pid]), 0));
+
+    const catalog = await createDataCatalog(primary, makeSource());
+    await catalog.selectProject("p1"); // the loader scopes the initial project
+    await flush();
+
+    expect(catalog.listDbtFiles().map((f) => f.path)).toEqual([
+      "models/staging/stg_p1.sql",
+    ]);
+
+    pid = "p2";
+    await catalog.selectProject("p2");
+    await flush();
+
+    expect(catalog.listDbtFiles().map((f) => f.path)).toEqual([
+      "models/staging/stg_p2.sql",
+    ]);
+  });
+
+  it("does NOT load dbtFiles at construction — only selectProject does (project-scoped)", async () => {
+    let pid = "p1";
+    const getDbtFiles = vi.fn(
+      () =>
+        Promise.resolve([
+          { path: "models/staging/stg_p1.sql", layer: "staging", ref: "stg_p1" },
+        ]) as Promise<DbtFile[]>,
+    );
+    const { primary } = scopedPrimary(() => pid);
+    primary.getDbtFiles = getDbtFiles;
+
+    const catalog = await createDataCatalog(primary, makeSource());
+    await flush();
+
+    // Construction touched no project-scoped getter — dbtFiles loads with the route.
+    expect(getDbtFiles).not.toHaveBeenCalled();
+
+    pid = "p1";
+    await catalog.selectProject("p1");
+    await flush();
+    expect(getDbtFiles).toHaveBeenCalledTimes(1);
+    expect(catalog.listDbtFiles().map((f) => f.path)).toEqual([
+      "models/staging/stg_p1.sql",
+    ]);
   });
 
   it("re-scope to a project with no sessions yields empty recents + chats (not fixtures)", async () => {

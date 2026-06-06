@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import zipfile
+from collections.abc import Callable
 from io import BytesIO
 from typing import TYPE_CHECKING
 
 from .bootstrap_sql import generate_bootstrap_sql
 from .intermediate import generate_intermediate_sql
 from .macros_sql import generate_macros_sql
+from .manifest import build_dbt_file_plan as build_dbt_file_plan
+from .manifest import report_model_prefix
 from .marts import generate_mart_sql
 from .model_sql import generate_model_sql
 from .naming import deduplicate_names
@@ -17,7 +20,7 @@ from .packages_yml import generate_packages_yml
 from .profiles_yml import generate_profiles_yml
 from .project_yml import generate_project_yml
 from .readme import generate_readme
-from .schema_yml import generate_schema_yml, schema_uses_dbt_utils
+from .schema_yml import generate_schema_yml
 from .sources_yml import generate_sources_yml
 
 if TYPE_CHECKING:
@@ -26,14 +29,14 @@ if TYPE_CHECKING:
     from app.models.view import View
     from app.plugins import PluginRegistry
 
-__all__ = ["generate_dbt_project_zip", "to_snake_case"]
+__all__ = ["build_dbt_file_plan", "generate_dbt_project_zip", "to_snake_case"]
 
 _BUCKET_PLACEHOLDER = "__S3_BUCKET__"
 
 
 def _report_prefix(report_type: str) -> str:
     """Return the dbt model prefix for a report type."""
-    return "fct" if report_type == "fact" else "dim"
+    return report_model_prefix(report_type)
 
 
 def _collect_plugin_macros(plugin_registry: PluginRegistry | None) -> dict[str, dict[str, str]]:
@@ -132,44 +135,50 @@ def generate_dbt_project_zip(
             if ref["id"] not in ref_name_map:
                 raise ExportValidationError(f"Report '{report.name}' references deleted entity with ID '{ref['id']}'")
 
+    # The file plan is the shared source of truth: the manifest endpoint and this
+    # zip both derive their file set from build_dbt_file_plan, so the two cannot
+    # drift. Here we map each planned path to its byte generator and write them.
+    file_plan = build_dbt_file_plan(project, views=views, reports=reports)
+
+    byte_providers: dict[str, Callable[[], str]] = {
+        "dbt_project.yml": lambda: generate_project_yml(project_name_snake),
+        "profiles.yml": lambda: generate_profiles_yml(project_name_snake),
+        "models/staging/sources.yml": lambda: generate_sources_yml(project_name_snake, dataset_pairs),
+        "models/schema.yml": lambda: generate_schema_yml(dataset_pairs, reports=report_pairs),
+        # packages.yml is emitted only when a staging column needs a dbt_utils
+        # macro; build_dbt_file_plan applies the same schema_uses_dbt_utils gate,
+        # so it appears here exactly when the plan includes it. See ADR-019
+        # Phase 2 / roadmap step 02-01.
+        "packages.yml": generate_packages_yml,
+        "macros/custom_functions.sql": generate_macros_sql,
+        "scripts/bootstrap_db.sql": lambda: generate_bootstrap_sql(
+            project_name_snake, dataset_pairs, _BUCKET_PLACEHOLDER
+        ),
+        "README.md": lambda: generate_readme(project.name),
+    }
+    for snake_name, ds in dataset_pairs:
+        byte_providers[f"models/staging/stg_{snake_name}.sql"] = lambda sn=snake_name, dataset=ds: generate_model_sql(
+            project_name_snake, sn, dataset
+        )
+    for snake_name, view in view_pairs:
+        byte_providers[f"models/intermediate/int_{snake_name}.sql"] = lambda sn=snake_name, v=view: (
+            generate_intermediate_sql(sn, v, ref_name_map)
+        )
+    for snake_name, report in report_pairs:
+        prefix = _report_prefix(report.report_type)
+        domain_snake = to_snake_case(report.domain)
+        byte_providers[f"models/marts/{domain_snake}/{prefix}_{snake_name}.sql"] = lambda sn=snake_name, r=report: (
+            generate_mart_sql(sn, r, ref_name_map)
+        )
+
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("dbt_project.yml", generate_project_yml(project_name_snake))
-        zf.writestr("profiles.yml", generate_profiles_yml(project_name_snake))
-        zf.writestr("models/staging/sources.yml", generate_sources_yml(project_name_snake, dataset_pairs))
-        zf.writestr("models/schema.yml", generate_schema_yml(dataset_pairs, reports=report_pairs))
-        # Emit packages.yml only when at least one staging column requires
-        # a dbt_utils macro (i.e., a range constraint exists). Otherwise
-        # the eject-then-test cycle would have to run `dbt deps` for a
-        # no-op install. See ADR-019 Phase 2 / roadmap step 02-01.
-        if schema_uses_dbt_utils(dataset_pairs):
-            zf.writestr("packages.yml", generate_packages_yml())
-        zf.writestr("macros/custom_functions.sql", generate_macros_sql())
-        zf.writestr(
-            "scripts/bootstrap_db.sql",
-            generate_bootstrap_sql(
-                project_name_snake,
-                dataset_pairs,
-                _BUCKET_PLACEHOLDER,
-            ),
-        )
-        zf.writestr("README.md", generate_readme(project.name))
+        for entry in file_plan:
+            zf.writestr(entry["path"], byte_providers[entry["path"]]())
 
-        for snake_name, ds in dataset_pairs:
-            sql = generate_model_sql(project_name_snake, snake_name, ds)
-            zf.writestr(f"models/staging/stg_{snake_name}.sql", sql)
-
-        for snake_name, view in view_pairs:
-            sql = generate_intermediate_sql(snake_name, view, ref_name_map)
-            zf.writestr(f"models/intermediate/int_{snake_name}.sql", sql)
-
-        for snake_name, report in report_pairs:
-            prefix = _report_prefix(report.report_type)
-            domain_snake = to_snake_case(report.domain)
-            sql = generate_mart_sql(snake_name, report, ref_name_map)
-            zf.writestr(f"models/marts/{domain_snake}/{prefix}_{snake_name}.sql", sql)
-
-        # Write plugin-contributed macros
+        # Plugin-contributed macros are a registry concern, not part of the
+        # project file plan (the manifest endpoint has no plugin registry). They
+        # are written in addition to the plan; only the plan is the manifest SSOT.
         plugin_macros = _collect_plugin_macros(plugin_registry)
         for p_name, macros in plugin_macros.items():
             macro_sql = _generate_plugin_macros_sql(p_name, macros)
