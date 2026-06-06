@@ -11,7 +11,7 @@ from app.use_cases.exceptions import DomainException
 from app.use_cases.project import export_dbt_project, get_dbt_manifest
 
 from .deps import authorize_project_access, get_current_user, use_db_context
-from .schemas import ProjectCreate, ProjectUpdate
+from .schemas import AuditEntryCreate, ProjectCreate, ProjectUpdate
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -58,18 +58,41 @@ async def list_project_datasets(
     return JSONResponse(content=body, status_code=status_code)
 
 
-@router.get("/{project_id}/tool-calls")
-async def list_tool_calls_route(
+@router.get("/{project_id}/audit")
+async def list_audit_entries_route(
     auth: tuple[AuthUser, dict] = Depends(authorize_project_access),
 ):
-    """List the project's assistant tool-call audit (backs the UI ``getAudit``).
+    """List the project's assistant-audit entries (backs the UI ``getAudit``).
 
     A flat JSON:API list ordered by ``(node_id, sequence, created_at)``; the UI
     groups by ``node_id``. Each item carries ``tool``/``say``/``tag`` plus the
-    joined ``transform_id``/``enabled`` (present iff the call is transform-type).
+    joined ``transform_id``/``enabled`` (present iff the entry is transform-type).
     """
     user, project = auth
-    body, status_code = await HTTPController.list_tool_calls(project["id"], org_id=user.org_id)
+    body, status_code = await HTTPController.list_audit_entries(project["id"], org_id=user.org_id)
+    return JSONResponse(content=body, status_code=status_code)
+
+
+@router.post("/{project_id}/audit", status_code=201)
+async def create_audit_entry_route(
+    data: AuditEntryCreate,
+    auth: tuple[AuthUser, dict] = Depends(authorize_project_access),
+):
+    """Persist an assistant-audit entry (rich-catalog §2.7 Option A).
+
+    The agent POSTs the full entry after executing a transform tool; the
+    returned ``id`` is then threaded back as ``assistant_audit_entry_id`` on the
+    transform create/patch so the ``Transform`` points UP at this entry (the
+    reversed FK).
+    """
+    user, project = auth
+    body, status_code = await HTTPController.create_audit_entry(
+        project["id"],
+        node_id=data.node_id,
+        node_kind=data.node_kind,
+        payload=data.payload.model_dump(exclude_none=True),
+        org_id=user.org_id,
+    )
     return JSONResponse(content=body, status_code=status_code)
 
 

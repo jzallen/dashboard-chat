@@ -1,9 +1,11 @@
 import { type Tool,tool } from "ai";
 import { z } from "zod";
 
+import { auditTagForOperation } from "../toolCallTags";
 import { CASE_OPERATIONS } from "../types";
 import {
   type Emit,
+  persistToolCall,
   readBackendId,
   requireDatasetId,
   runWithEmit,
@@ -54,6 +56,15 @@ async function dispatchCleaningCall(args: {
   const transform_type = transformTypeFor(operation);
 
   return runWithEmit<{ transform_id: string }>(emit, failedTool, async () => {
+    // Option A (rich-catalog §2.7): persist the assistant tool-call as an audit
+    // entry FIRST so the transform can point UP at it (reversed FK). Best-effort
+    // — a log miss must not abort the transform.
+    const assistant_audit_entry_id = await persistToolCall(ctx, {
+      tool: failedTool,
+      say: `${operation} on ${column}`,
+      tag: auditTagForOperation(operation),
+    });
+
     const raw = await ctx.backend.post(
       `/api/datasets/${guard.datasetId}/transforms`,
       {
@@ -63,6 +74,7 @@ async function dispatchCleaningCall(args: {
             transform_type,
             target_column: column,
             expression_config,
+            ...(assistant_audit_entry_id ? { assistant_audit_entry_id } : {}),
           },
         ],
       },

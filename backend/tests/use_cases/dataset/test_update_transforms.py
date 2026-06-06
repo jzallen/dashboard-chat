@@ -4,10 +4,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories import set_session
-from app.repositories.metadata import TransformRecord
+from app.repositories.metadata import AssistantAuditEntry, TransformRecord
 from app.repositories.outbox.outbox_record import OutboxRecord
 from app.use_cases.dataset import update_transforms
-from tests.uuidv7_fixtures import DATASET_1, TRANSFORM_1, TRANSFORM_2
+from tests.uuidv7_fixtures import AUDIT_ENTRY_1, DATASET_1, ORG_1, PROJECT_1, TRANSFORM_1, TRANSFORM_2
 
 
 @pytest.fixture
@@ -120,6 +120,30 @@ class TestUpdateTransforms:
             "changes": record.payload["changes"],
         }
         assert len(record.payload["changes"]) == 2
+
+    async def test_update_transforms_sets_audit_entry_id_when_provided(self, seeded_db: AsyncSession):
+        """The patch path threads assistant_audit_entry_id onto an existing transform (reversed FK)."""
+        set_session(seeded_db)
+        seeded_db.add(
+            AssistantAuditEntry(
+                id=AUDIT_ENTRY_1,
+                org_id=ORG_1,
+                project_id=PROJECT_1,
+                node_id=DATASET_1,
+                node_kind="dataset",
+                payload={"tool": "trimWhitespace", "say": "Trimmed", "tag": "clean"},
+                sequence=0,
+            )
+        )
+        await seeded_db.commit()
+
+        await update_transforms(
+            dataset_id=DATASET_1,
+            updates=[{"id": TRANSFORM_1, "assistant_audit_entry_id": AUDIT_ENTRY_1}],
+        )
+
+        row = await seeded_db.execute(select(TransformRecord).where(TransformRecord.id == TRANSFORM_1))
+        assert row.scalar_one().assistant_audit_entry_id == AUDIT_ENTRY_1
 
     async def test_update_transforms_when_dataset_missing_returns_failure(self, seeded_db: AsyncSession):
         """update_transforms should return Failure when dataset doesn't exist."""

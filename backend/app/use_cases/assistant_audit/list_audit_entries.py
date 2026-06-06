@@ -1,15 +1,15 @@
-"""List a project's assistant tool-call audit (rich-catalog §2.11).
+"""List a project's assistant-audit entries (rich-catalog §2.11).
 
 The driving port for the audit read that backs the UI's ``getAudit``. It
 verifies the requesting org owns the project, then returns the project's
-``tool_call_records`` LEFT-JOINed to ``transforms`` on the reversed FK, projecting
-each row to the flat audit shape the UI groups by ``node_id``:
+``assistant_audit_entries`` LEFT-JOINed to ``transforms`` on the reversed FK,
+projecting each row to the flat audit shape the UI groups by ``node_id``:
 
     { node_id, node_kind, tool, say, tag, transform_id, enabled }
 
-``tool``/``say``/``tag`` are read from the record's JSON ``payload``;
+``tool``/``say``/``tag`` are read from the entry's JSON ``payload``;
 ``transform_id``/``enabled`` come from the join (present iff a Transform points
-UP at the record → toggleable; ``None`` for log-only calls). Read-only.
+UP at the entry → toggleable; ``None`` for log-only entries). Read-only.
 """
 
 from typing import TYPE_CHECKING, Any
@@ -26,18 +26,18 @@ if TYPE_CHECKING:
 
 @handle_returns
 @with_repositories
-async def list_tool_calls_for_project(
+async def list_audit_entries_for_project(
     project_id: str,
     *,
     org_id: str,
     repositories: "RepositoryContainer",
 ) -> Result[list[dict[str, Any]], str]:
-    """Return the project's tool-call audit rows (org-scoped).
+    """Return the project's assistant-audit rows (org-scoped).
 
     Args:
         project_id: The parent project UUID.
         org_id: The requesting org — both the ownership boundary and the
-            row-level scope on ``tool_call_records.org_id``.
+            row-level scope on ``assistant_audit_entries.org_id``.
 
     Raises:
         ProjectNotFound: If the project does not exist OR is owned by another org
@@ -48,7 +48,7 @@ async def list_tool_calls_for_project(
     if project is None or (project.get("org_id") and project["org_id"] != org_id):
         raise ProjectNotFound(project_id)
 
-    rows = await metadata_repo.list_tool_calls_for_project(project_id, org_id=org_id)
+    rows = await metadata_repo.list_audit_entries_for_project(project_id, org_id=org_id)
     return [_to_audit_row(row) for row in rows]
 
 

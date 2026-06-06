@@ -58,13 +58,13 @@ class TransformRecord(Base):
     # Metadata from NL generation
     nl_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # Reversed FK to the generic tool-call spine (rich-catalog §2.3): the
-    # transform points UP at the ToolCallRecord that produced it. Nullable —
-    # legacy transforms predate tool calls; ON DELETE SET NULL downgrades the
+    # Reversed FK to the generic assistant-audit spine (rich-catalog §2.3): the
+    # transform points UP at the AssistantAuditEntry that produced it. Nullable —
+    # legacy transforms predate audit entries; ON DELETE SET NULL downgrades the
     # transform to "no recorded provenance" rather than deleting it.
-    tool_call_id: Mapped[str | None] = mapped_column(
+    assistant_audit_entry_id: Mapped[str | None] = mapped_column(
         Text,
-        ForeignKey("tool_call_records.id", ondelete="SET NULL"),
+        ForeignKey("assistant_audit_entries.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )

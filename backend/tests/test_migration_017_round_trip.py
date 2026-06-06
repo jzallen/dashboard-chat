@@ -1,4 +1,4 @@
-"""Round-trip test for migration 017 (tool_call_records spine + reversed FK).
+"""Round-trip test for migration 017 (assistant_audit_entries spine + reversed FK).
 
 Runs ``alembic upgrade head`` then ``downgrade -1`` then ``upgrade head`` again
 on a throwaway file-backed SQLite database, asserting the new table, the reversed
@@ -89,17 +89,17 @@ def test_upgrade_creates_spine_and_reversed_fk(db_path: Path, monkeypatch):
     cfg = _alembic_config(db_path, monkeypatch)
     command.upgrade(cfg, "head")
 
-    assert "tool_call_records" in _table_names(db_path)
-    assert "tool_call_id" in _transform_columns(db_path)
+    assert "assistant_audit_entries" in _table_names(db_path)
+    assert "assistant_audit_entry_id" in _transform_columns(db_path)
 
     indexes = _index_names(db_path)
-    assert "ix_tool_call_records_org_id" in indexes
-    assert "ix_tool_call_records_project_id" in indexes
-    assert "ix_tool_call_records_node_id" in indexes
-    assert "ix_transforms_tool_call_id" in indexes
+    assert "ix_assistant_audit_entries_org_id" in indexes
+    assert "ix_assistant_audit_entries_project_id" in indexes
+    assert "ix_assistant_audit_entries_node_id" in indexes
+    assert "ix_transforms_assistant_audit_entry_id" in indexes
 
     fks = _transform_foreign_keys(db_path)
-    assert ("tool_call_records", "tool_call_id", "id", "SET NULL") in fks
+    assert ("assistant_audit_entries", "assistant_audit_entry_id", "id", "SET NULL") in fks
     # The pre-existing CASCADE FK to datasets must survive the batch alter.
     assert ("datasets", "dataset_id", "id", "CASCADE") in fks
 
@@ -109,9 +109,9 @@ def test_downgrade_removes_spine_and_reversed_fk(db_path: Path, monkeypatch):
     command.upgrade(cfg, "head")
     command.downgrade(cfg, DOWN_REVISION)
 
-    assert "tool_call_records" not in _table_names(db_path)
-    assert "tool_call_id" not in _transform_columns(db_path)
-    assert "ix_transforms_tool_call_id" not in _index_names(db_path)
+    assert "assistant_audit_entries" not in _table_names(db_path)
+    assert "assistant_audit_entry_id" not in _transform_columns(db_path)
+    assert "ix_transforms_assistant_audit_entry_id" not in _index_names(db_path)
 
 
 def test_round_trip_is_idempotent(db_path: Path, monkeypatch):
@@ -120,5 +120,5 @@ def test_round_trip_is_idempotent(db_path: Path, monkeypatch):
     command.downgrade(cfg, DOWN_REVISION)
     command.upgrade(cfg, "head")
 
-    assert "tool_call_records" in _table_names(db_path)
-    assert "tool_call_id" in _transform_columns(db_path)
+    assert "assistant_audit_entries" in _table_names(db_path)
+    assert "assistant_audit_entry_id" in _transform_columns(db_path)

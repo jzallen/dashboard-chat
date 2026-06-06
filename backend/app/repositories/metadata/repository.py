@@ -24,6 +24,7 @@ from app.utils.sql_safety import validate_condition_sql
 from ..exceptions import MetadataRepositoryError
 from . import _mappers
 from ._pagination import paginate_by_id, paginate_composite
+from .assistant_audit_entry import AssistantAuditEntry
 from .dataset_record import DatasetRecord
 from .organization_record import OrganizationRecord
 from .project_memory_record import ProjectMemoryRecord
@@ -31,7 +32,6 @@ from .project_record import ProjectRecord
 from .project_repository import ProjectsWithDatasetsQuery
 from .report_record import ReportRecord
 from .session_record import SessionRecord
-from .tool_call_record import ToolCallRecord
 from .transform_record import TransformRecord
 from .view_record import ViewRecord
 
@@ -586,6 +586,9 @@ class MetadataRepository:
             target_column=spec.get("target_column"),
             expression_sql=spec.get("expression_sql"),
             expression_config=spec.get("expression_config"),
+            # Reversed FK (rich-catalog §2.3): optional link UP at the
+            # assistant-audit entry that produced this transform. Omitted by legacy callers.
+            assistant_audit_entry_id=spec.get("assistant_audit_entry_id"),
         )
 
     @handle_repository_exceptions
@@ -647,36 +650,73 @@ class MetadataRepository:
         return True
 
     # -------------------------------------------------------------------------
-    # Tool-call (assistant audit) operations
+    # Assistant audit operations
     # -------------------------------------------------------------------------
 
     @handle_repository_exceptions
-    async def list_tool_calls_for_project(
+    async def create_audit_entry(
+        self,
+        org_id: str,
+        project_id: str,
+        node_id: str,
+        node_kind: str,
+        payload: dict[str, Any],
+        sequence: int = 0,
+    ) -> dict[str, Any]:
+        """Insert an assistant-audit entry (the generic spine, rich-catalog §2.3).
+
+        The ``id`` and ``created_at`` are server-generated. Returns the persisted
+        record as a dict (including the generated ``id``) so the caller can link
+        the reversed FK (``transforms.assistant_audit_entry_id``).
+        """
+        record = AssistantAuditEntry(
+            org_id=org_id,
+            project_id=project_id,
+            node_id=node_id,
+            node_kind=node_kind,
+            payload=payload,
+            sequence=sequence,
+        )
+        self._session.add(record)
+        await self._session.flush()
+        await self._session.refresh(record)
+        return {
+            "id": record.id,
+            "org_id": record.org_id,
+            "project_id": record.project_id,
+            "node_id": record.node_id,
+            "node_kind": record.node_kind,
+            "payload": record.payload,
+            "sequence": record.sequence,
+        }
+
+    @handle_repository_exceptions
+    async def list_audit_entries_for_project(
         self,
         project_id: str,
         org_id: str,
     ) -> list[dict[str, Any]]:
-        """List a project's tool-call audit records, joined to their transform.
+        """List a project's assistant-audit entries, joined to their transform.
 
         LEFT-JOINs ``transforms`` on the reversed FK
-        (``transforms.tool_call_id = tool_call_records.id``) so each row carries
-        the joined ``transform_id`` (present iff a Transform points UP at the
-        record → toggleable) and ``enabled`` (``Transform.status == "enabled"``,
-        ``None`` for log-only calls). ``org_id``-scoped. Ordered by
-        ``(node_id, sequence, created_at)``.
+        (``transforms.assistant_audit_entry_id = assistant_audit_entries.id``) so
+        each row carries the joined ``transform_id`` (present iff a Transform
+        points UP at the entry → toggleable) and ``enabled``
+        (``Transform.status == "enabled"``, ``None`` for log-only entries).
+        ``org_id``-scoped. Ordered by ``(node_id, sequence, created_at)``.
 
         Returns projection dicts: ``{id, node_id, node_kind, payload,
         transform_id, enabled}`` — the use case maps ``payload`` → tool/say/tag.
         """
         query = (
-            select(ToolCallRecord, TransformRecord.id, TransformRecord.status)
-            .outerjoin(TransformRecord, TransformRecord.tool_call_id == ToolCallRecord.id)
-            .where(ToolCallRecord.project_id == project_id)
-            .where(ToolCallRecord.org_id == org_id)
+            select(AssistantAuditEntry, TransformRecord.id, TransformRecord.status)
+            .outerjoin(TransformRecord, TransformRecord.assistant_audit_entry_id == AssistantAuditEntry.id)
+            .where(AssistantAuditEntry.project_id == project_id)
+            .where(AssistantAuditEntry.org_id == org_id)
             .order_by(
-                ToolCallRecord.node_id,
-                ToolCallRecord.sequence,
-                ToolCallRecord.created_at,
+                AssistantAuditEntry.node_id,
+                AssistantAuditEntry.sequence,
+                AssistantAuditEntry.created_at,
             )
         )
         result = await self._session.execute(query)

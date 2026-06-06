@@ -213,7 +213,21 @@ absent. Read-only; no write surface, no `OrgSettings` UI-shape change.
 
 ---
 
-## 2. `ModelToolCall` — back `getAudit` (the substantial one)
+## 2. `AssistantAuditEntry` — back `getAudit` (the substantial one)
+
+> **Naming — the three-layer split (architectural guard `agent/test/chat/acceptance/worker-tool-dispatch.test.ts` AC1.4/K2).**
+> The backend must not adopt agent/chat vocabulary: a structural guard greps
+> `backend/app/**.py` for `\b(groq|sse|tool_call|tool_calls)\b` and asserts ZERO
+> matches. So the concept is named per layer:
+> - **Backend (`backend/app`): `AssistantAuditEntry`** — table `assistant_audit_entries`,
+>   endpoint `/api/projects/{pid}/audit`, reversed FK `transforms.assistant_audit_entry_id`,
+>   use-case package `app/use_cases/assistant_audit`. NO "tool call" vocabulary anywhere.
+> - **Agent (`agent/`): `AssistantToolCall`** — tool-call vocabulary is expected here
+>   (the guard's sanity check requires `agent/lib/chat/` to contain it). The agent records a
+>   tool call by POSTing it to the backend's `/audit` endpoint and threads the returned id
+>   back as `assistant_audit_entry_id` on the transform create.
+> - **UI (`ui/`): `AuditEntry`** with field `auditEntryId` (the backing `AssistantAuditEntry`
+>   id; write target for the future toggle).
 
 ### 2.1 UI target
 
@@ -226,15 +240,15 @@ per-node in `ModelDetail`'s "Assistant changes" panel
 
 ### 2.2 Concept + bounded context
 
-A **`ModelToolCall`** is the persisted log of an assistant tool call made against a
-model/node. The UI audit list is a **projection** of a node's `ModelToolCall[]` →
+A **`AssistantAuditEntry`** is the persisted log of an assistant tool call made against a
+model/node. The UI audit list is a **projection** of a node's `AssistantAuditEntry[]` →
 `AuditEntry[]`. It belongs to the **Org / Project** context (it logs writes against
 that context's datasets/views/reports). It is a **new aggregate** in that context — see
 boundary analysis below.
 
 ### 2.3 Domain model + aggregate boundary
 
-**`ModelToolCall` is its own aggregate** (root entity, value-typed properties — Vernon's
+**`AssistantAuditEntry` is its own aggregate** (root entity, value-typed properties — Vernon's
 ~70% root-only case), referencing other aggregates **by id**:
 
 | Vernon rule | How satisfied |
@@ -247,14 +261,14 @@ boundary analysis below.
 **AMENDMENT (per review) — generic JSON spine + REVERSED FK.** The tool-call record is a
 **generic spine** (scoping columns + a JSON payload of the tool-call content); it carries
 NO per-subtype columns. The FK is **reversed**: `Transform` points UP at the tool-call
-record (`Transform.tool_call_id`), not the other way around. Pattern: a generic
+record (`Transform.assistant_audit_entry_id`), not the other way around. Pattern: a generic
 command/event record + typed "detail" tables that reference it by FK. Future detail
 types (join detail, view-edit detail, …) add their own FK back to the spine — no
 polymorphic table, no wide-nullable table, no `detail_type`/`detail_id` association, FK
 integrity preserved. This supersedes the `transform_id`-on-the-tool-call wording anywhere
 below.
 
-Fields (`tool_call_records`):
+Fields (`assistant_audit_entries`):
 
 | Field | Type | Notes |
 |---|---|---|
@@ -266,16 +280,16 @@ Fields (`tool_call_records`):
 | `payload` | JSON | the variable tool-call content: `{ tool, say, tag, args? }` → maps to `AuditEntry.{tool,say,tag}`. `tag` validated against `AUDIT_TAGS` at the inbound boundary (§2.8). No typed per-tool columns. |
 | `sequence` / `created_at` | int / datetime | ordering within a node's audit list |
 
-**`Transform` gains the FK** (the reversal): add `tool_call_id str \| null` →
-**FK → tool_call_records.id, `ON DELETE SET NULL`**, nullable (legacy transforms predate
+**`Transform` gains the FK** (the reversal): add `assistant_audit_entry_id str \| null` →
+**FK → assistant_audit_entries.id, `ON DELETE SET NULL`**, nullable (legacy transforms predate
 tool calls), indexed. `Transform` otherwise unchanged (`transform_record.py:19-75`, still
 FK to its `Dataset`).
 
 **Relationship summary:**
-`ToolCallRecord (N) ──node_id (id ref)──▶ Dataset|View|Report (1)` and
-`Transform (0..1) ──tool_call_id (FK)──▶ ToolCallRecord (1)`.
+`AssistantAuditEntry (N) ──node_id (id ref)──▶ Dataset|View|Report (1)` and
+`Transform (0..1) ──assistant_audit_entry_id (FK)──▶ AssistantAuditEntry (1)`.
 A tool call is **transform-type (toggleable) iff a `Transform` row references it** — read
-by joining `transforms` to `tool_call_records` on `tool_call_id` (§2.11), not by a column
+by joining `transforms` to `assistant_audit_entries` on `assistant_audit_entry_id` (§2.11), not by a column
 on the spine. Non-transform calls (`createView`, `addJoin`, `addMeasure`, …) simply have
 no `Transform` pointing at them → log-only. Scoping/grouping keys stay typed columns; only
 the variable tool content is JSON (keys-as-columns for cheap tenancy + `node_id` grouping).
@@ -294,7 +308,7 @@ the variable tool content is JSON (keys-as-columns for cheap tenancy + `node_id`
 | `filter` | **yes** | dataset row filters (filter transform) |
 | `create`, `source`, `join`, `grain`, `measure`, `config`, `shape` | **no** | view/report structural ops (`viewTools.ts`, `reportToolDefinitions.ts`) — log-only |
 
-Rule of thumb: **a `ModelToolCall` is transform-type iff it produced a
+Rule of thumb: **a `AssistantAuditEntry` is transform-type iff it produced a
 `TransformRecord`** (dataset cleaning/filter ops). That is the precise, code-anchored
 definition — the `transform_id` is non-null exactly when the agent's tool execution
 created/updated a transform. The tag table above is the *expected* correspondence, but
@@ -322,7 +336,7 @@ export interface AuditEntry {
   tool: string;
   say: string;
   tag: AuditTag;
-  toolCallId?: string;     // the ModelToolCall id (write target)
+  auditEntryId?: string;     // the AssistantAuditEntry id (write target)
   transformId?: string;    // present ⇔ transform-type (toggleable)
   enabled?: boolean;       // current Transform.status === "enabled"; undefined for log-only
 }
@@ -337,9 +351,9 @@ unchanged.
 
 Two options:
 
-- **(A) PATCH the tool-call.** `PATCH /api/projects/{pid}/tool-calls/{id}` with
+- **(A) PATCH the tool-call.** `PATCH /api/projects/{pid}/audit/{id}` with
   `{ enabled }`; the use-case resolves `transform_id` and proxies to the transform
-  status update. **Recommended** — the UI holds a `toolCallId`, the audit projection is
+  status update. **Recommended** — the UI holds a `auditEntryId`, the audit projection is
   the UI's mental model, and the backend owns the tool-call→transform indirection
   (the UI never needs to know the dataset id or transform id).
 - **(B) PATCH the transform directly.** Reuse
@@ -351,17 +365,17 @@ Two options:
 internally.** Use-case:
 
 ```python
-# app/use_cases/tool_call/toggle_tool_call.py
+# app/use_cases/assistant_audit/toggle_audit_entry.py
 @handle_returns
 @with_repositories
-async def toggle_tool_call(tool_call_id: str, enabled: bool, *, user: AuthUser,
+async def toggle_audit_entry(assistant_audit_entry_id: str, enabled: bool, *, user: AuthUser,
                            repositories: "RepositoryContainer") -> ToolCall:
-    tc = await repositories.metadata.get_tool_call(tool_call_id, org_id=user.org_id)
-    if tc is None: raise ToolCallNotFound(tool_call_id)
+    tc = await repositories.metadata.get_audit_entry(assistant_audit_entry_id, org_id=user.org_id)
+    if tc is None: raise AuditEntryNotFound(assistant_audit_entry_id)
     # Reversed FK: find the Transform that points UP at this tool-call record.
-    transform = await repositories.metadata.get_transform_by_tool_call(
-        tool_call_id, org_id=user.org_id)
-    if transform is None: raise ToolCallNotToggleable(tool_call_id)  # nothing references it → log-only
+    transform = await repositories.metadata.get_transform_by_audit_entry(
+        assistant_audit_entry_id, org_id=user.org_id)
+    if transform is None: raise AuditEntryNotToggleable(assistant_audit_entry_id)  # nothing references it → log-only
     status = "enabled" if enabled else "disabled"
     await repositories.metadata.update_transform_status(transform.id, status,
                                                         org_id=user.org_id)
@@ -376,21 +390,21 @@ existing one (`dataset_controller.py:194-195` machinery), reached via `transform
 The agent executes tool calls and already POSTs view/report/transform changes to the
 backend (FE analog `frontend/src/core/toolCalls/viewTools.ts:46-196` PATCHes views via
 the catalog; agent tool defs `agent/lib/chat/tools.ts`,
-`agent/lib/chat/reportToolDefinitions.ts`). **Where does a `ModelToolCall` get
+`agent/lib/chat/reportToolDefinitions.ts`). **Where does a `AssistantAuditEntry` get
 persisted?**
 
 Two options:
 
-- **(A) Dedicated `POST .../tool-calls` the agent calls.** After each successful tool
+- **(A) Dedicated `POST .../audit` the agent calls.** After each successful tool
   execution the agent POSTs `{ node_id, node_kind, tool, say, tag, transform_id? }` to
-  `POST /api/projects/{pid}/tool-calls`.
+  `POST /api/projects/{pid}/audit`.
   - *Pro:* the agent owns the narrative (`say`) and the tag (it knows which tool ran);
     one obvious write site; backend stays dumb.
   - *Con:* couples the agent to a new backend endpoint and to the tag vocabulary; an
     extra round-trip per tool; the agent must thread `transform_id` back from the
     transform-creating call's response.
 - **(B) Backend records its own writes.** Each existing mutation use-case
-  (create-view, create-report, create/update-transform) emits a `ModelToolCall` as a
+  (create-view, create-report, create/update-transform) emits a `AssistantAuditEntry` as a
   side effect within the same transaction.
   - *Pro:* "the backend records its own writes" — no agent coupling, the tool-call and
     the transform are written in **one transaction** (no orphaned/missed log on agent
@@ -406,12 +420,12 @@ Two options:
 `transform_id` linkage, with the agent enriching `say`/`tool`/`tag` via Option A's
 endpoint (upsert).** Concretely:
 
-- The mutation use-cases write a skeletal `ModelToolCall` in-transaction (guarantees the
+- The mutation use-cases write a skeletal `AssistantAuditEntry` in-transaction (guarantees the
   fact + `transform_id` are never lost, no orphaned log on agent crash) with a default
   derived `say`/`tag`.
 - The agent, post-execution, **upserts** the human narrative via
-  `POST /api/projects/{pid}/tool-calls` keyed by the just-created
-  resource (or its returned `tool_call_id`), enriching `say`/`tool`/`tag`.
+  `POST /api/projects/{pid}/audit` keyed by the just-created
+  resource (or its returned `assistant_audit_entry_id`), enriching `say`/`tool`/`tag`.
 
 If the team wants the simplest first cut: **start with pure Option A** (agent POSTs
 the whole record) because it delivers the full-fidelity `say`/`tag` the panel needs and
@@ -444,7 +458,7 @@ The panel pairs each dataset audit line with a transform before/after sample
 `HTTPController.preview_transform`). The UI `Transform.sample`
 (`ui/src/lib/catalog/models.ts:90-98`) is a fixture-only field.
 
-Options: persist on the `Transform`/`ModelToolCall`; compute on demand; or drop
+Options: persist on the `Transform`/`AssistantAuditEntry`; compute on demand; or drop
 before/after from the panel.
 
 **Recommendation: drop the persisted before/after from the audit panel for the
@@ -460,14 +474,14 @@ If a before/after is wanted later, compute it **lazily on hover/expand** via the
 existing preview endpoint for the single transform — an additive UI affordance, not a
 persistence decision. Document as an open question (§7).
 
-### 2.10 Persistence + migration outline (`model_tool_calls`)
+### 2.10 Persistence + migration outline (`assistant_audit_entries`)
 
 ```python
-# migrations/versions/017_add_tool_call_records.py  (down_revision = "016")
+# migrations/versions/017_add_assistant_audit_entries.py  (down_revision = "016")
 def upgrade() -> None:
     # 1) the generic spine — scoping columns + a JSON payload, NO per-subtype columns.
     op.create_table(
-        "tool_call_records",
+        "assistant_audit_entries",
         sa.Column("id", sa.Text(), nullable=False, server_default=sa.text("(uuidv7())")),
         sa.Column("org_id", sa.Text(), nullable=False),
         sa.Column("project_id", sa.Text(), nullable=False),
@@ -479,28 +493,28 @@ def upgrade() -> None:
                   server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("ix_tool_call_records_org_id", "tool_call_records", ["org_id"])   # REQUIRED
-    op.create_index("ix_tool_call_records_project_id", "tool_call_records", ["project_id"])
-    op.create_index("ix_tool_call_records_node_id", "tool_call_records", ["node_id"])
+    op.create_index("ix_assistant_audit_entries_org_id", "assistant_audit_entries", ["org_id"])   # REQUIRED
+    op.create_index("ix_assistant_audit_entries_project_id", "assistant_audit_entries", ["project_id"])
+    op.create_index("ix_assistant_audit_entries_node_id", "assistant_audit_entries", ["node_id"])
 
     # 2) the REVERSED FK — the detail record (Transform) points UP at the spine.
     op.add_column(
         "transforms",
-        sa.Column("tool_call_id", sa.Text(),
-                  sa.ForeignKey("tool_call_records.id", ondelete="SET NULL"), nullable=True),
+        sa.Column("assistant_audit_entry_id", sa.Text(),
+                  sa.ForeignKey("assistant_audit_entries.id", ondelete="SET NULL"), nullable=True),
     )
-    op.create_index("ix_transforms_tool_call_id", "transforms", ["tool_call_id"])
+    op.create_index("ix_transforms_assistant_audit_entry_id", "transforms", ["assistant_audit_entry_id"])
 
 def downgrade() -> None:
-    op.drop_index("ix_transforms_tool_call_id", table_name="transforms")
-    op.drop_column("transforms", "tool_call_id")
-    op.drop_index("ix_tool_call_records_node_id", table_name="tool_call_records")
-    op.drop_index("ix_tool_call_records_project_id", table_name="tool_call_records")
-    op.drop_index("ix_tool_call_records_org_id", table_name="tool_call_records")
-    op.drop_table("tool_call_records")
+    op.drop_index("ix_transforms_assistant_audit_entry_id", table_name="transforms")
+    op.drop_column("transforms", "assistant_audit_entry_id")
+    op.drop_index("ix_assistant_audit_entries_node_id", table_name="assistant_audit_entries")
+    op.drop_index("ix_assistant_audit_entries_project_id", table_name="assistant_audit_entries")
+    op.drop_index("ix_assistant_audit_entries_org_id", table_name="assistant_audit_entries")
+    op.drop_table("assistant_audit_entries")
 ```
 
-- **Reversed FK** `transforms.tool_call_id → tool_call_records.id`, `ON DELETE SET NULL`:
+- **Reversed FK** `transforms.assistant_audit_entry_id → assistant_audit_entries.id`, `ON DELETE SET NULL`:
   the detail points at the spine. `SET NULL` (vs CASCADE) means deleting a tool-call
   record downgrades the transform to "no recorded provenance" rather than deleting the
   transform; nullable because legacy transforms predate tool calls. The spine is never
@@ -513,8 +527,8 @@ def downgrade() -> None:
 
 ### 2.11 Read endpoint (`getAudit` backing)
 
-`GET /api/projects/{pid}/tool-calls` → JSON:API list, ordered by
-`(node_id, sequence, created_at)`. Use-case `list_tool_calls_for_project` (decorator
+`GET /api/projects/{pid}/audit` → JSON:API list, ordered by
+`(node_id, sequence, created_at)`. Use-case `list_audit_entries_for_project` (decorator
 stack, `org_id`-scoped). The controller groups by `node_id` into the
 `Record<nodeId, AuditEntry[]>` shape — or returns a flat list and the
 `metadataApiSource.getAudit` does the grouping (recommended: flat list from the API,
@@ -528,7 +542,7 @@ graph client-side from flat resource lists, `metadataApiSource.ts:121-146`).
   "transform_id": "…", "enabled": true }   // enabled folded in from the joined transform status
 ```
 
-The read use-case **left-joins `transforms ON transforms.tool_call_id = tool_call_records.id`**
+The read use-case **left-joins `transforms ON transforms.assistant_audit_entry_id = assistant_audit_entries.id`**
 (the reversed FK). In the projection, `transform_id` is the joined transform's id —
 **present ⇔ toggleable** — and `enabled` is the joined `Transform.status == "enabled"`
 (for the toggle's initial render). `tool`/`say`/`tag` are read from the record's `payload`
@@ -616,14 +630,14 @@ The seed fixes the write strategy: **optimistic write-through on the custom cata
 (extend the catalog, not adopt TanStack Query). The toggle is the **first** audit/
 transform write through this path. Flow:
 
-1. **Optimistic commit.** A new catalog command `toggleAudit(nodeId, toolCallId,
+1. **Optimistic commit.** A new catalog command `toggleAudit(nodeId, auditEntryId,
    enabled)` flips the `enabled` flag on the matching `AuditEntry` in the snapshot's
    graph (a graph reducer, mirroring the existing mutation commands
    `client.ts:266-280`) and `commit({ graph })` — instant UI feedback. Because the
    audit lives inside the `LineageGraph` aggregate
    (`LineageGraph.from(nodes, edges, audit)`, `client.ts:94,210`), the reducer adds an
-   `withAuditToggled(nodeId, toolCallId, enabled)` method to `LineageGraph`.
-2. **PATCH.** Call `PATCH /api/projects/{pid}/tool-calls/{toolCallId}` (§2.6) via the
+   `withAuditToggled(nodeId, auditEntryId, enabled)` method to `LineageGraph`.
+2. **PATCH.** Call `PATCH /api/projects/{pid}/audit/{auditEntryId}` (§2.6) via the
    injected backend client (`metadataApiSource` deps already inject `getToken` /
    `getProjectId`, `metadataApiSource.ts:60-69`).
 3. **Revalidate the affected dataset's lineage/audit.** On success, re-run the
@@ -648,20 +662,20 @@ doesn't fire a spurious render.
 | Getter | Change |
 |---|---|
 | `getOrg` | implement in `metadataApiSource` (§1.7) |
-| `getAudit` | replace the `{}` stub (`metadataApiSource.ts:202-205`) with a real fetch of `GET /api/projects/{pid}/tool-calls`, grouped by `node_id` (§2.11) |
+| `getAudit` | replace the `{}` stub (`metadataApiSource.ts:202-205`) with a real fetch of `GET /api/projects/{pid}/audit`, grouped by `node_id` (§2.11) |
 | `getDbtFiles` | implement in `metadataApiSource` (§3.4) |
 
-**Type/shape changes:** `AuditEntry` gains `toolCallId?`/`transformId?`/`enabled?`
+**Type/shape changes:** `AuditEntry` gains `auditEntryId?`/`transformId?`/`enabled?`
 (§2.5) in `ui/src/lib/catalog/lineage.ts`; `ModelDetail.tsx:91-109` renders a toggle
 when `transformId` is present; a new `toggleAudit` command + `LineageGraph`
 `withAuditToggled` reducer.
 
 ---
 
-## 5. Agent integration for `ModelToolCall` persistence
+## 5. Agent integration for `AssistantAuditEntry` persistence
 
 - **Hook (recommended primary):** agent POSTs the full record to
-  `POST /api/projects/{pid}/tool-calls` after each successful tool execution
+  `POST /api/projects/{pid}/audit` after each successful tool execution
   (§2.7 Option A as the first cut; hybrid B+A as the hardening step). Rationale: the
   agent is the only place that holds the LLM narrative `say` and knows the exact `tool`
   ran; the transform itself already persists via its own endpoint, so a missed log on
@@ -671,9 +685,9 @@ when `transformId` is present; a new `toggleAudit` command + `LineageGraph`
   a single SSOT is wanted (§2.8). Backend validates `tag` against `AUDIT_TAGS` at the
   inbound boundary.
 - **Linking (reversed FK):** the agent **creates the tool-call record first** (`POST
-  .../tool-calls` → returns `tool_call_id`), then includes that `tool_call_id` in the
+  .../audit` → returns `assistant_audit_entry_id`), then includes that `assistant_audit_entry_id` in the
   transform-creating call (`POST /api/datasets/{id}/transforms` accepts an optional
-  `tool_call_id`), so the `Transform` is written pointing UP at the record. For non-
+  `assistant_audit_entry_id`), so the `Transform` is written pointing UP at the record. For non-
   transform tools nothing points back — the record stands alone (log-only). This ordering
   (spine first, detail second) is the general shape for any future detail type.
 
@@ -691,13 +705,13 @@ when `transformId` is present; a new `toggleAudit` command + `LineageGraph`
 
 **Then the audit write (depends on the agent + the toggle path):**
 
-3. **`ModelToolCall` read** (§2.10–2.11) — table (migration 017) + list endpoint +
+3. **`AssistantAuditEntry` read** (§2.10–2.11) — table (migration 017) + list endpoint +
    `getAudit` real fetch. Read-only; can land before any write.
 4. **Agent persistence hook** (§5) — must land for the audit list to be non-empty in
    real flows. Backend read (#3) must precede it (the agent writes what #3 reads).
 5. **Audit toggle write** (§2.5–2.6, §4) — the toggle endpoint + the catalog
    `toggleAudit` command + `AuditEntry`/`ModelDetail` changes. Depends on #3 (the
-   `toolCallId`/`transformId` must exist in the audit projection).
+   `auditEntryId`/`transformId` must exist in the audit projection).
 
 **Relative to the planned UI write slices** (W1 rename/archive/restore,
 W2 view edits, W3 create):
@@ -727,7 +741,7 @@ W2 view edits, W3 create):
 4. **`members[]` honesty (§1.4).** Self-only list now; real multi-member orgs need a
    membership projection fed by auth-proxy/WorkOS (a future Org↔Auth context
    integration). Stub `plan/seats/usedSeats` likewise await a billing context.
-5. **node-id stability across kinds (§2.3).** `ModelToolCall.node_id` references a
+5. **node-id stability across kinds (§2.3).** `AssistantAuditEntry.node_id` references a
    lineage node whose id namespace spans dataset/view/report; the UI graph keys nodes by
    id (`lineage.ts:99-102`). `node_kind` disambiguates, but if a node is deleted/
    recreated its id changes and the audit orphans. Confirm node-id stability

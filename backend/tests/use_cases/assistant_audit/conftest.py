@@ -1,8 +1,8 @@
-"""Test fixtures for tool-call use cases.
+"""Test fixtures for assistant-audit use cases.
 
 Seeds a project (ORG_1) with a dataset, plus a SECOND project in ORG_OTHER so
-org-scoping is observable. Individual tests add the ``tool_call_records`` and
-``transforms`` rows they need.
+org-scoping is observable. Individual tests add the ``assistant_audit_entries``
+and ``transforms`` rows they need.
 """
 
 import pytest

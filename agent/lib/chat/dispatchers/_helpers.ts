@@ -1,5 +1,7 @@
 import { BackendClientError } from "../backend-client";
 import type { ChatEvent } from "../events";
+import type { AuditTag } from "../toolCallTags";
+import type { DispatchContext } from "./index";
 
 export type Emit = (event: ChatEvent) => void;
 
@@ -75,6 +77,50 @@ export function readBackendId(raw: unknown, syntheticPrefix: string): string {
     }
   }
   return nextSyntheticId(syntheticPrefix);
+}
+
+/** The assistant tool-call the agent records as an audit entry (§2.7). */
+export interface AssistantToolCall {
+  tool: string;
+  say: string;
+  tag: AuditTag;
+}
+
+/**
+ * Persist an assistant tool-call BEFORE the transform write (rich-catalog §2.7
+ * Option A): POST /api/projects/{projectId}/audit and return the created audit
+ * entry's id so the caller can thread it back as `assistant_audit_entry_id` on
+ * the transform create/patch (the reversed FK).
+ *
+ * Provenance is best-effort: a failed POST (or a missing projectId) must NEVER
+ * abort the user's transform. On failure we log and return `undefined` so the
+ * transform proceeds unlinked — design §2.7 accepts a missed log over a failed
+ * mutation. No user-facing error_occurred is emitted.
+ */
+export async function persistToolCall(
+  ctx: DispatchContext,
+  args: AssistantToolCall,
+): Promise<string | undefined> {
+  if (!ctx.projectId || !ctx.datasetId) return undefined;
+  try {
+    const raw = await ctx.backend.post(
+      `/api/projects/${ctx.projectId}/audit`,
+      {
+        node_id: ctx.datasetId,
+        node_kind: "dataset",
+        payload: { tool: args.tool, say: args.say, tag: args.tag },
+      },
+    );
+    const id = readBackendId(raw, "tool-call");
+    return id;
+  } catch (err) {
+    // Best-effort provenance — never fail the transform on a log miss.
+
+    console.warn(
+      `tool-call persistence failed for ${args.tool}: ${errorMessage(err)}`,
+    );
+    return undefined;
+  }
 }
 
 /** Validates the dispatcher has the dataset context it needs. */

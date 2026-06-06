@@ -1,6 +1,10 @@
 """Pydantic schemas."""
 
 # Import dataset first since ProjectWithDatasets references DatasetResponse
+from .assistant_audit import (
+    AuditEntryCreate,
+    AuditEntryPayload,
+)
 from .dataset import (
     DatasetBase,
     DatasetCreate,
@@ -39,6 +43,8 @@ from .session import (
 ProjectResponse.model_rebuild()
 
 __all__ = [
+    "AuditEntryCreate",
+    "AuditEntryPayload",
     "DatasetBase",
     "DatasetCreate",
     "DatasetResponse",

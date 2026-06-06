@@ -118,14 +118,14 @@ function toDbtFiles(manifest: BackendDbtManifest): DbtFile[] {
 }
 
 /**
- * A tool-call audit row as the backend returns it (post envelope-unwrap): the
- * record `id` flattened alongside the snake_case attributes from
- * `GET /api/projects/{pid}/tool-calls`. `tool`/`say`/`tag` come from the
- * record's JSON payload; `transform_id`/`enabled` from the reversed-FK join
- * (`null` for log-only calls). Grouped by `node_id` + mapped to
- * {@link AuditEntry} by {@link toAuditByNode}.
+ * An assistant-audit row as the backend returns it (post envelope-unwrap): the
+ * entry `id` flattened alongside the snake_case attributes from
+ * `GET /api/projects/{pid}/audit`. `tool`/`say`/`tag` come from the entry's JSON
+ * payload; `transform_id`/`enabled` from the reversed-FK join (`null` for
+ * log-only entries). Grouped by `node_id` + mapped to {@link AuditEntry} by
+ * {@link toAuditByNode}.
  */
-interface BackendToolCall {
+interface BackendAuditEntry {
   id: string;
   node_id: string;
   node_kind: string;
@@ -137,22 +137,22 @@ interface BackendToolCall {
 }
 
 /**
- * Fold a flat tool-call list into the `Record<nodeId, AuditEntry[]>` shape the
+ * Fold a flat audit-entry list into the `Record<nodeId, AuditEntry[]>` shape the
  * graph expects, preserving the backend's `(node_id, sequence, created_at)`
  * order within each node. snake_case → camelCase at the boundary.
  */
 function toAuditByNode(
-  toolCalls: BackendToolCall[],
+  entries: BackendAuditEntry[],
 ): Record<string, AuditEntry[]> {
   const byNode: Record<string, AuditEntry[]> = {};
-  for (const call of toolCalls) {
-    (byNode[call.node_id] ??= []).push({
-      tool: call.tool,
-      say: call.say,
-      tag: call.tag,
-      toolCallId: call.id,
-      transformId: call.transform_id,
-      enabled: call.enabled ?? undefined,
+  for (const entry of entries) {
+    (byNode[entry.node_id] ??= []).push({
+      tool: entry.tool,
+      say: entry.say,
+      tag: entry.tag,
+      auditEntryId: entry.id,
+      transformId: entry.transform_id,
+      enabled: entry.enabled ?? undefined,
     });
   }
   return byNode;
@@ -324,19 +324,19 @@ export function metadataApiSource(
     },
 
     async getAudit(): Promise<Record<string, AuditEntry[]>> {
-      // Project-scoped (the assistant tool-call audit), mirroring the lineage/
-      // sessions getters: scope to the injected pid, falling back to the first
-      // project only for the pre-first-paint instant. The backend returns a flat
-      // list ordered by (node_id, sequence, created_at); group it by node_id into
-      // the shape the graph folds per node. Resolves `{}` for an audit-less
-      // project (no throw); rejects only on a fetch/auth error (apiGet throws on
-      // non-2xx → the catalog keeps its fixtures).
+      // Project-scoped (the assistant audit), mirroring the lineage/sessions
+      // getters: scope to the injected pid, falling back to the first project
+      // only for the pre-first-paint instant. The backend returns a flat list
+      // ordered by (node_id, sequence, created_at); group it by node_id into the
+      // shape the graph folds per node. Resolves `{}` for an audit-less project
+      // (no throw); rejects only on a fetch/auth error (apiGet throws on non-2xx
+      // → the catalog keeps its fixtures).
       const pid = await scopedProjectId();
-      const toolCalls = await apiGet<BackendToolCall[]>(
-        `/api/projects/${encodeURIComponent(pid)}/tool-calls`,
+      const entries = await apiGet<BackendAuditEntry[]>(
+        `/api/projects/${encodeURIComponent(pid)}/audit`,
         deps.getToken(),
       );
-      return toAuditByNode(toolCalls);
+      return toAuditByNode(entries);
     },
 
     async getAllChats(): Promise<ChatHistoryItem[]> {

@@ -130,6 +130,10 @@ class TransformCreate(TransformBase):
     target_column: str | None = None
     expression_config: dict[str, Any] | None = None
     expression_sql: str | None = None  # Ignored on create — server-generated
+    # Reversed FK (rich-catalog §2.3): optional link to the assistant-audit entry
+    # that produced this transform. The agent creates the entry first, then passes
+    # its id here so the Transform points UP at it. Omitted by non-agent callers.
+    assistant_audit_entry_id: str | None = None
 
     @model_validator(mode="after")
     def validate_cross_fields(self) -> TransformCreate:
@@ -194,6 +198,7 @@ class TransformUpdateItem(BaseModel):
     status: str | None = None  # 'enabled' | 'disabled' | 'deleted'
     expression_config: dict[str, Any] | None = None
     expression_sql: str | None = None
+    assistant_audit_entry_id: str | None = None  # reversed FK link (rich-catalog §2.3)
 
 
 class TransformBatchUpdate(BaseModel):

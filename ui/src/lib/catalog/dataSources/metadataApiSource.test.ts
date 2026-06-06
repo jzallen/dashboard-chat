@@ -659,14 +659,14 @@ describe("metadataApiSource — project sessions (getRecents/getAllChats)", () =
   });
 });
 
-describe("metadataApiSource — audit (getAudit / tool-calls)", () => {
-  const TOOL_CALLS_P1 = "/api/projects/p1/tool-calls";
+describe("metadataApiSource — audit (getAudit / audit)", () => {
+  const AUDIT_P1 = "/api/projects/p1/audit";
 
-  /** A flat JSON:API list of tool-call audit rows across two nodes. */
-  const TOOL_CALLS_BODY = {
+  /** A flat JSON:API list of assistant-audit rows across two nodes. */
+  const AUDIT_BODY = {
     data: [
       {
-        type: "tool-calls",
+        type: "audit-entries",
         id: "tc1",
         attributes: {
           node_id: "d1",
@@ -679,7 +679,7 @@ describe("metadataApiSource — audit (getAudit / tool-calls)", () => {
         },
       },
       {
-        type: "tool-calls",
+        type: "audit-entries",
         id: "tc2",
         attributes: {
           node_id: "d1",
@@ -692,7 +692,7 @@ describe("metadataApiSource — audit (getAudit / tool-calls)", () => {
         },
       },
       {
-        type: "tool-calls",
+        type: "audit-entries",
         id: "tc3",
         attributes: {
           node_id: "v1",
@@ -707,17 +707,17 @@ describe("metadataApiSource — audit (getAudit / tool-calls)", () => {
     ],
   };
 
-  it("fetches the project-scoped tool-calls and groups them by node_id", async () => {
+  it("fetches the project-scoped audit entries and groups them by node_id", async () => {
     const fetchMock = stubFetch({
       [PROJECTS]: { data: [{ id: "p1", name: "Acme" }] },
-      [TOOL_CALLS_P1]: TOOL_CALLS_BODY,
+      [AUDIT_P1]: AUDIT_BODY,
     });
     const source = metadataApiSource({ getToken: () => "tok" });
 
     const audit = await source.getAudit!();
 
     expect(fetchMock.mock.calls.map((c) => c[0] as string)).toContain(
-      TOOL_CALLS_P1,
+      AUDIT_P1,
     );
     expect(Object.keys(audit).sort()).toEqual(["d1", "v1"]);
     expect(audit.d1).toHaveLength(2);
@@ -727,7 +727,7 @@ describe("metadataApiSource — audit (getAudit / tool-calls)", () => {
   it("maps the payload fields and the joined transform fields onto AuditEntry", async () => {
     stubFetch({
       [PROJECTS]: { data: [{ id: "p1", name: "Acme" }] },
-      [TOOL_CALLS_P1]: TOOL_CALLS_BODY,
+      [AUDIT_P1]: AUDIT_BODY,
     });
     const source = metadataApiSource({ getToken: () => "tok" });
 
@@ -737,7 +737,7 @@ describe("metadataApiSource — audit (getAudit / tool-calls)", () => {
       tool: "trimWhitespace",
       say: "Trimmed whitespace on email",
       tag: "clean",
-      toolCallId: "tc1",
+      auditEntryId: "tc1",
       transformId: "t1",
       enabled: true,
     });
@@ -747,16 +747,16 @@ describe("metadataApiSource — audit (getAudit / tool-calls)", () => {
       tool: "fillNulls",
       say: "Filled nulls in age",
       tag: "fix",
-      toolCallId: "tc2",
+      auditEntryId: "tc2",
       transformId: null,
       enabled: undefined,
     });
   });
 
-  it("scopes the tool-calls URL to the injected project id (p2)", async () => {
+  it("scopes the audit URL to the injected project id (p2)", async () => {
     const fetchMock = stubFetch({
       [PROJECTS]: { data: [{ id: "p1", name: "Acme" }, { id: "p2", name: "Beta" }] },
-      "/api/projects/p2/tool-calls": { data: [] },
+      "/api/projects/p2/audit": { data: [] },
     });
     const source = metadataApiSource({
       getToken: () => "tok",
@@ -764,34 +764,34 @@ describe("metadataApiSource — audit (getAudit / tool-calls)", () => {
     });
     await source.getAudit!();
     const urls = fetchMock.mock.calls.map((c) => c[0] as string);
-    expect(urls).toContain("/api/projects/p2/tool-calls");
-    expect(urls).not.toContain("/api/projects/p1/tool-calls");
+    expect(urls).toContain("/api/projects/p2/audit");
+    expect(urls).not.toContain("/api/projects/p1/audit");
   });
 
-  it("resolves {} when the project has no tool-calls (no throw)", async () => {
+  it("resolves {} when the project has no audit entries (no throw)", async () => {
     stubFetch({
       [PROJECTS]: { data: [{ id: "p1", name: "Acme" }] },
-      [TOOL_CALLS_P1]: { data: [] },
+      [AUDIT_P1]: { data: [] },
     });
     const source = metadataApiSource({ getToken: () => "tok" });
     await expect(source.getAudit!()).resolves.toEqual({});
   });
 
-  it("rejects on a non-2xx tool-calls response (fixtures kept upstream)", async () => {
-    stubFetch({ [TOOL_CALLS_P1]: TOOL_CALLS_BODY }, false);
+  it("rejects on a non-2xx audit response (fixtures kept upstream)", async () => {
+    stubFetch({ [AUDIT_P1]: AUDIT_BODY }, false);
     const source = metadataApiSource({ getToken: () => "tok" });
     await expect(source.getAudit!()).rejects.toThrow();
   });
 
-  it("sends the Bearer token on the tool-calls request", async () => {
+  it("sends the Bearer token on the audit request", async () => {
     const fetchMock = stubFetch({
       [PROJECTS]: { data: [{ id: "p1", name: "Acme" }] },
-      [TOOL_CALLS_P1]: { data: [] },
+      [AUDIT_P1]: { data: [] },
     });
     const source = metadataApiSource({ getToken: () => "secret-token" });
     await source.getAudit!();
     const call = fetchMock.mock.calls.find((c) =>
-      (c[0] as string).endsWith("/tool-calls"),
+      (c[0] as string).endsWith("/audit"),
     ) as unknown as [string, RequestInit];
     expect((call[1].headers as Record<string, string>).Authorization).toBe(
       "Bearer secret-token",
