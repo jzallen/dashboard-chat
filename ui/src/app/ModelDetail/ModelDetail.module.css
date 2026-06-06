@@ -154,6 +154,26 @@
   color: var(--text-400);
   margin-top: 3px;
 }
+/* A disabled transform stays in the trail but reads as inactive — fade the
+   content (not the toggle, which must stay clearly clickable to re-enable). */
+.audDisabled .audIco,
+.audDisabled .audSay,
+.audDisabled .audTag {
+  opacity: 0.4;
+}
+.audDisabledChip {
+  align-self: center;
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-500);
+  background: var(--surface-3);
+  border: 1.5px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
 .audToggle {
   flex: 0 0 auto;
   align-self: center;

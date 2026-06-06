@@ -89,36 +89,47 @@ function AuditPanel({ node }: { node: LineageNode }) {
         Generated from chat — review before exporting to dbt.
       </div>
       <div className="panel-body">
-        {audit.map((a, i) => (
-          <div className={styles.audItem} key={i}>
-            <span className={styles.audIco}>
-              <Icon name={TAG_ICON[a.tag]} />
-            </span>
-            <div style={{ flex: 1 }}>
-              <div className={styles.audSay}>{a.say}</div>
-              {m.kind === "dataset" && samples[i] && (
-                <div className={styles.ba}>
-                  <span className={styles.b}>{String(samples[i].before)}</span>
-                  <span className={styles.ar}>→</span>
-                  <span className={styles.a}>{String(samples[i].after)}</span>
-                </div>
+        {audit.map((a, i) => {
+          // A transform-type entry toggled off stays in the trail but renders
+          // inactive: faded, with a "disabled" chip.
+          const disabled = a.transformId != null && a.enabled === false;
+          return (
+            <div
+              className={`${styles.audItem}${disabled ? " " + styles.audDisabled : ""}`}
+              key={i}
+            >
+              <span className={styles.audIco}>
+                <Icon name={TAG_ICON[a.tag]} />
+              </span>
+              <div style={{ flex: 1 }}>
+                <div className={styles.audSay}>{a.say}</div>
+                {m.kind === "dataset" && samples[i] && (
+                  <div className={styles.ba}>
+                    <span className={styles.b}>{String(samples[i].before)}</span>
+                    <span className={styles.ar}>→</span>
+                    <span className={styles.a}>{String(samples[i].after)}</span>
+                  </div>
+                )}
+              </div>
+              {disabled && (
+                <span className={styles.audDisabledChip}>disabled</span>
               )}
+              {a.transformId != null && a.auditEntryId && (
+                <input
+                  type="checkbox"
+                  role="switch"
+                  className={styles.audToggle}
+                  aria-label={`Toggle ${a.say}`}
+                  checked={a.enabled ?? false}
+                  onChange={() =>
+                    catalog.toggleAudit(node.id, a.auditEntryId!, !a.enabled)
+                  }
+                />
+              )}
+              <span className={styles.audTag}>{a.tag}</span>
             </div>
-            {a.transformId != null && a.auditEntryId && (
-              <input
-                type="checkbox"
-                role="switch"
-                className={styles.audToggle}
-                aria-label={`Toggle ${a.say}`}
-                checked={a.enabled ?? false}
-                onChange={() =>
-                  catalog.toggleAudit(node.id, a.auditEntryId!, !a.enabled)
-                }
-              />
-            )}
-            <span className={styles.audTag}>{a.tag}</span>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

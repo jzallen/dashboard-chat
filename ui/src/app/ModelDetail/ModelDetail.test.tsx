@@ -77,4 +77,33 @@ describe("ModelDetail AuditPanel — transform toggle control", () => {
 
     expect(spy).toHaveBeenCalledWith("d1", "ae-tx", false);
   });
+
+  it("shows a 'disabled' chip for a transform entry that is toggled off", async () => {
+    const base = fixtureFallback();
+    const audit: Record<string, AuditEntry[]> = {
+      d1: [
+        {
+          tool: "trimWhitespace",
+          say: "Trimmed whitespace on email",
+          tag: "clean",
+          auditEntryId: "ae-tx",
+          transformId: "t1",
+          enabled: false,
+        },
+      ],
+    };
+    await installCatalogForTest({}, { ...base, getAudit: () => Promise.resolve(audit) });
+    await act(async () => {
+      await selectProject("proj-1");
+    });
+
+    render(<ModelDetail node={d1Node()} onOpen={vi.fn()} />);
+    await waitFor(() =>
+      expect(screen.getByText("Trimmed whitespace on email")).toBeTruthy(),
+    );
+
+    // The entry stays in the trail but is marked disabled and the toggle is off.
+    expect(screen.getByText("disabled")).toBeTruthy();
+    expect((screen.getByRole("switch") as HTMLInputElement).checked).toBe(false);
+  });
 });
