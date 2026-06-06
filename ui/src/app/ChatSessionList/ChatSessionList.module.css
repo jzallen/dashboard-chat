@@ -1,5 +1,5 @@
-/* All-chats route page — the searchable session list, each row linking back to
-   the model it shaped. Exclusive to AllChats. The Neobrutalist border that the
+/* Chat-session list route page (/chats) — the searchable session list, each row
+   linking back to the model it shaped. Exclusive to ChatSessionList. The Neobrutalist border that the
    global :is() rule forced onto .chat-row / .cr-ic / the search input is baked
    in here via var(--border) (so it reads in both light and dark), and the
    serif-800 weight the global rule gave .chats-title is baked into .chatsTitle.

@@ -1,4 +1,11 @@
-/* Overlay layer: assistant dock + the data-workspace modals. */
+/* Overlay layer: assistant dock + the data-workspace modals. The dock's open
+   state comes from useChat() (the transient context the old useNavigation held);
+   the chat context node is the resolved deep-linked model (off the pathname),
+   and nav requests go through useNavIntents(). */
+import { useLocation, useParams } from "react-router";
+
+import { useChat } from "../../../app/lib/chatContext";
+import { useNavIntents } from "../../../app/lib/nav";
 import type { Edge, LineageNode } from "../../lib/catalog";
 import { AssistantOverlay, TerminalAssistant } from "../Chat";
 import chat from "../Chat/Chat.module.css";
@@ -11,52 +18,68 @@ import type { UploadApi } from "../Upload";
 import { ConfirmArchive, UploadModal } from "../Upload";
 import { catalog } from "../useCatalog";
 import { useTheme } from "./ThemeProvider";
-import type { NavApi } from "./useNavigation";
+
+/** The resolved deep-linked model for the chat context, or null off a resource route. */
+function chatContextNode(
+  pathname: string,
+  params: Record<string, string | undefined>,
+): LineageNode | null {
+  let id: string | undefined;
+  if (pathname.startsWith("/table/")) id = params.datasetId;
+  else if (pathname.startsWith("/view/")) id = params.viewId;
+  else if (pathname.startsWith("/report/")) id = params.reportId;
+  if (!id) return null;
+  return catalog.getNode(id) ?? null;
+}
 
 export function Overlays({
-  nav,
   upload,
   exporter,
   cold,
   createModel,
+  onOpenNode,
 }: {
-  nav: NavApi;
   upload: UploadApi;
   exporter: ExportApi;
   cold: ColdStorageApi;
   createModel: (node: LineageNode, edge: Edge) => void;
+  onOpenNode: (node: LineageNode) => void;
 }) {
-  const { route } = nav;
   const { dark } = useTheme();
-  const chatContext = route.name === "model" ? (route.node ?? null) : null;
+  const { chatOpen, openChat, closeChat } = useChat();
+  const intents = useNavIntents();
+  const location = useLocation();
+  const params = useParams();
+  const onOrg = location.pathname === "/org";
+  const chatContext = chatContextNode(location.pathname, params);
   return (
     <>
-      {!nav.chatOpen && route.name !== "org" && (
+      {!chatOpen && !onOrg && (
         <button
           className={chat.assistantFab}
-          onClick={nav.openChat}
+          onClick={openChat}
           aria-label="Assistant"
         >
           <Icon name="sparkle" size={23} />
         </button>
       )}
-      {nav.chatOpen && <div className={chat.aoScrim} onClick={nav.closeChat} />}
-      {nav.chatOpen &&
+      {chatOpen && <div className={chat.aoScrim} onClick={closeChat} />}
+      {chatOpen &&
         (dark ? (
           <TerminalAssistant
             context={chatContext}
             onCreate={createModel}
-            onClose={nav.closeChat}
-            onOpenNode={nav.openModel}
-            go={nav.go}
+            onClose={closeChat}
+            onOpenNode={onOpenNode}
+            go={intents.go}
           />
         ) : (
           <AssistantOverlay
             context={chatContext}
             onCreate={createModel}
-            onClose={nav.closeChat}
-            onOpenNode={nav.openModel}
-            go={nav.go}
+            onClose={closeChat}
+            onOpenNode={onOpenNode}
+            go={intents.go}
           />
         ))}
       {exporter.open && <ExportDrawer onClose={exporter.closeExport} />}

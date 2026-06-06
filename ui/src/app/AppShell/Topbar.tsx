@@ -1,4 +1,12 @@
-/* Topbar: org badge + breadcrumb + data-action buttons. */
+/* Topbar: org badge + breadcrumb + data-action buttons. Reads location/params
+   off the router (replacing the old route.name/route.node atoms) and emits nav
+   intents via useNavIntents(). The model breadcrumb is guarded: it only renders
+   the ModelPicker once the deep-linked node has resolved (catalog.getNode), so
+   a cold deep-link never crashes on a not-yet-loaded node. */
+import { useLocation, useNavigate, useParams } from "react-router";
+
+import { useNavIntents } from "../../../app/lib/nav";
+import { useProjectId } from "../../../app/lib/useProjectId";
 import type { LineageNode } from "../../lib/catalog";
 import { ModelPicker, ProjectPicker } from "../Breadcrumb";
 import type { ColdStorageApi } from "../ColdStorage";
@@ -6,35 +14,56 @@ import type { ExportApi } from "../Export";
 import { Icon } from "../primitives";
 import type { UploadApi } from "../Upload";
 import { catalog } from "../useCatalog";
-import type { NavApi } from "./useNavigation";
+
+/** True when the pathname is one of the resource-detail routes. */
+function modelIdFromPath(
+  pathname: string,
+  params: Record<string, string | undefined>,
+): string | undefined {
+  if (pathname.startsWith("/table/")) return params.datasetId;
+  if (pathname.startsWith("/view/")) return params.viewId;
+  if (pathname.startsWith("/report/")) return params.reportId;
+  return undefined;
+}
 
 export function Topbar({
-  nav,
   upload,
   exporter,
   cold,
   models,
 }: {
-  nav: NavApi;
   upload: UploadApi;
   exporter: ExportApi;
   cold: ColdStorageApi;
   models: LineageNode[];
 }) {
-  const { route } = nav;
+  const location = useLocation();
+  const params = useParams();
+  const navigate = useNavigate();
+  const intents = useNavIntents();
+  const projectId = useProjectId();
+
+  const projects = catalog.listProjects();
+  const projectName = (
+    projects.find((p) => p.id === projectId) ?? projects[0]
+  )?.name;
+
+  const onOrg = location.pathname === "/org";
+  const onChats = location.pathname === "/chats";
+  const onEngines = location.pathname === "/query-engines";
+  const modelId = modelIdFromPath(location.pathname, params);
+  // Pending guard: the deep-linked node may not be in the catalog yet.
+  const currentNode = modelId ? catalog.getNode(modelId) : undefined;
+
   const coldCount = catalog.listColdStorage().length;
   return (
     <div className="topbar">
       <div className="topbar-inner">
         <div className="breadcrumb">
           <button
-            className={"org-badge-btn" + (route.name === "org" ? " on" : "")}
-            onClick={nav.toggleOrg}
-            title={
-              route.name === "org"
-                ? "Close organization"
-                : "Organization settings"
-            }
+            className={"org-badge-btn" + (onOrg ? " on" : "")}
+            onClick={intents.toggleOrg}
+            title={onOrg ? "Close organization" : "Organization settings"}
           >
             <span className="bd-face bd-d">{catalog.getOrg().name[0]}</span>
             <span className="bd-face bd-x">
@@ -43,34 +72,31 @@ export function Topbar({
           </button>
           <div className="bc-rest">
             <span className="brand-sep">/</span>
-            {route.name === "model" ? (
+            {modelId && currentNode ? (
               <>
-                <button
-                  className="crumb-link"
-                  onClick={() => nav.setRoute({ name: "workspace" })}
-                >
-                  {nav.projectName}
+                <button className="crumb-link" onClick={() => navigate("/")}>
+                  {projectName}
                 </button>
                 <span className="sep">/</span>
                 <ModelPicker
-                  current={route.node!}
+                  current={currentNode}
                   models={models}
-                  onSelect={nav.openModel}
+                  onSelect={intents.openNode}
                 />
               </>
             ) : (
               <>
                 <ProjectPicker
-                  projectId={nav.projectId}
-                  onSelect={nav.selectProject}
+                  projectId={projectId ?? ""}
+                  onSelect={intents.selectProject}
                 />
-                {route.name === "chats" && (
+                {onChats && (
                   <>
                     <span className="sep">/</span>
                     <span className="current">All Chats</span>
                   </>
                 )}
-                {route.name === "engines" && (
+                {onEngines && (
                   <>
                     <span className="sep">/</span>
                     <span className="current">Query Engines</span>
@@ -99,7 +125,7 @@ export function Topbar({
             <button
               className="icon-btn"
               title="Query engines"
-              onClick={() => nav.setRoute({ name: "engines" })}
+              onClick={() => navigate("/query-engines")}
             >
               <Icon name="database" />
             </button>

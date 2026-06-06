@@ -1,15 +1,15 @@
-/* All-chats route page: every session across the project, searchable, each
-   linking back to the model it was shaping. */
+/* Chat-session list route page (user-facing /chats): every session across the
+   project, searchable, each linking back to the model it was shaping. */
 import { useState } from "react";
 
 import { Icon } from "../primitives";
 import { catalog } from "../useCatalog";
-import styles from "./AllChats.module.css";
+import styles from "./ChatSessionList.module.css";
 
 /** A nav request handed back to the app shell. */
 type ChatRoute = { name: string; nodeId?: string | null };
 
-export function AllChats({ go }: { go: (route: ChatRoute) => void }) {
+export function ChatSessionList({ go }: { go: (route: ChatRoute) => void }) {
   const [q, setQ] = useState("");
   const list = catalog
     .listChats()

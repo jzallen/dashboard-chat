@@ -18,10 +18,12 @@ import { useSyncExternalStore } from "react";
 
 import { getToken } from "../auth/tokenStorage";
 import {
+  type CatalogSource,
   createDataCatalog,
   type DataCatalog,
   fixtureSource,
   metadataApiSource,
+  type PartialCatalogSource,
 } from "../lib/catalog";
 
 /**
@@ -44,6 +46,18 @@ export async function initCatalog(): Promise<void> {
     metadataApiSource({ getToken }),
     fixtureSource,
   );
+}
+
+/**
+ * Install a catalog composed from explicit sources — the seam route/nav tests
+ * use to seed a known fixture catalog (and exercise the async deep-link
+ * resolver) without the real backend `metadataApiSource`. Not used by the app.
+ */
+export async function installCatalogForTest(
+  primary: PartialCatalogSource,
+  fallback: CatalogSource,
+): Promise<void> {
+  catalog = await createDataCatalog(primary, fallback);
 }
 
 /** Subscribe a component to catalog mutations; returns the store version. */

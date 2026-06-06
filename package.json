@@ -6,6 +6,7 @@
   "packageManager": "npm@10.8.2",
   "workspaces": [
     "frontend",
+    "ui",
     "agent",
     "auth-proxy",
     "shared/chat",

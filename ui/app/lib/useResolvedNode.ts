@@ -1,0 +1,41 @@
+/* Async deep-link resolver — the crux of the migration.
+
+   A cold deep-link to /view/<backend-uuid> finds catalog.getNode(id) === undefined
+   until SWR revalidation commits. RRv7 loaders can read the snapshot but cannot
+   await the reactive catalog, so resolution lives in the route component, keyed
+   off the catalog version. A bounded timer flips pending→missing so a genuinely
+   absent id surfaces a not-found panel instead of spinning forever. */
+import { useEffect, useMemo, useState } from "react";
+
+import { catalog, useCatalog } from "../../src/app/useCatalog";
+import type { LineageNode } from "../../src/lib/catalog";
+
+/** How long to wait for a node to resolve before declaring it missing. */
+const RESOLVE_TIMEOUT_MS = 8000;
+
+export type ResolvedNode =
+  | { status: "pending"; node?: undefined }
+  | { status: "resolved"; node: LineageNode }
+  | { status: "missing"; node?: undefined };
+
+/**
+ * Resolve a node by id off the reactive catalog. Re-reads on every catalog
+ * commit (the version dep); reports `pending` until the node appears or the
+ * bounded timer elapses, then `missing`.
+ */
+export function useResolvedNode(id: string): ResolvedNode {
+  const version = useCatalog();
+  const node = useMemo(() => catalog.getNode(id), [id, version]);
+  const [timedOut, setTimedOut] = useState(false);
+
+  // Reset the bound whenever the id changes, then arm a fresh timer.
+  useEffect(() => {
+    setTimedOut(false);
+    const timer = setTimeout(() => setTimedOut(true), RESOLVE_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [id]);
+
+  if (node) return { status: "resolved", node };
+  if (timedOut) return { status: "missing" };
+  return { status: "pending" };
+}
