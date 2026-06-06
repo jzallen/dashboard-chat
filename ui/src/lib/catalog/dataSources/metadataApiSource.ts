@@ -32,7 +32,11 @@
  * state is a separate follow-up).
  */
 import type { AuditEntry, Edge, LineageNode } from "../lineage";
-import type { CurrentProject, ProjectSummary } from "../models";
+import type {
+  ChatHistoryItem,
+  CurrentProject,
+  ProjectSummary,
+} from "../models";
 import { apiGet } from "./backendClient";
 import type {
   BackendDataset,
@@ -40,6 +44,8 @@ import type {
   BackendView,
 } from "./lineageMappers";
 import { toLineageGraph } from "./lineageMappers";
+import type { BackendSession } from "./sessionMappers";
+import { toChatHistoryItem } from "./sessionMappers";
 import type { PartialCatalogSource } from "./source";
 
 /** A project resource as the backend returns it (post envelope-unwrap). */
@@ -139,6 +145,27 @@ export function metadataApiSource(
     return bundle;
   };
 
+  // Memoize the project-sessions fetch PER PROJECT (the PROMISE, keyed by the
+  // scoped pid) so getRecents and getAllChats — which client.ts calls separately
+  // — share one round-trip per project, while different projects coexist.
+  const sessionsByPid = new Map<string, Promise<BackendSession[]>>();
+  const fetchSessions = async (): Promise<BackendSession[]> => {
+    const pid = await scopedProjectId();
+    let sessions = sessionsByPid.get(pid);
+    if (!sessions) {
+      sessions = apiGet<BackendSession[]>(
+        `/api/projects/${encodeURIComponent(pid)}/sessions`,
+        deps.getToken(),
+      );
+      sessionsByPid.set(pid, sessions);
+    }
+    return sessions;
+  };
+
+  /** A session's effective recency timestamp (last activity, else creation). */
+  const recencyOf = (session: BackendSession): number =>
+    Date.parse(session.last_active_at ?? session.created_at ?? "") || 0;
+
   return {
     async getProjects(): Promise<ProjectSummary[]> {
       const projects = await fetchProjects();
@@ -175,6 +202,25 @@ export function metadataApiSource(
     async getAudit(): Promise<Record<string, AuditEntry[]>> {
       // No backend audit narrative — resolve empty so the folded audit is clean.
       return {};
+    },
+
+    async getAllChats(): Promise<ChatHistoryItem[]> {
+      // The full first page of the scoped project's sessions, mapped. Resolves []
+      // for a session-less project (no throw); rejects only on a fetch/auth error.
+      const now = Date.now();
+      const sessions = await fetchSessions();
+      return sessions.map((s) => toChatHistoryItem(s, now));
+    },
+
+    async getRecents(): Promise<ChatHistoryItem[]> {
+      // The five most-recent sessions (by last activity, then creation), mapped.
+      // Shares the per-pid sessions fetch with getAllChats.
+      const now = Date.now();
+      const sessions = await fetchSessions();
+      return [...sessions]
+        .sort((a, b) => recencyOf(b) - recencyOf(a))
+        .slice(0, 5)
+        .map((s) => toChatHistoryItem(s, now));
     },
   };
 }

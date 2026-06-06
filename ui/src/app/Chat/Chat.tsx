@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { AuditTag, Edge, LineageNode } from "../../lib/catalog";
 import { Icon, type IconName, LayerDot, TAG_ICON } from "../primitives";
-import { catalog } from "../useCatalog";
+import { catalog, useCatalog } from "../useCatalog";
 import styles from "./Chat.module.css";
 
 /** A nav request handed back to the app shell (e.g. open history or a recent). */
@@ -48,6 +48,8 @@ export function AssistantOverlay({
   onOpenNode,
   go,
 }: ChatDockProps) {
+  // Re-render the recents list when backend sessions land (catalog commit).
+  useCatalog();
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -263,6 +265,8 @@ export function TerminalAssistant({
   onOpenNode,
   go,
 }: ChatDockProps) {
+  // Re-render the recents list when backend sessions land (catalog commit).
+  useCatalog();
   const [lines, setLines] = useState<TermLine[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);

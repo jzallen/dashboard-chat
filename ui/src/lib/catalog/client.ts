@@ -118,9 +118,17 @@ export async function createDataCatalog(
     listeners.forEach((l) => l());
   };
 
-  // REVALIDATE in the background: for each getter the primary implements, commit
-  // its resolved value; on rejection keep the fallback value already seeded.
-  // Lineage getters rebuild the graph (not exercised in slice 1).
+  // The currently-scoped project id, set ONLY by selectProject (the project-layout
+  // loader) and used by the captured-pid guard so a fast A→B→A re-scope can't land
+  // a stale commit. `undefined` until the first selectProject.
+  let currentScopedPid: string | undefined;
+
+  // CONSTRUCTION revalidation — ORG-GLOBAL getters ONLY (projects/org/chatScript/
+  // dbtFiles). The PROJECT-SCOPED getters (currentProject/recents/chats/lineage)
+  // are NOT loaded here: the route is the single source of the current project, so
+  // they load exclusively via selectProject (the project-layout loader). That keeps
+  // one loader of project data — no seed-scope default racing a cold deep-link to a
+  // different project. On rejection the seeded fallback value is kept.
   if (primary.getProjects) {
     primary
       .getProjects()
@@ -131,18 +139,6 @@ export async function createDataCatalog(
     primary
       .getOrg()
       .then((v) => commit({ org: v }))
-      .catch(() => {});
-  }
-  if (primary.getRecents) {
-    primary
-      .getRecents()
-      .then((v) => commit({ recents: v }))
-      .catch(() => {});
-  }
-  if (primary.getAllChats) {
-    primary
-      .getAllChats()
-      .then((v) => commit({ chats: v }))
       .catch(() => {});
   }
   if (primary.getChatScript) {
@@ -157,17 +153,14 @@ export async function createDataCatalog(
       .then((v) => commit({ dbtFiles: v }))
       .catch(() => {});
   }
-  // The currently-scoped project id, used by the captured-pid guard so a fast
-  // A→B→A re-scope can't land a stale commit (a late B `.then` is dropped once
-  // the scope has moved on). `undefined` during construction (no path yet).
-  let currentScopedPid: string | undefined;
-
   /**
-   * Re-run only the PROJECT-SCOPED primary getters (currentProject + the lineage
-   * triple) and commit their results, building a FRESH {@link LineageGraph}. The
-   * org-global getters (getProjects/getOrg/getRecents/getChatScript/getDbtFiles)
-   * are NOT re-run — they don't change with the scope. Each `.then` is guarded
-   * by a captured-pid check so a superseded switch's late resolution is dropped.
+   * Re-run only the PROJECT-SCOPED primary getters (currentProject, the lineage
+   * triple, and the sessions-backed recents/chats) and commit their results,
+   * building a FRESH {@link LineageGraph}. The org-global getters
+   * (getProjects/getOrg/getChatScript/getDbtFiles) are NOT re-run — they don't
+   * change with the scope. recents/chats ARE project-scoped (a project's sessions),
+   * so they re-derive here. Each `.then` is guarded by a captured-pid check so a
+   * superseded switch's late resolution is dropped.
    *
    * Note: because this builds a fresh graph, per-project working mutations
    * (rename/archive/live-add) and cold storage reset on switch — correct, since
@@ -187,6 +180,28 @@ export async function createDataCatalog(
           .catch(() => {}),
       );
     }
+    if (primary.getRecents) {
+      tasks.push(
+        primary
+          .getRecents()
+          .then((recents) => {
+            if (!stillCurrent()) return;
+            commit({ recents });
+          })
+          .catch(() => {}),
+      );
+    }
+    if (primary.getAllChats) {
+      tasks.push(
+        primary
+          .getAllChats()
+          .then((chats) => {
+            if (!stillCurrent()) return;
+            commit({ chats });
+          })
+          .catch(() => {}),
+      );
+    }
     if (primary.getNodes && primary.getEdges && primary.getAudit) {
       tasks.push(
         Promise.all([primary.getNodes(), primary.getEdges(), primary.getAudit()])
@@ -200,26 +215,11 @@ export async function createDataCatalog(
     await Promise.all(tasks);
   };
 
-  // Initial scoped revalidation at construction: pre-path, the primary resolves
-  // the scope from its own default (the first project). getCurrentProject seeds
-  // `currentScopedPid` so the guard has a baseline; if `selectProject` runs first
-  // (the layout loader), it overrides the pid synchronously and these unguarded
-  // construction commits still reflect the seed scope (the loader's guarded
-  // re-scope supersedes them via the version bump).
-  if (primary.getCurrentProject) {
-    primary
-      .getCurrentProject()
-      .then((currentProject) => {
-        currentScopedPid ??= currentProject.id;
-        commit({ currentProject });
-      })
-      .catch(() => {});
-  }
-  if (primary.getNodes && primary.getEdges && primary.getAudit) {
-    Promise.all([primary.getNodes(), primary.getEdges(), primary.getAudit()])
-      .then(([n, e, a]) => commit({ graph: LineageGraph.from(n, e, a) }))
-      .catch(() => {});
-  }
+  // No project-scoped revalidation at construction: the project-layout loader
+  // calls selectProject(params.projectId) for the route's project (and `/`
+  // redirects to /project/:first), so the route is the only thing that loads a
+  // project's currentProject/recents/chats/lineage. Until then the snapshot shows
+  // the seeded fallback (fixtures).
 
   return {
     listProjects: () => snapshot.projects,

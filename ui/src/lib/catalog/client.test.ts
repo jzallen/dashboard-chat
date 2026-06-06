@@ -6,7 +6,7 @@ import type {
   PartialCatalogSource,
 } from "./dataSources/source";
 import type { Edge, LineageNode } from "./lineage";
-import type { ProjectSummary } from "./models";
+import type { ChatHistoryItem, ProjectSummary } from "./models";
 
 /**
  * A tiny in-memory complete CatalogSource (the FALLBACK): one source node, one
@@ -259,6 +259,8 @@ describe("createDataCatalog — stale-while-revalidate (lineage graph)", () => {
 
     const fired = vi.fn();
     catalog.subscribe(fired);
+    // The project-layout loader scopes the project, which loads its lineage.
+    await catalog.selectProject("p1");
     await flush();
 
     // …then the backend graph lands and REPLACES the fixtures.
@@ -281,6 +283,7 @@ describe("createDataCatalog — stale-while-revalidate (lineage graph)", () => {
       getAudit: () => new Promise((resolve) => setTimeout(() => resolve({}), 0)),
     };
     const catalog = await createDataCatalog(primary, makeSource());
+    await catalog.selectProject("p1");
     await flush();
     expect(catalog.listNodes()).toEqual([]);
     expect(catalog.listEdges()).toEqual([]);
@@ -293,6 +296,7 @@ describe("createDataCatalog — stale-while-revalidate (lineage graph)", () => {
       getAudit: () => Promise.resolve({}),
     };
     const catalog = await createDataCatalog(primary, makeSource());
+    await catalog.selectProject("p1");
     await flush();
     expect(catalog.listNodes().map((n) => n.id).sort()).toEqual([
       "mart.revenue",
@@ -361,7 +365,8 @@ describe("createDataCatalog — selectProject (per-project re-scope)", () => {
     let pid = "p1";
     const { primary } = scopedPrimary(() => pid);
     const catalog = await createDataCatalog(primary, makeSource());
-    await flush(); // p1 lands
+    await catalog.selectProject("p1"); // the loader scopes the initial project
+    await flush();
 
     expect(catalog.listNodes().map((n) => n.id)).toEqual(["p1.node"]);
     expect(catalog.getCurrentProject().id).toBe("p1");
@@ -398,6 +403,7 @@ describe("createDataCatalog — selectProject (per-project re-scope)", () => {
     let pid = "p1";
     const { primary } = scopedPrimary(() => pid);
     const catalog = await createDataCatalog(primary, makeSource());
+    await catalog.selectProject("p1");
     await flush();
 
     catalog.renameSource("p1.node", "renamed_in_p1");
@@ -429,6 +435,84 @@ describe("createDataCatalog — selectProject (per-project re-scope)", () => {
     // Re-scope re-runs only the scoped getters — org-global counts unchanged.
     expect(projectsSpy).toHaveBeenCalledTimes(1);
     expect(orgSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-derives recents + chats for the newly scoped project (sessions are project-scoped)", async () => {
+    let pid = "p1";
+    const recentsByPid: Record<string, ChatHistoryItem[]> = {
+      p1: [{ title: "p1 chat", nodeId: "p1.node", when: "1m ago" }],
+      p2: [{ title: "p2 chat", nodeId: null, when: "2m ago" }],
+    };
+    const chatsByPid: Record<string, ChatHistoryItem[]> = {
+      p1: [
+        { title: "p1 chat", nodeId: "p1.node", when: "1m ago" },
+        { title: "p1 older", nodeId: null, when: "1h ago" },
+      ],
+      p2: [{ title: "p2 chat", nodeId: null, when: "2m ago" }],
+    };
+    const { primary } = scopedPrimary(() => pid);
+    primary.getRecents = () =>
+      new Promise((resolve) => setTimeout(() => resolve(recentsByPid[pid]), 0));
+    primary.getAllChats = () =>
+      new Promise((resolve) => setTimeout(() => resolve(chatsByPid[pid]), 0));
+
+    const catalog = await createDataCatalog(primary, makeSource());
+    await catalog.selectProject("p1"); // the loader scopes the initial project
+    await flush();
+
+    expect(catalog.listRecents().map((r) => r.title)).toEqual(["p1 chat"]);
+    expect(catalog.listChats().map((c) => c.title)).toEqual([
+      "p1 chat",
+      "p1 older",
+    ]);
+
+    pid = "p2";
+    await catalog.selectProject("p2");
+    await flush();
+
+    expect(catalog.listRecents().map((r) => r.title)).toEqual(["p2 chat"]);
+    expect(catalog.listChats().map((c) => c.title)).toEqual(["p2 chat"]);
+  });
+
+  it("re-scope to a project with no sessions yields empty recents + chats (not fixtures)", async () => {
+    let pid = "p1";
+    const { primary } = scopedPrimary(() => pid);
+    primary.getRecents = () =>
+      new Promise((resolve) =>
+        setTimeout(
+          () =>
+            resolve(
+              pid === "p1"
+                ? [{ title: "p1 chat", nodeId: null, when: "1m ago" }]
+                : [],
+            ),
+          0,
+        ),
+      );
+    primary.getAllChats = () =>
+      new Promise((resolve) =>
+        setTimeout(
+          () =>
+            resolve(
+              pid === "p1"
+                ? [{ title: "p1 chat", nodeId: null, when: "1m ago" }]
+                : [],
+            ),
+          0,
+        ),
+      );
+
+    const catalog = await createDataCatalog(primary, makeSource());
+    await catalog.selectProject("p1"); // the loader scopes the initial project
+    await flush();
+    expect(catalog.listRecents()).toHaveLength(1);
+
+    pid = "p2";
+    await catalog.selectProject("p2");
+    await flush();
+
+    expect(catalog.listRecents()).toEqual([]);
+    expect(catalog.listChats()).toEqual([]);
   });
 
   it("drops a stale commit from a fast A→B→A switch (captured-pid guard)", async () => {
@@ -481,5 +565,42 @@ describe("createDataCatalog — selectProject (per-project re-scope)", () => {
 
     // The late p2 commit must have been dropped — A's graph stands.
     expect(catalog.listNodes().map((n) => n.id)).toEqual(["p1.node"]);
+  });
+
+  it("construction does NOT eagerly load a project — only selectProject does (no seed-scope race)", async () => {
+    // The route is the single source of the current project: construction loads
+    // ONLY org-global getters, so there's no seed-scope (first-project) default that
+    // could race a cold deep-link to another project. The project's sessions/lineage
+    // load exclusively when the layout loader calls selectProject.
+    const getAllChats = vi.fn(() =>
+      Promise.resolve([{ title: "p2 chat", nodeId: null }] as ChatHistoryItem[]),
+    );
+    const getNodes = vi.fn(() => Promise.resolve({} as Record<string, LineageNode>));
+    const getCurrentProject = vi.fn(() =>
+      Promise.resolve({ id: "p2", name: "P2", description: "" }),
+    );
+    const primary: PartialCatalogSource = {
+      getProjects: () => Promise.resolve([] as unknown as ProjectSummary[]),
+      getCurrentProject,
+      getAllChats,
+      getNodes,
+      getEdges: () => Promise.resolve([]),
+      getAudit: () => Promise.resolve({}),
+    };
+
+    const catalog = await createDataCatalog(primary, makeSource());
+    await flush();
+
+    // Construction touched no project-scoped getter — no eager seed-scope load.
+    expect(getCurrentProject).not.toHaveBeenCalled();
+    expect(getAllChats).not.toHaveBeenCalled();
+    expect(getNodes).not.toHaveBeenCalled();
+
+    // The route loader scopes the project; now (and only now) they load.
+    await catalog.selectProject("p2");
+    await flush();
+    expect(getAllChats).toHaveBeenCalledTimes(1);
+    expect(catalog.listChats().map((c) => c.title)).toEqual(["p2 chat"]);
+    expect(catalog.getCurrentProject().id).toBe("p2");
   });
 });

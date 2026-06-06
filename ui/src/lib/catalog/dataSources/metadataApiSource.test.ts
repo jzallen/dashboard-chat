@@ -365,3 +365,140 @@ describe("metadataApiSource — project-scoped lineage (project-in-path)", () =>
     expect(counts["/api/datasets"]).toBe(2); // p1 once + p2 once, not 3
   });
 });
+
+describe("metadataApiSource — project sessions (getRecents/getAllChats)", () => {
+  const SESSIONS_P1 = "/api/projects/p1/sessions";
+
+  /** Six sessions out of last_active_at order, so sort + top-5 is observable. */
+  const SESSION_ROUTES = {
+    [PROJECTS]: { data: [{ id: "p1", name: "Acme" }] },
+    [SESSIONS_P1]: {
+      data: [
+        {
+          id: "s1",
+          title: "oldest",
+          active_dataset_id: "d1",
+          created_at: "2026-06-01T00:00:00Z",
+          last_active_at: "2026-06-01T00:00:00Z",
+        },
+        {
+          id: "s2",
+          title: "newest",
+          active_dataset_id: null,
+          created_at: "2026-06-02T00:00:00Z",
+          last_active_at: "2026-06-06T00:00:00Z",
+        },
+        {
+          id: "s3",
+          title: "third",
+          active_dataset_id: "d3",
+          created_at: "2026-06-03T00:00:00Z",
+          last_active_at: "2026-06-04T00:00:00Z",
+        },
+        {
+          id: "s4",
+          title: "fourth",
+          active_dataset_id: null,
+          created_at: "2026-06-03T00:00:00Z",
+          last_active_at: "2026-06-05T00:00:00Z",
+        },
+        {
+          id: "s5",
+          title: "fifth",
+          active_dataset_id: null,
+          created_at: "2026-06-03T00:00:00Z",
+          last_active_at: "2026-06-03T00:00:00Z",
+        },
+        {
+          id: "s6",
+          title: "sixth",
+          active_dataset_id: null,
+          created_at: "2026-06-02T00:00:00Z",
+          last_active_at: "2026-06-02T00:00:00Z",
+        },
+      ],
+    },
+  };
+
+  const countPaths = (fetchMock: ReturnType<typeof vi.fn>) => {
+    const counts: Record<string, number> = {};
+    for (const call of fetchMock.mock.calls) {
+      const path = (call[0] as string).split("?")[0];
+      counts[path] = (counts[path] ?? 0) + 1;
+    }
+    return counts;
+  };
+
+  it("getAllChats fetches /api/projects/<pid>/sessions scoped to the injected pid and maps the full list", async () => {
+    const fetchMock = stubFetch(SESSION_ROUTES);
+    const source = metadataApiSource({ getToken: () => "tok" });
+    const chats = await source.getAllChats!();
+
+    const paths = fetchMock.mock.calls.map((c) => (c[0] as string).split("?")[0]);
+    expect(paths).toContain(SESSIONS_P1);
+
+    expect(chats).toHaveLength(6);
+    expect(chats.map((c) => c.title).sort()).toEqual(
+      ["fifth", "fourth", "newest", "oldest", "sixth", "third"].sort(),
+    );
+    // active_dataset_id ?? null mapping carries through.
+    const oldest = chats.find((c) => c.title === "oldest")!;
+    expect(oldest.nodeId).toBe("d1");
+    const newest = chats.find((c) => c.title === "newest")!;
+    expect(newest.nodeId).toBeNull();
+  });
+
+  it("getRecents returns the top-5-by-last_active_at subset in desc order", async () => {
+    stubFetch(SESSION_ROUTES);
+    const source = metadataApiSource({ getToken: () => "tok" });
+    const recents = await source.getRecents!();
+
+    expect(recents).toHaveLength(5);
+    expect(recents.map((r) => r.title)).toEqual([
+      "newest", // 06-06
+      "fourth", // 06-05
+      "third", // 06-04
+      "fifth", // 06-03
+      "sixth", // 06-02
+    ]);
+    // s1 (06-01, the oldest) is dropped past the top-5.
+  });
+
+  it("scopes the sessions URL to the injected project id (p2)", async () => {
+    const fetchMock = stubFetch({
+      [PROJECTS]: { data: [{ id: "p1", name: "Acme" }, { id: "p2", name: "Beta" }] },
+      "/api/projects/p2/sessions": { data: [] },
+    });
+    const source = metadataApiSource({
+      getToken: () => "tok",
+      getProjectId: () => "p2",
+    });
+    await source.getAllChats!();
+    const urls = fetchMock.mock.calls.map((c) => c[0] as string);
+    expect(urls).toContain("/api/projects/p2/sessions");
+    expect(urls).not.toContain("/api/projects/p1/sessions");
+  });
+
+  it("resolves [] on an empty project (no throw)", async () => {
+    stubFetch({
+      [PROJECTS]: { data: [{ id: "p1", name: "Acme" }] },
+      [SESSIONS_P1]: { data: [] },
+    });
+    const source = metadataApiSource({ getToken: () => "tok" });
+    await expect(source.getAllChats!()).resolves.toEqual([]);
+    await expect(source.getRecents!()).resolves.toEqual([]);
+  });
+
+  it("rejects on a non-2xx sessions response", async () => {
+    stubFetch(SESSION_ROUTES, false);
+    const source = metadataApiSource({ getToken: () => "tok" });
+    await expect(source.getAllChats!()).rejects.toThrow();
+  });
+
+  it("getRecents + getAllChats share ONE sessions fetch per pid (memoized)", async () => {
+    const fetchMock = stubFetch(SESSION_ROUTES);
+    const source = metadataApiSource({ getToken: () => "tok" });
+    await Promise.all([source.getRecents!(), source.getAllChats!()]);
+    expect(countPaths(fetchMock)["/api/projects/p1/sessions"]).toBe(1);
+  });
+});

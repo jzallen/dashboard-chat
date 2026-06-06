@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 import { Icon } from "../primitives";
-import { catalog } from "../useCatalog";
+import { catalog, useCatalog } from "../useCatalog";
 import styles from "./ChatSessionList.module.css";
 
 /** A nav request handed back to the app shell. */
@@ -11,6 +11,9 @@ type ChatRoute = { name: string; nodeId?: string | null };
 
 export function ChatSessionList({ go }: { go: (route: ChatRoute) => void }) {
   const [q, setQ] = useState("");
+  // Subscribe to catalog commits so the list re-renders when sessions land from
+  // the backend (getAllChats resolves a beat after first paint).
+  useCatalog();
   const list = catalog
     .listChats()
     .filter((c) =>
