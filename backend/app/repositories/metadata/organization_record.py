@@ -20,18 +20,10 @@ class OrganizationRecord(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     slug: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    region: Mapped[str] = mapped_column(
-        String(64), nullable=False, server_default=text("'us-east-1'")
-    )
-    default_engine: Mapped[str] = mapped_column(
-        String(64), nullable=False, server_default=text("'duckdb'")
-    )
-    default_materialization: Mapped[str] = mapped_column(
-        String(32), nullable=False, server_default=text("'view'")
-    )
-    default_model_prefix: Mapped[str] = mapped_column(
-        String(64), nullable=False, server_default=text("''")
-    )
+    region: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'us-east-1'"))
+    default_engine: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'duckdb'"))
+    default_materialization: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'view'"))
+    default_model_prefix: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("''"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False

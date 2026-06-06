@@ -57,31 +57,21 @@ class TestGetOrganization:
         result = await get_organization(user=TEST_USER_WITH_ORG)
 
         data = result.unwrap()
-        assert data["members"] == [
-            {"name": "Org User", "email": "orguser@example.com", "role": "owner"}
-        ]
+        assert data["members"] == [{"name": "Org User", "email": "orguser@example.com", "role": "owner"}]
         assert data["used_seats"] == 1
 
-    async def test_member_name_falls_back_to_email_when_auth_user_name_missing(
-        self, seeded_db: AsyncSession
-    ):
+    async def test_member_name_falls_back_to_email_when_auth_user_name_missing(self, seeded_db: AsyncSession):
         set_session(seeded_db)
         user = AuthUser(id=USER_3, email="noname@example.com", org_id=ORG_1, name=None)
 
         result = await get_organization(user=user)
 
         data = result.unwrap()
-        assert data["members"] == [
-            {"name": "noname@example.com", "email": "noname@example.com", "role": "owner"}
-        ]
+        assert data["members"] == [{"name": "noname@example.com", "email": "noname@example.com", "role": "owner"}]
 
-    async def test_slug_falls_back_to_slugified_name_when_column_null(
-        self, seeded_db: AsyncSession
-    ):
+    async def test_slug_falls_back_to_slugified_name_when_column_null(self, seeded_db: AsyncSession):
         set_session(seeded_db)
-        user = AuthUser(
-            id=USER_3, email="other@example.com", org_id=ORG_2, name="Other User"
-        )
+        user = AuthUser(id=USER_3, email="other@example.com", org_id=ORG_2, name="Other User")
 
         result = await get_organization(user=user)
 
