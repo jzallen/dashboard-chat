@@ -911,3 +911,54 @@ describe("metadataApiSource — renameModel (optimistic write-through PATCH)", (
     ).rejects.toThrow();
   });
 });
+
+describe("metadataApiSource — archiveModel / restoreModel (soft-delete POST)", () => {
+  /** A fetch stub that succeeds for any URL and records the request init. */
+  function stubPost(ok = true) {
+    const fetchMock = vi.fn(async () => ({
+      ok,
+      status: ok ? 200 : 500,
+      json: async () => ({ data: {} }),
+    }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    return fetchMock;
+  }
+
+  it("archives a dataset via POST /api/datasets/{id}/archive", async () => {
+    const fetchMock = stubPost();
+    const source = metadataApiSource({ getToken: () => "tok" });
+
+    await source.archiveModel!("d1", "dataset");
+
+    const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(call[0]).toBe("/api/datasets/d1/archive");
+    expect(call[1].method).toBe("POST");
+  });
+
+  it("restores a dataset via POST /api/datasets/{id}/restore", async () => {
+    const fetchMock = stubPost();
+    const source = metadataApiSource({ getToken: () => "tok" });
+
+    await source.restoreModel!("d1", "dataset");
+
+    const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(call[0]).toBe("/api/datasets/d1/restore");
+    expect(call[1].method).toBe("POST");
+  });
+
+  it("no-ops (no request) for a non-dataset kind — views/reports have no soft-delete", async () => {
+    const fetchMock = stubPost();
+    const source = metadataApiSource({ getToken: () => "tok" });
+
+    await source.archiveModel!("v1", "view");
+    await source.restoreModel!("r1", "report");
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects on a non-2xx archive response (drives the catalog rollback)", async () => {
+    stubPost(false);
+    const source = metadataApiSource({ getToken: () => "tok" });
+    await expect(source.archiveModel!("d1", "dataset")).rejects.toThrow();
+  });
+});

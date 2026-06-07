@@ -304,12 +304,44 @@ export async function createDataCatalog(
     /** Add a live model node and the edge feeding it (each deduped). */
     addModel: (node: LineageNode, edge: Edge) =>
       commit({ graph: snapshot.graph.addModel(node, edge) }),
-    /** Archive a source: hide it from the graph and record it in cold storage. */
-    archiveSource: (src: LineageNode) =>
-      commit({ graph: snapshot.graph.archive(src.id, Date.now()) }),
-    /** Restore an archived source: bring it back and drop it from cold storage. */
-    restoreSource: (id: string) =>
-      commit({ graph: snapshot.graph.restore(id) }),
+    /**
+     * Archive a node — optimistic write-through. Hide it (→ Cold Storage) for
+     * instant feedback, then POST the soft-delete via `primary.archiveModel`
+     * (datasets only; other kinds no-op server-side); on rejection, restore it.
+     * Source-layer nodes have no backend entity, so they stay local-only.
+     */
+    archiveSource: async (src: LineageNode): Promise<void> => {
+      const archived = snapshot.graph.archive(src.id, Date.now());
+      if (archived === snapshot.graph) return; // absent or already archived
+      commit({ graph: archived });
+
+      const kind = modelKindForLayer(src.layer);
+      if (!primary.archiveModel || kind === undefined) return; // local-only
+      try {
+        await primary.archiveModel(src.id, kind);
+      } catch {
+        commit({ graph: snapshot.graph.restore(src.id) });
+      }
+    },
+    /**
+     * Restore an archived node — optimistic write-through. Bring it back from
+     * Cold Storage, then POST the un-archive via `primary.restoreModel`; on
+     * rejection, re-archive it.
+     */
+    restoreSource: async (id: string): Promise<void> => {
+      const restored = snapshot.graph.restore(id);
+      if (restored === snapshot.graph) return; // nothing archived under that id
+      commit({ graph: restored });
+
+      const node = snapshot.graph.getNode(id);
+      const kind = node ? modelKindForLayer(node.layer) : undefined;
+      if (!primary.restoreModel || kind === undefined) return; // local-only
+      try {
+        await primary.restoreModel(id, kind);
+      } catch {
+        commit({ graph: snapshot.graph.archive(id, Date.now()) });
+      }
+    },
 
     /* ─── write commands (optimistic write-through) ──────────────────────── */
     /**

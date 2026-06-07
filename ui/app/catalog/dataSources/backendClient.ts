@@ -77,3 +77,31 @@ export async function apiPatch(
     throw new Error(`PATCH ${path} failed with status ${response.status}`);
   }
 }
+
+/**
+ * POST `path` with an optional JSON `body`, returning the decoded response. Like
+ * {@link apiPatch}: optional Bearer auth and a throw on any non-2xx so the
+ * write-through can roll back. The body IS returned (unlike PATCH) so callers
+ * that need a server-assigned id (create) can read it; callers that don't
+ * (archive/restore) ignore it.
+ */
+export async function apiPost<T>(
+  path: string,
+  body?: unknown,
+  token?: string | null,
+): Promise<T> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(path, {
+    method: "POST",
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(`POST ${path} failed with status ${response.status}`);
+  }
+  return response.json() as Promise<T>;
+}

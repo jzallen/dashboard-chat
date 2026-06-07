@@ -238,6 +238,87 @@ describe("createDataCatalog — renameSource (optimistic write-through)", () => 
   });
 });
 
+describe("createDataCatalog — archive/restore (optimistic write-through)", () => {
+  /** A primary backing one staging (dataset) node + spy-able archive/restore. */
+  function archivePrimary(opts: {
+    archiveModel?: (id: string, kind: ModelKind) => Promise<void>;
+    restoreModel?: (id: string, kind: ModelKind) => Promise<void>;
+  }): PartialCatalogSource {
+    const nodes: Record<string, LineageNode> = {
+      "ds.1": {
+        id: "ds.1",
+        label: "customers",
+        sub: "staging",
+        layer: "staging",
+        ref: { fields: [] },
+      },
+    };
+    return {
+      getCurrentProject: () =>
+        Promise.resolve({ id: "p1", name: "P1", description: "" }),
+      getNodes: () => Promise.resolve(nodes),
+      getEdges: () => Promise.resolve([]),
+      getAudit: () => Promise.resolve({}),
+      archiveModel: opts.archiveModel,
+      restoreModel: opts.restoreModel,
+    };
+  }
+
+  async function scopedCatalog(primary: PartialCatalogSource) {
+    const catalog = await createDataCatalog(primary, makeSource());
+    await catalog.selectProject("p1");
+    await flush();
+    return catalog;
+  }
+
+  it("archives optimistically (→ cold storage), then calls primary.archiveModel", async () => {
+    const archiveModel = vi.fn().mockResolvedValue(undefined);
+    const catalog = await scopedCatalog(archivePrimary({ archiveModel }));
+
+    const pending = catalog.archiveSource(catalog.getNode("ds.1")!);
+    expect(catalog.getNode("ds.1")).toBeUndefined(); // optimistic, instant
+    expect(catalog.listColdStorage().map((c) => c.id)).toContain("ds.1");
+    expect(archiveModel).toHaveBeenCalledWith("ds.1", "dataset");
+    await pending;
+  });
+
+  it("restores the node when archiveModel rejects", async () => {
+    const archiveModel = vi.fn().mockRejectedValue(new Error("down"));
+    const catalog = await scopedCatalog(archivePrimary({ archiveModel }));
+
+    await catalog.archiveSource(catalog.getNode("ds.1")!);
+    expect(catalog.getNode("ds.1")).toBeDefined(); // rolled back
+    expect(catalog.listColdStorage()).toHaveLength(0);
+  });
+
+  it("restores optimistically, then calls primary.restoreModel", async () => {
+    const archiveModel = vi.fn().mockResolvedValue(undefined);
+    const restoreModel = vi.fn().mockResolvedValue(undefined);
+    const catalog = await scopedCatalog(
+      archivePrimary({ archiveModel, restoreModel }),
+    );
+    await catalog.archiveSource(catalog.getNode("ds.1")!);
+
+    const pending = catalog.restoreSource("ds.1");
+    expect(catalog.getNode("ds.1")).toBeDefined(); // optimistic, instant
+    expect(restoreModel).toHaveBeenCalledWith("ds.1", "dataset");
+    await pending;
+  });
+
+  it("re-archives the node when restoreModel rejects", async () => {
+    const archiveModel = vi.fn().mockResolvedValue(undefined);
+    const restoreModel = vi.fn().mockRejectedValue(new Error("down"));
+    const catalog = await scopedCatalog(
+      archivePrimary({ archiveModel, restoreModel }),
+    );
+    await catalog.archiveSource(catalog.getNode("ds.1")!);
+
+    await catalog.restoreSource("ds.1");
+    expect(catalog.getNode("ds.1")).toBeUndefined(); // re-archived
+    expect(catalog.listColdStorage().map((c) => c.id)).toContain("ds.1");
+  });
+});
+
 describe("createDataCatalog — stale-while-revalidate (primary over fallback)", () => {
   const BACKEND_PROJECTS: ProjectSummary[] = [
     { id: "acme", name: "Acme Warehouse", desc: "real", datasets: 2, models: 0 },

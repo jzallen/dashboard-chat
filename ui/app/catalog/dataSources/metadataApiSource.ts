@@ -46,7 +46,7 @@ import type {
   OrgSettings,
   ProjectSummary,
 } from "../models";
-import { apiGet, apiPatch } from "./backendClient";
+import { apiGet, apiPatch, apiPost } from "./backendClient";
 import type {
   BackendDataset,
   BackendReport,
@@ -403,6 +403,28 @@ export function metadataApiSource(
         `/api/projects/${encodeURIComponent(pid)}/${collection}/${encodeURIComponent(id)}`,
         { name },
         token,
+      );
+    },
+
+    async archiveModel(id: string, kind: ModelKind): Promise<void> {
+      // Only datasets support a restorable soft-delete (archived_at + retention);
+      // views/reports have hard-delete only, so archiving them is left local-only
+      // (no backend op) rather than an irreversible delete. Rejects on a non-2xx
+      // (apiPost throws) so the catalog restores the optimistically-hidden node.
+      if (kind !== "dataset") return;
+      await apiPost(
+        `/api/datasets/${encodeURIComponent(id)}/archive`,
+        undefined,
+        deps.getToken(),
+      );
+    },
+
+    async restoreModel(id: string, kind: ModelKind): Promise<void> {
+      if (kind !== "dataset") return;
+      await apiPost(
+        `/api/datasets/${encodeURIComponent(id)}/restore`,
+        undefined,
+        deps.getToken(),
       );
     },
   };

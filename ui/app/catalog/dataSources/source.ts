@@ -44,6 +44,14 @@ export interface CatalogSource {
    * Source-layer nodes have no backend entity and are never passed here.
    */
   renameModel?(id: string, kind: ModelKind, name: string): Promise<void>;
+  /**
+   * Archive a model-bearing node (soft-delete). Only datasets support archival
+   * (a restorable Cold Storage); the impl no-ops for kinds the backend can't
+   * soft-delete. Rejects on failure so the optimistic archive rolls back.
+   */
+  archiveModel?(id: string, kind: ModelKind): Promise<void>;
+  /** Restore a previously archived model. Mirrors {@link archiveModel}. */
+  restoreModel?(id: string, kind: ModelKind): Promise<void>;
 }
 
 /**
