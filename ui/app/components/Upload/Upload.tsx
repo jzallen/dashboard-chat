@@ -9,9 +9,8 @@ import styles from "./Upload.module.css";
 type UploadView = "browse" | "uploading" | "schema";
 type UploadFile = { name: string; rows: number; when: string; fresh?: boolean };
 type CreateSourcePayload = {
+  file: File | null;
   name: string;
-  schema: FieldDef[] | null;
-  files: { name: string; rows: number; when: string }[];
 };
 
 const uSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -47,7 +46,7 @@ export function UploadModal({
 }: {
   source: LineageNode | null;
   onClose: () => void;
-  onCreateSource: (src: CreateSourcePayload) => void;
+  onCreateSource: (src: CreateSourcePayload) => void | Promise<void>;
   onRename: (id: string, name: string) => void;
   onArchive: (src: LineageNode) => void;
 }) {
@@ -62,6 +61,7 @@ export function UploadModal({
     source ? (source.files ? source.files.map((f) => ({ ...f })) : []) : [],
   );
   const [freshFile, setFreshFile] = useState<string | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [name, setName] = useState(source ? source.label : "");
   const [drag, setDrag] = useState(false);
   const [committed] = useState(existing);
@@ -71,6 +71,7 @@ export function UploadModal({
   async function runUpload(file: File) {
     if (runningRef.current) return;
     runningRef.current = true;
+    setPendingFile(file);
     setView("uploading");
     setLeg(0);
     setPct(0);
@@ -132,11 +133,7 @@ export function UploadModal({
     if (!existing && !committed) {
       const finalName =
         name.trim() || (freshFile || "new_source").replace(/\.[^.]+$/, "");
-      onCreateSource({
-        name: finalName,
-        schema,
-        files: files.map((f) => ({ name: f.name, rows: f.rows, when: f.when })),
-      });
+      onCreateSource({ file: pendingFile, name: finalName });
     }
     onClose();
   }

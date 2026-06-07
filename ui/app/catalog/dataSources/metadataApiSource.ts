@@ -46,7 +46,7 @@ import type {
   OrgSettings,
   ProjectSummary,
 } from "../models";
-import { apiGet, apiPatch, apiPost } from "./backendClient";
+import { apiGet, apiPatch, apiPost, apiUpload } from "./backendClient";
 import type {
   BackendDataset,
   BackendReport,
@@ -274,7 +274,16 @@ export function metadataApiSource(
   const recencyOf = (session: BackendSession): number =>
     Date.parse(session.last_active_at ?? session.created_at ?? "") || 0;
 
+  // Drop the per-project memoized fetches so the next read re-fetches. Called
+  // before a write-triggered revalidation (the only org-global memo, the project
+  // list, is left intact — writes here don't change it).
+  const invalidateScope = (pid: string): void => {
+    lineageBundlesByPid.delete(pid);
+    sessionsByPid.delete(pid);
+  };
+
   return {
+    invalidateScope,
     async getProjects(): Promise<ProjectSummary[]> {
       const projects = await fetchProjects();
       // Resolve even when empty — an empty backend means an empty picker, which
@@ -426,6 +435,23 @@ export function metadataApiSource(
         undefined,
         deps.getToken(),
       );
+    },
+
+    async createDataset(file: File): Promise<{ id: string }> {
+      // One-step multipart upload: the backend writes the raw file to the data
+      // lake (minio), creates the dataset (parquet + schema inference), and
+      // emits the upload outbox event — returning the created dataset. Rejects
+      // on a non-2xx (apiUpload throws) so the caller can surface the failure.
+      const pid = await scopedProjectId();
+      const form = new FormData();
+      form.append("file", file);
+      form.append("project_id", pid);
+      const res = await apiUpload<{ data: { id: string } }>(
+        "/api/uploads",
+        form,
+        deps.getToken(),
+      );
+      return { id: res.data.id };
     },
   };
 }

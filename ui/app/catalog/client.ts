@@ -170,7 +170,13 @@ export async function createDataCatalog(
    * (rename/archive/live-add) and cold storage reset on switch — correct, since
    * they're per-project.
    */
-  const revalidateScoped = async (requestedPid: string): Promise<void> => {
+  const revalidateScoped = async (
+    requestedPid: string,
+    opts?: { fresh?: boolean },
+  ): Promise<void> => {
+    // A write-triggered revalidation must see fresh server state, so drop the
+    // source's per-project cache first. A project SWITCH leaves it cached (SWR).
+    if (opts?.fresh) primary.invalidateScope?.(requestedPid);
     const stillCurrent = () => requestedPid === currentScopedPid;
     const tasks: Promise<void>[] = [];
     if (primary.getCurrentProject) {
@@ -378,9 +384,10 @@ export async function createDataCatalog(
       const requestedPid = currentScopedPid;
       try {
         await primary.toggleAuditEntry(auditEntryId, enabled);
-        // Revalidate only if still on the project the toggle targeted.
+        // Revalidate only if still on the project the toggle targeted; fresh so
+        // the recompiled staging SQL/preview is re-fetched, not served stale.
         if (requestedPid !== undefined && requestedPid === currentScopedPid) {
-          await revalidateScoped(requestedPid);
+          await revalidateScoped(requestedPid, { fresh: true });
         }
       } catch {
         // Roll back the optimistic flip to the prior server value.
@@ -392,6 +399,23 @@ export async function createDataCatalog(
           ),
         });
       }
+    },
+
+    /**
+     * Create a dataset from an uploaded file. Delegates to `primary.createDataset`
+     * (the multipart upload that lands the file in the lake and creates the
+     * dataset), then re-fetches the current project scope so the new dataset
+     * appears in the lineage. Returns the new dataset id, or undefined when no
+     * backend source backs uploads (the fixture fallback). Rejects on a failed
+     * upload so the caller can surface it.
+     */
+    createDataset: async (file: File): Promise<string | undefined> => {
+      if (!primary.createDataset) return undefined;
+      const { id } = await primary.createDataset(file);
+      if (currentScopedPid !== undefined) {
+        await revalidateScoped(currentScopedPid, { fresh: true });
+      }
+      return id;
     },
 
     /* ─── project re-scope (project-in-path) ─────────────────────────────── */

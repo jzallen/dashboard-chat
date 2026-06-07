@@ -319,6 +319,47 @@ describe("createDataCatalog — archive/restore (optimistic write-through)", () 
   });
 });
 
+describe("createDataCatalog — createDataset (upload → revalidate)", () => {
+  it("uploads via the primary, then revalidates so the new dataset appears", async () => {
+    const created: Record<string, LineageNode> = {
+      "ds.new": {
+        id: "ds.new",
+        label: "uploaded",
+        sub: "staging",
+        layer: "staging",
+        ref: { fields: [] },
+      },
+    };
+    let hasNew = false;
+    const createDataset = vi.fn(async () => {
+      hasNew = true;
+      return { id: "ds.new" };
+    });
+    const primary: PartialCatalogSource = {
+      getCurrentProject: () =>
+        Promise.resolve({ id: "p1", name: "P1", description: "" }),
+      getNodes: () => Promise.resolve(hasNew ? created : {}),
+      getEdges: () => Promise.resolve([]),
+      getAudit: () => Promise.resolve({}),
+      createDataset,
+    };
+    const catalog = await createDataCatalog(primary, makeSource());
+    await catalog.selectProject("p1");
+    await flush();
+    expect(catalog.getNode("ds.new")).toBeUndefined(); // not yet uploaded
+
+    const id = await catalog.createDataset({} as File);
+    expect(id).toBe("ds.new");
+    expect(createDataset).toHaveBeenCalled();
+    expect(catalog.getNode("ds.new")).toBeDefined(); // revalidate brought it in
+  });
+
+  it("is a no-op (undefined) when the source backs no uploads", async () => {
+    const catalog = await createDataCatalog({}, makeSource());
+    await expect(catalog.createDataset({} as File)).resolves.toBeUndefined();
+  });
+});
+
 describe("createDataCatalog — stale-while-revalidate (primary over fallback)", () => {
   const BACKEND_PROJECTS: ProjectSummary[] = [
     { id: "acme", name: "Acme Warehouse", desc: "real", datasets: 2, models: 0 },

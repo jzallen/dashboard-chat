@@ -52,6 +52,19 @@ export interface CatalogSource {
   archiveModel?(id: string, kind: ModelKind): Promise<void>;
   /** Restore a previously archived model. Mirrors {@link archiveModel}. */
   restoreModel?(id: string, kind: ModelKind): Promise<void>;
+  /**
+   * Create a dataset by uploading a file (multipart, one step). The active
+   * project scope is the source's own concern. Resolves with the new dataset's
+   * id; rejects on failure.
+   */
+  createDataset?(file: File): Promise<{ id: string }>;
+  /**
+   * Drop any cached per-project reads (e.g. a memoized lineage fetch) so the
+   * next read re-fetches fresh. Called before a write-triggered revalidation so
+   * the new server state is observed, not a stale cache. No-op for sources that
+   * don't cache.
+   */
+  invalidateScope?(projectId: string): void;
 }
 
 /**

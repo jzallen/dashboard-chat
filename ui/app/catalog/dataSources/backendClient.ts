@@ -105,3 +105,23 @@ export async function apiPost<T>(
   }
   return response.json() as Promise<T>;
 }
+
+/**
+ * POST a multipart `FormData` body (file upload), returning the decoded response.
+ * Unlike {@link apiPost} it sets NO Content-Type — the browser must set the
+ * multipart boundary itself. Optional Bearer auth; throws on any non-2xx.
+ */
+export async function apiUpload<T>(
+  path: string,
+  form: FormData,
+  token?: string | null,
+): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(path, { method: "POST", headers, body: form });
+  if (!response.ok) {
+    throw new Error(`POST ${path} failed with status ${response.status}`);
+  }
+  return response.json() as Promise<T>;
+}

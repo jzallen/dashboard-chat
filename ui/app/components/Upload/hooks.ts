@@ -2,14 +2,13 @@
    and the catalog mutations behind creating / renaming / archiving a source. */
 import { useCallback, useState } from "react";
 
-import type { FieldDef, LineageNode } from "../../catalog";
+import type { LineageNode } from "../../catalog";
 import { catalog } from "../useCatalog";
 
-/** The payload the upload modal emits when a brand-new source is created. */
+/** The payload the upload modal emits when a brand-new dataset is created. */
 export type NewSource = {
+  file: File | null;
   name: string;
-  schema: FieldDef[] | null;
-  files: { name: string; rows: number; when: string }[];
 };
 
 /** @param flash - mark a freshly created node so the canvas can pop it. */
@@ -48,25 +47,14 @@ export function useUpload(flash: (id: string) => void) {
     [],
   );
   const createSource = useCallback(
-    (src: NewSource) => {
-      const id =
-        "src." +
-        (src.name || "source")
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "_")
-          .replace(/^_|_$/g, "") +
-        "_" +
-        Math.random().toString(36).slice(2, 5);
-      const node: LineageNode = {
-        id,
-        label: src.name,
-        sub: "source",
-        layer: "source",
-        schema: src.schema ?? undefined,
-        files: src.files,
-      };
-      catalog.addSource(node);
-      flash(id);
+    async (src: NewSource) => {
+      if (!src.file) return;
+      // Real upload: the file lands in the lake (minio) and the backend creates
+      // the dataset; the catalog then re-fetches the scope so it appears. A
+      // user-typed name becomes the dataset's display name.
+      const id = await catalog.createDataset(src.file);
+      if (id && src.name.trim()) await catalog.renameSource(id, src.name.trim());
+      if (id) flash(id);
     },
     [flash],
   );

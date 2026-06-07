@@ -962,3 +962,44 @@ describe("metadataApiSource — archiveModel / restoreModel (soft-delete POST)",
     await expect(source.archiveModel!("d1", "dataset")).rejects.toThrow();
   });
 });
+
+describe("metadataApiSource — createDataset (multipart upload)", () => {
+  it("POSTs a multipart upload (file + project_id) and returns the dataset id", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 201,
+      json: async () => ({ data: { id: "ds.x" } }),
+    }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const source = metadataApiSource({
+      getToken: () => "tok",
+      getProjectId: () => "p1",
+    });
+
+    const file = new Blob(["a,b\n1,2\n"], { type: "text/csv" }) as unknown as File;
+    const res = await source.createDataset!(file);
+
+    expect(res).toEqual({ id: "ds.x" });
+    const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(call[0]).toBe("/api/uploads");
+    expect(call[1].method).toBe("POST");
+    const fd = call[1].body as FormData;
+    expect(fd.get("project_id")).toBe("p1");
+    expect(fd.get("file")).toBeTruthy();
+  });
+
+  it("rejects on a non-2xx upload response", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: false,
+      status: 500,
+      json: async () => ({}),
+    }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const source = metadataApiSource({
+      getToken: () => "tok",
+      getProjectId: () => "p1",
+    });
+    const file = new Blob(["x"]) as unknown as File;
+    await expect(source.createDataset!(file)).rejects.toThrow();
+  });
+});
