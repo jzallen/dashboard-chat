@@ -376,17 +376,35 @@ describe("createDataCatalog — stale-while-revalidate (primary over fallback)",
 
     // Mounts instantly on the fallback…
     expect(catalog.listProjects()).toEqual(FIXTURE_PROJECTS);
-    // …then the primary's resolved value lands as a reactive update.
+    // …then the primary's resolved value lands when the app shell refreshes.
     const fired = vi.fn();
     catalog.subscribe(fired);
-    await flush();
+    await catalog.refreshOrgGlobal();
     expect(catalog.listProjects()).toEqual(BACKEND_PROJECTS);
     expect(fired).toHaveBeenCalled();
   });
 
+  it("does NOT fetch org-global at construction (no pre-auth fetch); refreshOrgGlobal triggers it", async () => {
+    // Regression: construction running getProjects before a token exists 401s and
+    // strands the fixture projects (driving a redirect to a nonexistent project).
+    // Construction must stay quiet; the authenticated app shell triggers the load.
+    const projectsSpy = vi.fn(() => Promise.resolve(BACKEND_PROJECTS));
+    const catalog = await createDataCatalog(
+      { getProjects: projectsSpy },
+      fallbackWithProjects(),
+    );
+    await flush();
+    expect(projectsSpy).not.toHaveBeenCalled();
+    expect(catalog.listProjects()).toEqual(FIXTURE_PROJECTS);
+
+    await catalog.refreshOrgGlobal();
+    expect(projectsSpy).toHaveBeenCalledTimes(1);
+    expect(catalog.listProjects()).toEqual(BACKEND_PROJECTS);
+  });
+
   it("a primary that does not implement a getter keeps the fallback value", async () => {
     const catalog = await createDataCatalog({}, fallbackWithProjects());
-    await flush();
+    await catalog.refreshOrgGlobal();
     expect(catalog.listProjects()).toEqual(FIXTURE_PROJECTS);
   });
 
@@ -395,7 +413,7 @@ describe("createDataCatalog — stale-while-revalidate (primary over fallback)",
       getProjects: () => Promise.reject(new Error("backend down")),
     };
     const catalog = await createDataCatalog(primary, fallbackWithProjects());
-    await flush();
+    await catalog.refreshOrgGlobal();
     expect(catalog.listProjects()).toEqual(FIXTURE_PROJECTS);
   });
 });
@@ -719,9 +737,8 @@ describe("createDataCatalog — selectProject (per-project re-scope)", () => {
     let pid = "p1";
     const { primary, projectsSpy, orgSpy } = scopedPrimary(() => pid);
     const catalog = await createDataCatalog(primary, makeSource());
-    await flush();
-
-    // Construction ran each org-global getter once.
+    // The app shell loads org-global once (construction no longer auto-fetches it).
+    await catalog.refreshOrgGlobal();
     expect(projectsSpy).toHaveBeenCalledTimes(1);
     expect(orgSpy).toHaveBeenCalledTimes(1);
 

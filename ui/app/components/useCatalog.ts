@@ -74,6 +74,16 @@ export function selectProject(projectId: string): Promise<void> {
   return catalog.selectProject(projectId);
 }
 
+/**
+ * Re-fetch the org-global payloads (projects/org/chatScript). The authenticated
+ * app shell calls this on entry so real backend projects replace the fixture
+ * seed before the home redirect picks a project — it must NOT run unauthenticated
+ * (the caller gates on a token), so the login round-trip fires no 401s.
+ */
+export function refreshOrgGlobal(): Promise<void> {
+  return catalog.refreshOrgGlobal();
+}
+
 /** The scoped pid the test seam exposes so a primary can read it (mirrors the
  * production `getProjectId` injection). Tests that drive `selectProject` will
  * have this updated; primaries that ignore scope can disregard it. */

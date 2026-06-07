@@ -136,30 +136,45 @@ export async function createDataCatalog(
   // a stale commit. `undefined` until the first selectProject.
   let currentScopedPid: string | undefined;
 
-  // CONSTRUCTION revalidation — ORG-GLOBAL getters ONLY (projects/org/chatScript).
-  // The PROJECT-SCOPED getters (currentProject/recents/chats/lineage/dbtFiles) are
-  // NOT loaded here: the route is the single source of the current project, so they
-  // load exclusively via selectProject (the project-layout loader). That keeps one
-  // loader of project data — no seed-scope default racing a cold deep-link to a
-  // different project. On rejection the seeded fallback value is kept.
-  if (primary.getProjects) {
-    primary
-      .getProjects()
-      .then((v) => commit({ projects: v }))
-      .catch((err) => log.warn("read.projects.failed", { err: String(err) }));
-  }
-  if (primary.getOrg) {
-    primary
-      .getOrg()
-      .then((v) => commit({ org: v }))
-      .catch((err) => log.warn("read.org.failed", { err: String(err) }));
-  }
-  if (primary.getChatScript) {
-    primary
-      .getChatScript()
-      .then((v) => commit({ chatScript: v }))
-      .catch((err) => log.warn("read.chatScript.failed", { err: String(err) }));
-  }
+  // Org-global revalidation (projects/org/chatScript). NOT run at construction:
+  // the authenticated app shell triggers it via refreshOrgGlobal() once a token
+  // exists, so no unauthenticated fetch fires during the login round-trip (which
+  // would 401, and leave the fixture projects driving a redirect to a project the
+  // backend doesn't have). The project-scoped getters load separately via
+  // selectProject (the project-layout loader). On rejection the seeded fallback
+  // value is kept.
+  const revalidateOrgGlobal = async (): Promise<void> => {
+    const tasks: Promise<void>[] = [];
+    if (primary.getProjects) {
+      tasks.push(
+        primary
+          .getProjects()
+          .then((v) => commit({ projects: v }))
+          .catch((err) =>
+            log.warn("read.projects.failed", { err: String(err) }),
+          ),
+      );
+    }
+    if (primary.getOrg) {
+      tasks.push(
+        primary
+          .getOrg()
+          .then((v) => commit({ org: v }))
+          .catch((err) => log.warn("read.org.failed", { err: String(err) })),
+      );
+    }
+    if (primary.getChatScript) {
+      tasks.push(
+        primary
+          .getChatScript()
+          .then((v) => commit({ chatScript: v }))
+          .catch((err) =>
+            log.warn("read.chatScript.failed", { err: String(err) }),
+          ),
+      );
+    }
+    await Promise.all(tasks);
+  };
   /**
    * Re-run only the PROJECT-SCOPED primary getters (currentProject, the lineage
    * triple, the sessions-backed recents/chats, and the dbt manifest) and commit
@@ -470,6 +485,14 @@ export async function createDataCatalog(
         throw err;
       }
     },
+
+    /**
+     * Re-fetch the org-global payloads (projects/org/chatScript). Called by the
+     * authenticated app shell on entry so real projects replace the fixture seed
+     * before any redirect decision. Resolves once all settle (rejections keep the
+     * fallback). Safe to call repeatedly.
+     */
+    refreshOrgGlobal: (): Promise<void> => revalidateOrgGlobal(),
 
     /* ─── project re-scope (project-in-path) ─────────────────────────────── */
     /**

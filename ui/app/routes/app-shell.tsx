@@ -18,9 +18,23 @@ import { useColdStorage } from "../components/ColdStorage";
 import { useExport } from "../components/Export";
 import { useFlashedNode } from "../components/FlashedNodeProvider";
 import { useUpload } from "../components/Upload";
-import { catalog, useCatalog } from "../components/useCatalog";
+import { catalog, refreshOrgGlobal, useCatalog } from "../components/useCatalog";
 import { ChatProvider } from "../lib/chatContext";
 import { useNavIntents } from "../lib/nav";
+
+// The first authenticated entry point: fetch the real org-global payloads
+// (projects/org) so they replace the fixture seed before any child route (the
+// home redirect, the project layout) reads them. Gated on a token so it never
+// fires during the unauthenticated login round-trip. Runs once — shouldRevalidate
+// returns false (org-global data doesn't change with navigation).
+export async function clientLoader() {
+  if (getToken()) await refreshOrgGlobal();
+  return null;
+}
+
+export function shouldRevalidate() {
+  return false;
+}
 
 /* ─── the chrome (inside the chat context, so nav intents can open the dock) ─── */
 
