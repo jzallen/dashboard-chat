@@ -53,6 +53,14 @@ export async function clientLoader() {
   return null;
 }
 
+// A one-time bootstrap — never re-run on navigation. Without this, RRv7 would
+// revalidate this loader on every navigation (including `?view=` toggles), and
+// re-running initCatalog would rebuild the catalog from the fixture seed without
+// re-scoping it to the path project, surfacing fallback data.
+export function shouldRevalidate() {
+  return false;
+}
+
 // Render nothing while the catalog composes.
 export function HydrateFallback() {
   return null;

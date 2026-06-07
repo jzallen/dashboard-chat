@@ -52,6 +52,10 @@ let scopedProjectId: string | undefined;
  * router-decoupled.
  */
 export async function initCatalog(): Promise<void> {
+  // Idempotent: the catalog is a one-time session bootstrap. Reassigning it
+  // mid-session would rebuild from the fixture seed and drop the live scope,
+  // working state, and subscriptions — so a second call is a no-op.
+  if (catalog) return;
   catalog = await createDataCatalog(
     metadataApiSource({ getToken, getProjectId: () => scopedProjectId }),
     fixtureSource,
