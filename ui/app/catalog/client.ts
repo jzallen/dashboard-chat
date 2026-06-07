@@ -29,6 +29,7 @@
  * `Date.now()` is injected into `archive` here — the wall clock lives in this
  * adapter shell, never in the pure graph reducer.
  */
+import { createLogger } from "../lib/log";
 import type {
   CatalogSource,
   PartialCatalogSource,
@@ -54,6 +55,8 @@ import type {
  * intermediate→view, mart→report). `undefined` for source nodes, which have no
  * backend entity and stay local-only on write.
  */
+const log = createLogger("catalog");
+
 const modelKindForLayer = (layer: Layer): ModelKind | undefined =>
   ({ staging: "dataset", intermediate: "view", mart: "report" } as const)[
     layer as "staging" | "intermediate" | "mart"
@@ -143,19 +146,19 @@ export async function createDataCatalog(
     primary
       .getProjects()
       .then((v) => commit({ projects: v }))
-      .catch(() => {});
+      .catch((err) => log.warn("read.projects.failed", { err: String(err) }));
   }
   if (primary.getOrg) {
     primary
       .getOrg()
       .then((v) => commit({ org: v }))
-      .catch(() => {});
+      .catch((err) => log.warn("read.org.failed", { err: String(err) }));
   }
   if (primary.getChatScript) {
     primary
       .getChatScript()
       .then((v) => commit({ chatScript: v }))
-      .catch(() => {});
+      .catch((err) => log.warn("read.chatScript.failed", { err: String(err) }));
   }
   /**
    * Re-run only the PROJECT-SCOPED primary getters (currentProject, the lineage
@@ -187,7 +190,12 @@ export async function createDataCatalog(
             if (!stillCurrent()) return;
             commit({ currentProject });
           })
-          .catch(() => {}),
+          .catch((err) =>
+            log.warn("read.currentProject.failed", {
+              pid: requestedPid,
+              err: String(err),
+            }),
+          ),
       );
     }
     if (primary.getRecents) {
@@ -198,7 +206,12 @@ export async function createDataCatalog(
             if (!stillCurrent()) return;
             commit({ recents });
           })
-          .catch(() => {}),
+          .catch((err) =>
+            log.warn("read.recents.failed", {
+              pid: requestedPid,
+              err: String(err),
+            }),
+          ),
       );
     }
     if (primary.getAllChats) {
@@ -209,7 +222,12 @@ export async function createDataCatalog(
             if (!stillCurrent()) return;
             commit({ chats });
           })
-          .catch(() => {}),
+          .catch((err) =>
+            log.warn("read.chats.failed", {
+              pid: requestedPid,
+              err: String(err),
+            }),
+          ),
       );
     }
     if (primary.getNodes && primary.getEdges && primary.getAudit) {
@@ -219,7 +237,12 @@ export async function createDataCatalog(
             if (!stillCurrent()) return;
             commit({ graph: LineageGraph.from(n, e, a) });
           })
-          .catch(() => {}),
+          .catch((err) =>
+            log.warn("read.lineage.failed", {
+              pid: requestedPid,
+              err: String(err),
+            }),
+          ),
       );
     }
     if (primary.getDbtFiles) {
@@ -230,7 +253,12 @@ export async function createDataCatalog(
             if (!stillCurrent()) return;
             commit({ dbtFiles });
           })
-          .catch(() => {}),
+          .catch((err) =>
+            log.warn("read.dbtFiles.failed", {
+              pid: requestedPid,
+              err: String(err),
+            }),
+          ),
       );
     }
     await Promise.all(tasks);
@@ -298,9 +326,12 @@ export async function createDataCatalog(
 
       const kind = modelKindForLayer(node.layer);
       if (!primary.renameModel || kind === undefined) return; // local-only
+      log.info("write.rename", { id, kind, name });
       try {
         await primary.renameModel(id, kind, name);
-      } catch {
+        log.debug("write.rename.ok", { id });
+      } catch (err) {
+        log.warn("write.rename.rollback", { id, err: String(err) });
         commit({ graph: snapshot.graph.rename(id, prior) });
       }
     },
@@ -323,9 +354,12 @@ export async function createDataCatalog(
 
       const kind = modelKindForLayer(src.layer);
       if (!primary.archiveModel || kind === undefined) return; // local-only
+      log.info("write.archive", { id: src.id, kind });
       try {
         await primary.archiveModel(src.id, kind);
-      } catch {
+        log.debug("write.archive.ok", { id: src.id });
+      } catch (err) {
+        log.warn("write.archive.rollback", { id: src.id, err: String(err) });
         commit({ graph: snapshot.graph.restore(src.id) });
       }
     },
@@ -342,9 +376,12 @@ export async function createDataCatalog(
       const node = snapshot.graph.getNode(id);
       const kind = node ? modelKindForLayer(node.layer) : undefined;
       if (!primary.restoreModel || kind === undefined) return; // local-only
+      log.info("write.restore", { id, kind });
       try {
         await primary.restoreModel(id, kind);
-      } catch {
+        log.debug("write.restore.ok", { id });
+      } catch (err) {
+        log.warn("write.restore.rollback", { id, err: String(err) });
         commit({ graph: snapshot.graph.archive(id, Date.now()) });
       }
     },
@@ -382,14 +419,20 @@ export async function createDataCatalog(
 
       if (!primary.toggleAuditEntry) return;
       const requestedPid = currentScopedPid;
+      log.info("write.toggleAudit", { nodeId, auditEntryId, enabled });
       try {
         await primary.toggleAuditEntry(auditEntryId, enabled);
+        log.debug("write.toggleAudit.ok", { auditEntryId });
         // Revalidate only if still on the project the toggle targeted; fresh so
         // the recompiled staging SQL/preview is re-fetched, not served stale.
         if (requestedPid !== undefined && requestedPid === currentScopedPid) {
           await revalidateScoped(requestedPid, { fresh: true });
         }
-      } catch {
+      } catch (err) {
+        log.warn("write.toggleAudit.rollback", {
+          auditEntryId,
+          err: String(err),
+        });
         // Roll back the optimistic flip to the prior server value.
         commit({
           graph: snapshot.graph.withAuditToggled(
@@ -411,11 +454,21 @@ export async function createDataCatalog(
      */
     createDataset: async (file: File): Promise<string | undefined> => {
       if (!primary.createDataset) return undefined;
-      const { id } = await primary.createDataset(file);
-      if (currentScopedPid !== undefined) {
-        await revalidateScoped(currentScopedPid, { fresh: true });
+      log.info("write.createDataset", { name: file.name, size: file.size });
+      try {
+        const { id } = await primary.createDataset(file);
+        log.info("write.createDataset.ok", { id });
+        if (currentScopedPid !== undefined) {
+          await revalidateScoped(currentScopedPid, { fresh: true });
+        }
+        return id;
+      } catch (err) {
+        log.error("write.createDataset.failed", {
+          name: file.name,
+          err: String(err),
+        });
+        throw err;
       }
-      return id;
     },
 
     /* ─── project re-scope (project-in-path) ─────────────────────────────── */
@@ -432,6 +485,7 @@ export async function createDataCatalog(
      */
     selectProject: (projectId: string): Promise<void> => {
       currentScopedPid = projectId;
+      log.debug("scope.select", { pid: projectId });
       return revalidateScoped(projectId);
     },
 

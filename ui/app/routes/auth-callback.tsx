@@ -5,6 +5,9 @@ import { useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 
 import { handleCallback } from "../auth/bootstrap";
+import { createLogger } from "../lib/log";
+
+const log = createLogger("auth");
 
 export default function AuthCallbackRoute() {
   const [searchParams] = useSearchParams();
@@ -20,9 +23,12 @@ export default function AuthCallbackRoute() {
     }
     calledRef.current = true;
     handleCallback(code)
-      .then(() => navigate("/", { replace: true }))
+      .then(() => {
+        log.info("callback.ok");
+        navigate("/", { replace: true });
+      })
       .catch((err) => {
-        console.error("auth callback failed", err);
+        log.error("callback.failed", { err: String(err) });
         navigate("/login", { replace: true });
       });
   }, [searchParams, navigate]);

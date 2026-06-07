@@ -6,6 +6,9 @@ import { Navigate } from "react-router";
 
 import { login } from "../auth/bootstrap";
 import { getToken } from "../auth/tokenStorage";
+import { createLogger } from "../lib/log";
+
+const log = createLogger("auth");
 
 export default function LoginRoute() {
   const [busy, setBusy] = useState(false);
@@ -14,9 +17,10 @@ export default function LoginRoute() {
 
   const onSignIn = () => {
     setBusy(true);
+    log.info("login.start");
     login().catch((err) => {
       setBusy(false);
-      console.error("login failed", err);
+      log.error("login.failed", { err: String(err) });
     });
   };
 
