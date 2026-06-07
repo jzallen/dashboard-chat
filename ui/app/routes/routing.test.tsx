@@ -127,8 +127,8 @@ describe("cross-project deep-link (the core regression)", () => {
    * A project-scoped primary: project p1 has only d1/v1/r1 (the fixtures); p2 has
    * a DISTINCT node `p2.only` that exists ONLY in p2's lineage. The deep-link
    * `/project/proj-2/view/p2.only` must resolve after the layout loader re-scopes
-   * to p2 and p2's lineage commits — the bug this slice fixes (before, the
-   * catalog was hardwired to the first project, so p2's node never resolved).
+   * to p2 and p2's lineage commits — a node hardwired to the first project would
+   * never resolve.
    */
   function perProjectPrimary(getScoped: () => string | undefined): PartialCatalogSource {
     const p2Only: LineageNode = {

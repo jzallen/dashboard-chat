@@ -1,18 +1,11 @@
-// SPA server entry (Phase 0 — foamy-knitting-hennessy).
+// SPA server entry. A server entry is required even in ssr:false mode; this one is
+// deliberately node-free.
 //
-// DEVIATION FROM PLAN: the plan said not to add @react-router/node and not to add
-// an entry.server. But @react-router/dev resolved to 7.17.0 (caret `^7.13.0`), and
-// 7.17.0's vite plugin ALWAYS resolves a server entry — even in ssr:false SPA mode —
-// throwing "Could not determine server runtime" unless @react-router/node is
-// installed OR a custom entry.server is provided. We honor the plan's "no
-// @react-router/node" intent by supplying this node-free entry instead.
-//
-// It must stream: RRv7's <ServerRouter> wraps the SPA shell in a <Suspense>
-// boundary (the HydrateFallback), and renderToString cannot render Suspense — it
-// emits a broken hydration payload and the client router never hydrates. So we use
-// react-dom/server's renderToPipeableStream (Node streams, no @react-router/node)
-// and bridge the Node stream to a web Response via node:stream/web. In ssr:false
-// mode this renders only the static shell; RRv7 hydrates the real tree client-side.
+// It must STREAM: <ServerRouter> wraps the SPA shell in a Suspense boundary (the
+// HydrateFallback), and renderToString cannot render Suspense — it emits a broken
+// hydration payload and the client router never hydrates. So it renders via
+// renderToPipeableStream and bridges the Node stream to a web Response. In ssr:false
+// mode this emits only the static shell; the real tree hydrates client-side.
 import { PassThrough } from "node:stream";
 import { ReadableStream } from "node:stream/web";
 

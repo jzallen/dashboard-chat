@@ -1,7 +1,6 @@
 /* /auth/callback — exchange the dev auth code for a token, then land on the
-   workspace. Replaces the main.js callback branch; keeps the URL-scrub behavior
-   (navigate("/",{replace:true}) drops ?code= from history). Mirrors
-   frontend/app/routes/auth-callback.tsx (AUTH_MODE=dev: no WorkOS state CSRF). */
+   workspace. The replace navigation scrubs ?code= from history.
+   AUTH_MODE=dev path: no WorkOS state CSRF round-trip. */
 import { useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 

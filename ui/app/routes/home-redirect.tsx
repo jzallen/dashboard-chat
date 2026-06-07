@@ -1,8 +1,7 @@
 /* index route `/` — redirect to the first project's workspace, or, when the org
    has no projects yet, a minimal inline onboarding panel. The user is already
-   authenticated here (app-shell's RequireAuth ran), so empty-org must NOT bounce
-   to /login, and must NOT navigate to /project/undefined. A real create-project
-   flow is a later slice. */
+   authenticated here (app-shell's auth gate ran), so empty-org must NOT bounce
+   to /login, and must NOT navigate to /project/undefined. */
 import { Navigate } from "react-router";
 
 import { catalog, useCatalog } from "../components/useCatalog";

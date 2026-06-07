@@ -1,7 +1,7 @@
 /* Overlay layer: assistant dock + the data-workspace modals. The dock's open
-   state comes from useChat() (the transient context the old useNavigation held);
-   the chat context node is the resolved deep-linked model (off the pathname),
-   and nav requests go through useNavIntents(). */
+   state comes from useChat() (the transient assistant-dock context); the chat
+   context node is the resolved deep-linked model (off the pathname), and nav
+   requests go through useNavIntents(). */
 import { useLocation, useParams } from "react-router";
 
 import { useChat } from "../../../app/lib/chatContext";

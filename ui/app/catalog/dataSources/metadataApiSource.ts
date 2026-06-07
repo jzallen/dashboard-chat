@@ -1,10 +1,9 @@
 /**
- * metadataApiSource — a backend-backed {@link PartialCatalogSource} for PROJECT
- * reads (slice 1) plus the LINEAGE CORE (slice 2), now SCOPED TO THE PATH PROJECT
- * (slice 3 — project-in-path). It implements `getProjects` (org-global),
- * `getCurrentProject`, and the three lineage getters (`getNodes`/`getEdges`/
- * `getAudit`); every other catalog payload stays on the fallback (the fixture
- * today). It NEVER references the fallback.
+ * metadataApiSource — a backend-backed {@link PartialCatalogSource} for project
+ * reads plus the lineage core, scoped to the path project. It implements
+ * `getProjects` (org-global), `getCurrentProject`, and the three lineage getters
+ * (`getNodes`/`getEdges`/`getAudit`); every other catalog payload stays on the
+ * fallback (the fixture today). It NEVER references the fallback.
  *
  * The backend has no lineage endpoint, so the graph is DERIVED client-side: the
  * SCOPED project's datasets, views, and reports are fetched once PER PROJECT
@@ -13,7 +12,7 @@
  * narrative).
  *
  * Scoping: the active project id is injected via `deps.getProjectId` (like
- * `deps.getToken`), so `lib/catalog` stays router-free. The scoped getters target
+ * `deps.getToken`), so the catalog stays router-free. The scoped getters target
  * `deps.getProjectId() ?? firstPid` — the `?? firstPid` only covers the
  * pre-first-paint instant before the `/project/:projectId` layout loader runs
  * `selectProject`. `getCurrentProject` returns the project matching the scoped
@@ -165,14 +164,14 @@ export interface MetadataApiSourceDeps {
   /**
    * Returns the currently scoped project id (the `/project/:projectId` path
    * segment), or undefined before the layout loader has run `selectProject`.
-   * Injected like {@link getToken} so `lib/catalog` stays router-free.
+   * Injected like {@link getToken} so the catalog stays router-free.
    */
   getProjectId?: () => string | undefined;
 }
 
 /**
- * Map a backend project to the catalog's project-list DTO. `models` is 0 until a
- * later slice backs it; `datasets` is the count of attached datasets.
+ * Map a backend project to the catalog's project-list DTO. `models` is 0 (not yet
+ * backed by the API); `datasets` is the count of attached datasets.
  */
 function toProjectSummary(project: BackendProject): ProjectSummary {
   return {

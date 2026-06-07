@@ -1,7 +1,4 @@
-/* Model detail view — header, dependency strip, AI audit, columns, SQL.
-   Exclusive styles are scoped (ModelDetail.module.css); the shared .panel /
-   .panel-hd / .badge / .sql-block primitives and the layer-* helpers stay
-   global. */
+/* Model detail view — header, dependency strip, AI audit, columns, SQL. */
 import { Fragment, type ReactNode, useState } from "react";
 
 import type { LineageNode, Model } from "../../catalog";

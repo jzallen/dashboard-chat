@@ -1,14 +1,11 @@
 /**
  * Per-layer display copy — the human-facing name, dbt folder hint, and
  * description each pipeline layer renders with. Keyed off the {@link Layer}
- * vocabulary owned by the catalog.
- *
- * Layer color is no longer carried here: the `--ln`/`--ln-soft` custom-property
- * handles moved to per-layer CSS classes (`.layer-*` in theme.css), applied via
- * `className`. This file is now pure display text.
+ * vocabulary owned by the catalog. Pure display text — layer color is carried
+ * by the per-layer `.layer-*` CSS classes (theme.css), not here.
  *
  * This is presentation metadata, not catalog data, so it lives beside the app
- * rather than inside the catalog's fixtureData.js. Components read it directly.
+ * rather than inside the catalog. Components read it directly.
  */
 import type { Layer } from "../catalog";
 

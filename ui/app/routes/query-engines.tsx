@@ -1,6 +1,4 @@
-/* /query-engines — compute-management stub (carried over from RouteFrame's
-   engines view; the `engines` route name becomes the `/query-engines` path to
-   match frontend/app/routes.ts). */
+/* /query-engines — compute-management stub. */
 export default function QueryEnginesRoute() {
   return (
     <div style={{ padding: 40 }}>

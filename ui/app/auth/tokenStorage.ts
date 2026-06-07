@@ -1,9 +1,6 @@
-// Token persistence for the ui/ app's dev-login gate.
-//
-// Mirrors the localStorage key scheme used by frontend/src/core/auth/tokenStorage.ts
-// ("auth_token" + "auth_token_expires_at") so a token minted here is shaped the
-// same way the future shared auth layer will expect. Native localStorage only —
-// no new deps. Pure browser code; never runs during SSR (this app is SPA-only).
+// Token persistence for the dev-login gate. The JWT is stored under
+// "auth_token" (with "auth_token_expires_at") for replay as a Bearer on API
+// calls. Pure browser code; never runs during SSR (this app is SPA-only).
 
 const TOKEN_KEY = "auth_token";
 const EXPIRES_AT_KEY = "auth_token_expires_at";

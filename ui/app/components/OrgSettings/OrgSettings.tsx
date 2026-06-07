@@ -1,6 +1,5 @@
 /* Organization settings route page: identity, pipeline defaults, members,
-   appearance. Exclusive styles scoped here; shared .panel/.panel-hd/.spanfull
-   primitives stay global. */
+   appearance. */
 import type { ReactNode } from "react";
 
 import { Icon } from "../primitives";

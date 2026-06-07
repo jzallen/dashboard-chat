@@ -1,8 +1,7 @@
-/* The assistant-dock context: the transient `chatOpen` state the old
-   useNavigation.ts held, lifted into a small provider the layout route mounts.
-   It stays out of the URL (a transient overlay). Lives in its own module so the
-   shell, nav intents, and Overlays import it without cycling through the route
-   module. */
+/* The assistant-dock context: the transient `chatOpen` state, held in a small
+   provider the layout route mounts. It stays out of the URL (a transient
+   overlay). Lives in its own module so the shell, nav intents, and Overlays
+   import it without cycling through the route module. */
 import {
   createContext,
   type ReactNode,

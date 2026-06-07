@@ -1,10 +1,9 @@
-/* The layout route — composition root of the chrome. Replaces src/app/app.tsx
-   (mount) + src/app/AppShell/AppShell.tsx (minus RouteFrame, now <Outlet/>).
+/* The layout route — composition root of the persistent chrome.
 
-   - RequireAuth redirects to /login when there's no token (mirrors frontend's
-     guard), so an unauthenticated deep-link folds into the dev sign-in.
-   - useChat() is the transient assistant-dock context (chatOpen) the old
-     useNavigation.ts held; it stays out of the URL.
+   - Redirects to /login when there's no token, so an unauthenticated deep-link
+     folds into the dev sign-in.
+   - useChat() is the transient assistant-dock context (chatOpen); it stays out
+     of the URL.
    - The chrome is <Topbar/> <Outlet/> <Overlays/> under ThemeProvider (provided
      by root.tsx). */
 import { useCallback, useMemo } from "react";

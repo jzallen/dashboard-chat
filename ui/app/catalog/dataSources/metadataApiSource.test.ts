@@ -3,10 +3,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { metadataApiSource } from "./metadataApiSource";
 
 /**
- * A URL-dispatching fetch mock. Slice 2 fetches four distinct URLs (projects +
- * the three lineage lists), so a single-body stub is insufficient — each path
- * resolves its own envelope body. Any unmatched path 404s (so a typo in a URL
- * surfaces as a rejection, not a silent pass).
+ * A URL-dispatching fetch mock. The lineage reads hit four distinct URLs
+ * (projects + the three lineage lists), so a single-body stub is insufficient —
+ * each path resolves its own envelope body. Any unmatched path 404s (so a typo in
+ * a URL surfaces as a rejection, not a silent pass).
  */
 function stubFetch(routes: Record<string, unknown>, ok = true) {
   const fetchMock = vi.fn(async (url: string) => {
@@ -32,7 +32,7 @@ function stubFetch(routes: Record<string, unknown>, ok = true) {
   return fetchMock;
 }
 
-/** A single-body fetch stub (project-only tests, slice-1 style). */
+/** A single-body fetch stub for project-only tests. */
 function stubProjects(body: unknown, ok = true) {
   const fetchMock = vi.fn(async () => ({
     ok,

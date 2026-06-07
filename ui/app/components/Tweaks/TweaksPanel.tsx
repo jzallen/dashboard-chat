@@ -2,7 +2,7 @@
  *
  * Owns the host protocol (listens for __activate_edit_mode / __deactivate_edit_mode,
  * posts __edit_mode_available / __edit_mode_set_keys / __edit_mode_dismissed) so
- * individual prototypes don't re-roll it, and ships a consistent set of controls so
+ * callers don't re-roll it, and ships a consistent set of controls so
  * you don't hand-draw <input type="range">, segmented radios, steppers, etc.
  *
  * Usage:
@@ -167,12 +167,11 @@ const __TWEAKS_STYLE = `
 // flips off in lockstep; the host echoes __deactivate_edit_mode back which
 // is what actually hides the panel.
 //
-// Parked example — the Dashboard Chat design panel. This was the live controls
-// panel wired into the app shell while the UI was prototyped in Claude Design;
-// it's intentionally not mounted today. Revive it (drop into a component's
-// render alongside `const [t, setTweak] = useTweaks(TWEAK_DEFAULTS)`) once the
-// layout planner is scoped to let users try design themes for the charts they
-// create:
+// Parked example — the Dashboard Chat design panel. A live design-controls
+// panel for the app shell; intentionally not mounted today. Revive it (drop
+// into a component's render alongside `const [t, setTweak] =
+// useTweaks(TWEAK_DEFAULTS)`) once the layout planner is scoped to let users
+// try design themes for the charts they create:
 //
 //   <TweaksPanel title="Tweaks">
 //     <TweakSection label="Theme" />

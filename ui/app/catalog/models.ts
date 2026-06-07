@@ -4,15 +4,14 @@
  * vocabulary the {@link createDataCatalog} factory returns and components
  * consume.
  *
- * Leaf types (column/join/filter/grain descriptors, semantic roles) are adapted
- * from the real frontend dataCatalog types (frontend/src/core/dataCatalog/*),
- * trimmed to the fields the fixture actually carries. Graph-shaped types
- * (nodes, edges, audit) are reused from ./lineage — the inward-pointing
- * dependency; lineage.ts itself imports nothing.
+ * Leaf types (column/join/filter/grain descriptors, semantic roles) carry only
+ * the fields the data actually uses. Graph-shaped types (nodes, edges, audit)
+ * are reused from ./lineage — the inward-pointing dependency; lineage.ts itself
+ * imports nothing.
  */
 import type { AuditTag, Edge, FieldDef, Layer, LineageNode } from "./lineage";
 
-/* ─── leaf descriptors (adapted from frontend/src/core/dataCatalog) ─────────── */
+/* ─── leaf descriptors ─────────────────────────────────────────────────────── */
 
 /** How a column renders / what kind of value it holds. */
 export type DisplayType =

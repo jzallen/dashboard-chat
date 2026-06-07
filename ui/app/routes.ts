@@ -1,23 +1,15 @@
-// RRv7 framework-mode route table (Phase 3 — foamy-knitting-hennessy:
-// project-in-path). app-shell stays the persistent outer chrome (RequireAuth +
-// Topbar + overlays — one instance, never remounts on a project switch); a thin
-// `project/:projectId` layout nests inside it, whose clientLoader re-scopes the
-// catalog to the path project on every :projectId change (the re-scope seam).
+// Route table. The app-shell layout is the persistent outer chrome (auth gate +
+// Topbar + overlays) — a single instance that never remounts on a project switch.
+// Nested inside it, the `project/:projectId` layout re-scopes the catalog to the
+// path project whenever :projectId changes (the re-scope seam).
 //
-// URL shape: project is part of a resource's identity at the API
-// (/api/datasets?project_id=, /api/projects/:id/views|reports), so it lives in
-// the PATH: /project/:projectId/{dataset|view|report}/:id (uniform nested
-// singular). The resource entry is `dataset` (the entity IS a dataset; the old
-// `table` segment was a misnomer). org + query-engines stay org-global (outside
-// the project layout, inside app-shell). /chats nests under the project now
-// (sessions are project-scoped; the backend wiring is a later slice).
+// Project identity lives in the PATH (/project/:projectId/{dataset|view|report}/:id),
+// matching how the API scopes resources by project. org + query-engines are
+// org-global and sit outside the project layout; chats nest under the project
+// because sessions are project-scoped.
 //
-// Merge-reconciliation point: frontend/ uses plural/top-level
-// (projects/:projectId/datasets/:datasetId); this prototype uses
-// singular-nested. Reconciled when ui/ merges into frontend/.
-//
-// Path resolution note (mirrors frontend/app/routes.ts): file paths are resolved
-// relative to appDirectory ("app"), so the leading `app/` segment is omitted.
+// File paths resolve relative to appDirectory ("app"), so the leading `app/`
+// segment is omitted.
 import type { RouteConfig } from "@react-router/dev/routes";
 import { index, layout, route } from "@react-router/dev/routes";
 

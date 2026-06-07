@@ -1,4 +1,4 @@
-/* Async deep-link resolver — the crux of the migration.
+/* Async deep-link resolver.
 
    A cold deep-link to /view/<backend-uuid> finds catalog.getNode(id) === undefined
    until SWR revalidation commits. RRv7 loaders can read the snapshot but cannot

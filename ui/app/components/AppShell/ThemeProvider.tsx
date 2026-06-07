@@ -1,7 +1,7 @@
 /* Theme context. The app has a single visual theme (Neobrutalist); the only
    thing the user controls is light vs dark, which is persisted to localStorage.
-   (The fuller set of design knobs — accent, palette, fonts, surface — was a
-   Claude Design prototyping convenience; see the parked example in Tweaks.) */
+   (A fuller set of design knobs — accent, palette, fonts, surface — lives
+   unmounted as the parked example in Tweaks.) */
 import {
   createContext,
   type ReactNode,

@@ -1,4 +1,4 @@
-/* /view/:viewId — an intermediate view's detail. Mirrors frontend/app/routes/view-detail.tsx. */
+/* /view/:viewId — an intermediate view's detail. */
 import { useParams } from "react-router";
 
 import { ResourceDetail } from "./_resourceDetail";

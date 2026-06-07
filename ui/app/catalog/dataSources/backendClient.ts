@@ -1,12 +1,11 @@
 /**
  * backendClient — the minimal HTTP read used by backend-backed catalog sources
- * (e.g. {@link metadataApiSource}). Native fetch, JSON, optional Bearer auth,
- * and the same envelope-unwrap the main frontend uses
- * (frontend/src/lib/http/apiClient.ts `handleResponse`): take `.data`, then
- * flatten JSON:API `{ type, id, attributes }` → flat `{ id, ...attributes }`.
+ * (e.g. {@link metadataApiSource}). Native fetch, JSON, optional Bearer auth.
+ * Unwraps the response envelope: take `.data`, then flatten JSON:API
+ * `{ type, id, attributes }` → flat `{ id, ...attributes }`.
  *
  * Decoupled from `app/auth`: the token is a PARAMETER, never imported here, so
- * `lib/catalog` stays free of app-auth dependencies.
+ * the catalog stays free of app-auth dependencies.
  */
 
 /** Flatten a JSON:API resource `{ type, id, attributes }` into `{ id, ...attributes }`. */

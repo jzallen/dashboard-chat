@@ -1,7 +1,6 @@
-/* /login — the dev sign-in route. Replaces renderSignIn() in main.js: one
-   button that kicks off GET /api/auth/login (the auth-proxy redirect). Already
-   authenticated → straight to the workspace. Mirrors frontend/app/routes/login.tsx
-   (a route module that re-exports a LoginPage), AUTH_MODE=dev happy path. */
+/* /login — the dev sign-in route. One button kicks off GET /api/auth/login
+   (the auth-proxy redirect). Already authenticated → straight to the workspace.
+   AUTH_MODE=dev happy path. */
 import { useState } from "react";
 import { Navigate } from "react-router";
 

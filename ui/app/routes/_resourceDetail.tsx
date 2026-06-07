@@ -1,6 +1,6 @@
 /* Shared resource-detail body: resolve the deep-linked node off the catalog,
    then render skeleton (pending) / not-found (missing) / ModelDetail (resolved,
-   node guaranteed non-null). The three resource route modules (table / view /
+   node guaranteed non-null). The three resource route modules (dataset / view /
    report) are thin wrappers that pass their kind + param. */
 import { ModelDetail } from "../components/ModelDetail";
 import { useResolvedNode } from "../lib/useResolvedNode";

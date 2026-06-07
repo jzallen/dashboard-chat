@@ -1,9 +1,9 @@
-/* Navigation intents — the URL-emitting layer that replaces useNavigation.ts.
-   nodeToPath maps a lineage node to its project-scoped resource URL (the kind
-   lives on node.ref.kind); useNavIntents wraps useNavigate/useParams so leaf
-   views keep calling openNode / selectProject / toggleOrg / openRecent / go, now
-   resolved against the project-in-path URL. Chat-open intents reach the
-   useChat() context, never navigation. */
+/* Navigation intents — the URL-emitting layer. nodeToPath maps a lineage node
+   to its project-scoped resource URL (the kind lives on node.ref.kind);
+   useNavIntents wraps useNavigate/useParams so leaf views call openNode /
+   selectProject / toggleOrg / openRecent / go, resolved against the
+   project-in-path URL. Chat-open intents reach the useChat() context, never
+   navigation. */
 import { useCallback } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 
@@ -27,8 +27,6 @@ const KIND_PREFIX: Record<string, string> = {
  * The deep-linkable URL for a lineage node, scoped to its project:
  * `/project/:projectId/{dataset|view|report}/:id`. projectId is REQUIRED —
  * project is part of a resource's identity at the API, so it lives in the path.
- * Mirrors the nested resource routes so a later merge into frontend/ is
- * mechanical (frontend uses plural/top-level; reconciled at merge).
  */
 export function nodeToPath(node: LineageNode, projectId: string): string {
   const prefix = KIND_PREFIX[kindOf(node) ?? ""] ?? "dataset";

@@ -1,7 +1,6 @@
 /* ============================================================
  Mock catalog — faithful to the real data model:
  Dataset (staging) -> View (intermediate) -> Report (mart)
- Field shapes mirror frontend/src/core/dataCatalog/*.ts
  ============================================================ */
 const PROJECT = { id: "019e7997", name: "Demo Project", description: "Data-layer demo" };
 

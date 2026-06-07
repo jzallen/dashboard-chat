@@ -46,10 +46,10 @@ export let catalog: DataCatalog;
 let scopedProjectId: string | undefined;
 
 /**
- * Construct and install the application catalog. `main.js` awaits this in the
- * authenticated paths BEFORE `mount()`, guaranteeing `catalog` is set before any
- * component reads it. Token + scoped-project getters are injected (lib/catalog
- * stays auth- and router-decoupled).
+ * Construct and install the application catalog. The root clientLoader awaits this
+ * before the route tree renders, so `catalog` is set before any component reads it.
+ * Token + scoped-project getters are injected, keeping the catalog auth- and
+ * router-decoupled.
  */
 export async function initCatalog(): Promise<void> {
   catalog = await createDataCatalog(
@@ -62,8 +62,8 @@ export async function initCatalog(): Promise<void> {
  * Re-scope the session catalog to a project: set the module-level scoped pid
  * (so the backend source's next reads target it) THEN delegate to the catalog's
  * own re-scope command. Called by the `/project/:projectId` layout clientLoader
- * on every project change. The single `catalog` instance is preserved (Approach
- * A) so the persistent chrome's subscriptions stay valid.
+ * on every project change. The single `catalog` instance is preserved so the
+ * persistent chrome's subscriptions stay valid.
  */
 export function selectProject(projectId: string): Promise<void> {
   scopedProjectId = projectId;

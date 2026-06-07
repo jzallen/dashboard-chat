@@ -77,7 +77,7 @@ const ICON = {
   file: File,
   fridge: Refrigerator,
   snow: Snowflake,
-  // playful dropzone glyphs (FOODS in upload.jsx)
+  // playful empty-state glyphs (the cold-storage FOODS)
   donut: Donut,
   egg: Egg,
   carrot: Carrot,
@@ -121,8 +121,8 @@ function Icon({
   return <Glyph size={size} strokeWidth={1.7} style={style} />;
 }
 
-/* Layer-aware primitives. `layer` selects styling via primitives.module.css
-   (no DC dependency); `size` feeds the --dot-size custom property. */
+/* Layer-aware primitives. `layer` selects styling via primitives.module.css;
+   `size` feeds the --dot-size custom property. */
 function LayerDot({ layer, size = 9 }: { layer: Layer; size?: number }) {
   return (
     <span

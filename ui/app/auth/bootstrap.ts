@@ -1,9 +1,7 @@
-// Dev-login orchestration for the ui/ app.
+// Dev-login orchestration.
 //
-// Two pre-auth endpoints, both reached through the Vite dev-server proxy
-// (see vite.config.js "/api/auth" -> auth-proxy). Pattern copied from
-// frontend/src/ui/context/AuthContext/AuthProvider.tsx, trimmed to the
-// AUTH_MODE=dev happy path (no WorkOS CSRF `state` round-trip):
+// Two pre-auth endpoints against the auth-proxy, covering the AUTH_MODE=dev
+// happy path (no WorkOS CSRF `state` round-trip):
 //
 //   login()           GET  /api/auth/login    -> { url }   -> navigate there.
 //                     In dev the url is .../auth/callback?code=dev-auth-code,

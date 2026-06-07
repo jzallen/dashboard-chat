@@ -1,7 +1,6 @@
 /* The two non-resolved states a resource route renders while/if the catalog
    doesn't (yet) hold the deep-linked node: a loading skeleton (pending) and a
-   not-found panel (the bounded timer elapsed). Mirrors frontend's
-   ViewDetailView "Loading…" / "not found" fold, catalog-backed. */
+   not-found panel (the bounded timer elapsed). */
 
 const KIND_LABEL: Record<string, string> = {
   dataset: "dataset",

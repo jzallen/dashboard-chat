@@ -1,4 +1,4 @@
-/* /report/:reportId — a mart report's detail. Mirrors frontend/app/routes/report-detail.tsx. */
+/* /report/:reportId — a mart report's detail. */
 import { useParams } from "react-router";
 
 import { ResourceDetail } from "./_resourceDetail";

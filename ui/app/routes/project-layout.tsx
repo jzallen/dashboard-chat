@@ -1,7 +1,7 @@
 /* /project/:projectId — the thin project layout nested inside app-shell. Its
    clientLoader re-scopes the session catalog to the path project, and RRv7
    re-fires the loader on every :projectId change — that's the re-scope seam.
-   The single catalog instance is preserved (Approach A): the persistent chrome
+   The single catalog instance is preserved: the persistent chrome
    (Topbar) keeps its useSyncExternalStore subscriptions; only the snapshot's
    project-scoped payloads (currentProject + lineage graph) change. The body is
    just <Outlet/> — the nested resource routes render under the re-scoped graph. */

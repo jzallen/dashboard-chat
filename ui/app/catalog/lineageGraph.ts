@@ -11,7 +11,7 @@
  * a fresh reference per change. (`now` is injected into `archive` so the model
  * stays pure — no wall clock in the domain.)
  *
- * Representation (see research notes — sparse DAG, ~100 models):
+ * Representation (sized for a sparse DAG of ~100 models):
  *   - nodes:    Map<id, LineageNode>    active models, audit folded onto each
  *   - edgeList: readonly Edge[]         canonical edges; layout-ready, restore-friendly
  *   - children/parents: Map<id, id[]>   derived once in the ctor; O(degree) topology queries

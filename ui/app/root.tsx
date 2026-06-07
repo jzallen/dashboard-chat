@@ -1,16 +1,12 @@
-// RRv7 framework-mode (SPA) composition root — Phase 0 walking skeleton
-// (foamy-knitting-hennessy). Supersedes the old src/main.js → src/app/app.tsx
-// mount() seam: `Layout` owns the document shell and `Root` mounts the prototype's
-// provider tree around an <Outlet/>.
+// Composition root. `Layout` owns the document shell; `Root` mounts the app's
+// provider tree around the routed <Outlet/>.
 //
-// `clientLoader` awaits initCatalog() before the route tree renders, replacing the
-// old `await initCatalog(); mount()` ordering in main.js. RRv7 awaits clientLoader
-// before rendering, so `catalog` (the live ESM binding in app/components/useCatalog.ts) is
-// defined before any component reads it. createDataCatalog seeds synchronously from
-// the fixtureSource fallback, so this resolves even with no auth token.
-// Global stylesheets — imported here in the order main.js linked them (theme first
-// so the neobrutalist sheet can override). The fonts/preconnect <link>s the old
-// index.html carried are dropped for Phase 0 (not load-bearing for the gate).
+// `clientLoader` awaits initCatalog() before the route tree renders, so the live
+// `catalog` binding (app/components/useCatalog.ts) is defined before any component
+// reads it. The catalog seeds synchronously from the fixture fallback, so this
+// resolves even with no auth token.
+
+// Global stylesheets — theme first so the neobrutalist sheet can override it.
 import "./components/theme.css";
 import "./components/theme.neobrutalist.css";
 
@@ -29,7 +25,6 @@ export function Layout({ children }: { children: ReactNode }) {
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <Meta />
         <Links />
-        {/* Google Fonts the prototype's index.html carried (reinstated from Phase 0). */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link
           rel="preconnect"
@@ -51,14 +46,14 @@ export function Layout({ children }: { children: ReactNode }) {
   );
 }
 
-// SPA: compose the catalog before first render so `catalog` is non-undefined for
-// every component that reads it (useCatalog / LineageCanvas / Workspace).
+// Compose the catalog before first render so `catalog` is defined for every
+// component that reads it.
 export async function clientLoader() {
   await initCatalog();
   return null;
 }
 
-// Render nothing while the catalog composes (a beat on the fixture seed).
+// Render nothing while the catalog composes.
 export function HydrateFallback() {
   return null;
 }

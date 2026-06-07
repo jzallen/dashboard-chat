@@ -53,7 +53,7 @@ export interface AuditEntry {
   tool: string;
   say: string;
   tag: AuditTag;
-  /** The backing AssistantAuditEntry id (the write target for the future toggle). */
+  /** The backing AssistantAuditEntry id (the write target for the toggle). */
   auditEntryId?: string;
   /**
    * The joined transform id — present (non-null) iff the entry is transform-type

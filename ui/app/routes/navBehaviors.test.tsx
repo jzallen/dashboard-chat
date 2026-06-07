@@ -76,7 +76,7 @@ describe("Topbar pending guard", () => {
   it("does not crash when a deep-linked model node is not yet in the catalog", async () => {
     // No primary, node absent from the seed → catalog.getNode is undefined.
     // The Topbar breadcrumb must fall back to the project picker, not deref a
-    // null node (the old RouteFrame/Topbar route.node! crash sites).
+    // null node.
     renderAt(["/project/proj-1/view/never-loaded"]);
     // The shell rendered (the upload action button is part of the Topbar) and
     // the resource route shows its skeleton — no throw.
