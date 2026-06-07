@@ -33,7 +33,7 @@ import type {
   CatalogSource,
   PartialCatalogSource,
 } from "./dataSources/source";
-import type { Edge, Layer, LineageNode } from "./lineage";
+import type { Edge, Layer, LineageNode, ModelKind } from "./lineage";
 import { LineageGraph } from "./lineageGraph";
 import type {
   ChatHistoryItem,
@@ -49,6 +49,16 @@ import type {
  * are folded into the {@link LineageGraph}; the seven non-lineage payloads are
  * served straight off the snapshot.
  */
+/**
+ * The model kind behind a node, from its layer (the domain 1:1: staging→dataset,
+ * intermediate→view, mart→report). `undefined` for source nodes, which have no
+ * backend entity and stay local-only on write.
+ */
+const modelKindForLayer = (layer: Layer): ModelKind | undefined =>
+  ({ staging: "dataset", intermediate: "view", mart: "report" } as const)[
+    layer as "staging" | "intermediate" | "mart"
+  ];
+
 interface CatalogSnapshot {
   graph: LineageGraph;
   projects: ProjectSummary[];
@@ -268,9 +278,26 @@ export async function createDataCatalog(
     listColdStorage: () => snapshot.graph.coldStorage(),
 
     /* ─── mutation commands (each commits a graph reducer + notifies) ────── */
-    /** Rename a node by id; propagates to every projection that reads it. */
-    renameSource: (id: string, name: string) =>
-      commit({ graph: snapshot.graph.rename(id, name) }),
+    /**
+     * Rename a node — optimistic write-through. Commit the renamed graph for
+     * instant feedback, then PATCH via `primary.renameModel` (routed by the
+     * node's kind, derived from its layer); on rejection, roll the label back.
+     * Source-layer nodes have no backend entity, so they stay local-only.
+     */
+    renameSource: async (id: string, name: string): Promise<void> => {
+      const node = snapshot.graph.getNode(id);
+      if (!node || node.label === name) return; // missing or no-op
+      const prior = node.label;
+      commit({ graph: snapshot.graph.rename(id, name) });
+
+      const kind = modelKindForLayer(node.layer);
+      if (!primary.renameModel || kind === undefined) return; // local-only
+      try {
+        await primary.renameModel(id, kind, name);
+      } catch {
+        commit({ graph: snapshot.graph.rename(id, prior) });
+      }
+    },
     /** Add a live source node (dedup by id). */
     addSource: (node: LineageNode) =>
       commit({ graph: snapshot.graph.addSource(node) }),

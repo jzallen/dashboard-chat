@@ -5,7 +5,7 @@ import type {
   CatalogSource,
   PartialCatalogSource,
 } from "./dataSources/source";
-import type { Edge, LineageNode } from "./lineage";
+import type { Edge, LineageNode, ModelKind } from "./lineage";
 import type { ChatHistoryItem, DbtFile, ProjectSummary } from "./models";
 
 /**
@@ -176,6 +176,65 @@ describe("createDataCatalog — write side", () => {
     unsubscribe();
     catalog.renameSource("src.orders", "c");
     expect(fn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("createDataCatalog — renameSource (optimistic write-through)", () => {
+  /** A primary backing one intermediate (view) node plus a spy-able rename write. */
+  function renamePrimary(
+    renameModel: (id: string, kind: ModelKind, name: string) => Promise<void>,
+  ): PartialCatalogSource {
+    const nodes: Record<string, LineageNode> = {
+      "v.1": {
+        id: "v.1",
+        label: "orders_view",
+        sub: "intermediate",
+        layer: "intermediate",
+        ref: { columns: [] },
+      },
+    };
+    return {
+      getCurrentProject: () =>
+        Promise.resolve({ id: "p1", name: "P1", description: "" }),
+      getNodes: () => Promise.resolve(nodes),
+      getEdges: () => Promise.resolve([]),
+      getAudit: () => Promise.resolve({}),
+      renameModel,
+    };
+  }
+
+  it("renames optimistically, then calls primary.renameModel routed by kind", async () => {
+    const renameModel = vi.fn().mockResolvedValue(undefined);
+    const catalog = await createDataCatalog(renamePrimary(renameModel), makeSource());
+    await catalog.selectProject("p1");
+    await flush();
+
+    const pending = catalog.renameSource("v.1", "high_value_orders");
+    // Optimistic: the new label is visible before the write resolves.
+    expect(catalog.getNode("v.1")?.label).toBe("high_value_orders");
+    expect(renameModel).toHaveBeenCalledWith("v.1", "view", "high_value_orders");
+    await pending;
+    expect(catalog.getNode("v.1")?.label).toBe("high_value_orders");
+  });
+
+  it("rolls the label back when the write rejects", async () => {
+    const renameModel = vi.fn().mockRejectedValue(new Error("backend down"));
+    const catalog = await createDataCatalog(renamePrimary(renameModel), makeSource());
+    await catalog.selectProject("p1");
+    await flush();
+
+    await catalog.renameSource("v.1", "broken");
+    expect(catalog.getNode("v.1")?.label).toBe("orders_view");
+  });
+
+  it("stays local-only for a source-layer node (no backend entity)", async () => {
+    const renameModel = vi.fn().mockResolvedValue(undefined);
+    // The seeded fallback graph holds src.orders (source layer) before any scope.
+    const catalog = await createDataCatalog(renamePrimary(renameModel), makeSource());
+
+    await catalog.renameSource("src.orders", "raw_orders");
+    expect(catalog.getNode("src.orders")?.label).toBe("raw_orders");
+    expect(renameModel).not.toHaveBeenCalled();
   });
 });
 

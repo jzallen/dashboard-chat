@@ -30,7 +30,14 @@
  * it still throws when there is no scoped (or first) project (an empty-shell
  * state is a separate follow-up).
  */
-import type { AuditEntry, AuditTag, Edge, Layer, LineageNode } from "../lineage";
+import type {
+  AuditEntry,
+  AuditTag,
+  Edge,
+  Layer,
+  LineageNode,
+  ModelKind,
+} from "../lineage";
 import type {
   ChatHistoryItem,
   CurrentProject,
@@ -369,6 +376,33 @@ export function metadataApiSource(
         `/api/projects/${encodeURIComponent(pid)}/audit/${encodeURIComponent(auditEntryId)}`,
         { enabled },
         deps.getToken(),
+      );
+    },
+
+    async renameModel(
+      id: string,
+      kind: ModelKind,
+      name: string,
+    ): Promise<void> {
+      // A dataset's editable display label is `display_name` (its `name` is the
+      // immutable upload filename); views and reports rename `name` directly.
+      // Datasets are addressed org-globally; views/reports are project-scoped.
+      // Rejects on a non-2xx (apiPatch throws) so the catalog rolls back.
+      const token = deps.getToken();
+      if (kind === "dataset") {
+        await apiPatch(
+          `/api/datasets/${encodeURIComponent(id)}`,
+          { display_name: name },
+          token,
+        );
+        return;
+      }
+      const pid = await scopedProjectId();
+      const collection = kind === "view" ? "views" : "reports";
+      await apiPatch(
+        `/api/projects/${encodeURIComponent(pid)}/${collection}/${encodeURIComponent(id)}`,
+        { name },
+        token,
       );
     },
   };

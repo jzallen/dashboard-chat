@@ -8,7 +8,7 @@
  * Pure: types only, no concrete data dependency. The fixture cast lives in the
  * adapter that implements this interface, not here.
  */
-import type { AuditEntry, Edge, LineageNode } from "../lineage";
+import type { AuditEntry, Edge, LineageNode, ModelKind } from "../lineage";
 import type {
   ChatHistoryItem,
   ChatScript,
@@ -37,6 +37,13 @@ export interface CatalogSource {
    * (the fixture fallback) simply omits it.
    */
   toggleAuditEntry?(auditEntryId: string, enabled: boolean): Promise<void>;
+  /**
+   * Rename a model-bearing node (dataset/view/report) by id. The `kind` selects
+   * the backing endpoint; the active project scope is the source's own concern.
+   * Resolves on success; REJECTS on failure so the optimistic rename rolls back.
+   * Source-layer nodes have no backend entity and are never passed here.
+   */
+  renameModel?(id: string, kind: ModelKind, name: string): Promise<void>;
 }
 
 /**

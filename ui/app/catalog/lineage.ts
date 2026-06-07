@@ -19,6 +19,13 @@ export const LAYER_ORDER = ["source", "staging", "intermediate", "mart"] as cons
  */
 export type Layer = (typeof LAYER_ORDER)[number];
 
+/**
+ * The kind of a model-bearing node — the catalog entity behind a non-source
+ * node. Maps 1:1 to the pipeline layer: staging→dataset, intermediate→view,
+ * mart→report. Source-layer nodes have no model kind (no backend entity).
+ */
+export type ModelKind = "dataset" | "view" | "report";
+
 /** A field/column descriptor as it appears in source schemas and model refs. */
 export interface FieldDef {
   name: string;

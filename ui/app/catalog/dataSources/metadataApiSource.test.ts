@@ -840,3 +840,74 @@ describe("metadataApiSource — toggleAuditEntry (optimistic write-through PATCH
     await expect(source.toggleAuditEntry!("ae1", true)).rejects.toThrow();
   });
 });
+
+describe("metadataApiSource — renameModel (optimistic write-through PATCH)", () => {
+  /** A fetch stub that succeeds for any URL and records the request init. */
+  function stubPatch(ok = true) {
+    const fetchMock = vi.fn(async () => ({
+      ok,
+      status: ok ? 200 : 500,
+      json: async () => ({ data: {} }),
+    }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    return fetchMock;
+  }
+
+  it("renames a dataset via its org-global URL, setting display_name", async () => {
+    const fetchMock = stubPatch();
+    const source = metadataApiSource({
+      getToken: () => "tok",
+      getProjectId: () => "p1",
+    });
+
+    await source.renameModel!("d1", "dataset", "Customers");
+
+    const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(call[0]).toBe("/api/datasets/d1");
+    expect(call[1].method).toBe("PATCH");
+    expect(JSON.parse(call[1].body as string)).toEqual({
+      display_name: "Customers",
+    });
+  });
+
+  it("renames a view via the project-scoped URL, setting name", async () => {
+    const fetchMock = stubPatch();
+    const source = metadataApiSource({
+      getToken: () => "tok",
+      getProjectId: () => "p1",
+    });
+
+    await source.renameModel!("v1", "view", "High Value Orders");
+
+    const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(call[0]).toBe("/api/projects/p1/views/v1");
+    expect(JSON.parse(call[1].body as string)).toEqual({
+      name: "High Value Orders",
+    });
+  });
+
+  it("renames a report via the project-scoped URL, setting name", async () => {
+    const fetchMock = stubPatch();
+    const source = metadataApiSource({
+      getToken: () => "tok",
+      getProjectId: () => "p1",
+    });
+
+    await source.renameModel!("r1", "report", "Revenue");
+
+    const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(call[0]).toBe("/api/projects/p1/reports/r1");
+    expect(JSON.parse(call[1].body as string)).toEqual({ name: "Revenue" });
+  });
+
+  it("rejects on a non-2xx PATCH response (drives the catalog rollback)", async () => {
+    stubPatch(false);
+    const source = metadataApiSource({
+      getToken: () => "tok",
+      getProjectId: () => "p1",
+    });
+    await expect(
+      source.renameModel!("v1", "view", "x"),
+    ).rejects.toThrow();
+  });
+});
