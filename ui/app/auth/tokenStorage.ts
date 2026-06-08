@@ -1,23 +1,18 @@
-// Token persistence for the dev-login gate. The JWT is stored under
-// "auth_token" (with "auth_token_expires_at") for replay as a Bearer on API
-// calls. Pure browser code; never runs during SSR (this app is SPA-only).
+// Session presence for the dev-login gate.
+//
+// The credential now lives in an httpOnly `auth_token` cookie that JS cannot
+// read, so the SPA can no longer gate on a stored token. The auth-proxy pairs it
+// with a JS-readable `session=1` flag cookie (NOT a secret) — `hasSession()`
+// reads that flag to answer the client-only "am I signed in?" question. The
+// server stays authoritative: it 401s an absent/invalid credential regardless of
+// the flag, so a stale flag at worst costs one redirect after a 401.
+//
+// Pure browser code; never runs during SSR (this app is SPA-only).
 
-const TOKEN_KEY = "auth_token";
-const EXPIRES_AT_KEY = "auth_token_expires_at";
-
-export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
-}
-
-export function setToken(token: string, expiresIn?: number): void {
-  localStorage.setItem(TOKEN_KEY, token);
-  if (expiresIn != null) {
-    const expiresAt = Date.now() + expiresIn * 1000;
-    localStorage.setItem(EXPIRES_AT_KEY, String(expiresAt));
-  }
-}
-
-export function clearAll(): void {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(EXPIRES_AT_KEY);
+/** True iff the JS-readable `session=1` flag cookie is present. */
+export function hasSession(): boolean {
+  return document.cookie
+    .split(";")
+    .map((pair) => pair.trim())
+    .some((pair) => pair === "session=1");
 }

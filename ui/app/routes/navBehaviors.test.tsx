@@ -3,7 +3,6 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { clearAll, setToken } from "../auth/tokenStorage";
 import type { Edge, LineageNode, PartialCatalogSource } from "../catalog";
 import { installCatalogForTest } from "../components/useCatalog";
 import {
@@ -11,6 +10,7 @@ import {
   fixtureNodes,
   NO_PRIMARY,
 } from "./_fixtureCatalog";
+import { signIn, signOut } from "./_session";
 import { TestProviders, testRouteTree } from "./_testRoutes";
 
 function renderAt(initialEntries: string[]) {
@@ -24,12 +24,12 @@ function renderAt(initialEntries: string[]) {
 }
 
 beforeEach(async () => {
-  clearAll();
-  setToken("test-token");
+  signOut();
+  signIn();
   await installCatalogForTest(NO_PRIMARY, fixtureFallback());
 });
 
-afterEach(() => clearAll());
+afterEach(() => signOut());
 
 describe("history navigation", () => {
   it("a project switch PUSHes history and navigate(-1) returns to the prior project", async () => {

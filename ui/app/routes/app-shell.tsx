@@ -1,6 +1,6 @@
 /* The layout route — composition root of the persistent chrome.
 
-   - Redirects to /login when there's no token, so an unauthenticated deep-link
+   - Redirects to /login when there's no session, so an unauthenticated deep-link
      folds into the dev sign-in.
    - useChat() is the transient assistant-dock context (chatOpen); it stays out
      of the URL.
@@ -9,7 +9,7 @@
 import { useCallback, useMemo } from "react";
 import { Navigate, Outlet, useLocation } from "react-router";
 
-import { getToken } from "../auth/tokenStorage";
+import { hasSession } from "../auth/tokenStorage";
 import type { Edge, LineageNode } from "../catalog";
 import { Overlays } from "../components/AppShell/Overlays";
 import { useTheme } from "../components/AppShell/ThemeProvider";
@@ -24,11 +24,11 @@ import { useNavIntents } from "../lib/nav";
 
 // The first authenticated entry point: fetch the real org-global payloads
 // (projects/org) so they replace the fixture seed before any child route (the
-// home redirect, the project layout) reads them. Gated on a token so it never
-// fires during the unauthenticated login round-trip. Runs once — shouldRevalidate
-// returns false (org-global data doesn't change with navigation).
+// home redirect, the project layout) reads them. Gated on the session flag so it
+// never fires during the unauthenticated login round-trip. Runs once —
+// shouldRevalidate returns false (org-global data doesn't change with navigation).
 export async function clientLoader() {
-  if (getToken()) await refreshOrgGlobal();
+  if (hasSession()) await refreshOrgGlobal();
   return null;
 }
 
@@ -92,7 +92,7 @@ function Chrome() {
 }
 
 export default function AppShell() {
-  if (!getToken()) return <Navigate to="/login" replace />;
+  if (!hasSession()) return <Navigate to="/login" replace />;
   return (
     <ChatProvider>
       <Chrome />

@@ -6,17 +6,13 @@
 //   login()           GET  /api/auth/login    -> { url }   -> navigate there.
 //                     In dev the url is .../auth/callback?code=dev-auth-code,
 //                     i.e. it points straight back at this app.
-//   handleCallback()  POST /api/auth/callback { code } -> { access_token,
-//                     expires_in } -> persist the JWT for replay as a Bearer.
-import { setToken } from "./tokenStorage";
+//   handleCallback()  POST /api/auth/callback { code } -> 200. The auth-proxy
+//                     sets the auth_token (httpOnly) + session=1 cookies on the
+//                     response, so there is nothing to read from the body — the
+//                     caller just navigates into the app.
 
 interface LoginResponse {
   url: string;
-}
-
-interface CallbackResponse {
-  access_token: string;
-  expires_in: number;
 }
 
 export async function login(): Promise<void> {
@@ -33,8 +29,7 @@ export async function handleCallback(code: string): Promise<void> {
     body: JSON.stringify({ code }),
   });
   if (!res.ok) throw new Error(`callback failed: ${res.status}`);
-  const { access_token, expires_in } = (await res.json()) as CallbackResponse;
-  setToken(access_token, expires_in);
+  // The session cookies are set by this response; do not read the body token.
 }
 
 // Pull the ?code= out of a /auth/callback URL. Exported for the entry gate

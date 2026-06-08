@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Navigate } from "react-router";
 
 import { login } from "../auth/bootstrap";
-import { getToken } from "../auth/tokenStorage";
+import { hasSession } from "../auth/tokenStorage";
 import { createLogger } from "../lib/log";
 
 const log = createLogger("auth");
@@ -13,7 +13,7 @@ const log = createLogger("auth");
 export default function LoginRoute() {
   const [busy, setBusy] = useState(false);
 
-  if (getToken()) return <Navigate to="/" replace />;
+  if (hasSession()) return <Navigate to="/" replace />;
 
   const onSignIn = () => {
     setBusy(true);

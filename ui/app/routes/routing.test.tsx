@@ -3,7 +3,6 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { clearAll, setToken } from "../auth/tokenStorage";
 import type {
   CatalogSource,
   Edge,
@@ -20,6 +19,7 @@ import {
   fixtureNodes,
   NO_PRIMARY,
 } from "./_fixtureCatalog";
+import { signIn, signOut } from "./_session";
 import { TestProviders, testRouteTree } from "./_testRoutes";
 
 /** Render the route tree at a URL under the same providers root.tsx supplies. */
@@ -34,13 +34,13 @@ function renderAt(initialEntries: string[]) {
 }
 
 beforeEach(async () => {
-  clearAll();
-  setToken("test-token");
+  signOut();
+  signIn();
   await installCatalogForTest(NO_PRIMARY, fixtureFallback());
 });
 
 afterEach(() => {
-  clearAll();
+  signOut();
   vi.useRealTimers();
 });
 
@@ -74,7 +74,7 @@ describe("route mapping (URL → view)", () => {
   });
 
   it("renders the sign-in button at /login", async () => {
-    clearAll(); // unauthenticated
+    signOut(); // unauthenticated
     renderAt(["/login"]);
     expect(await screen.findByText("Sign in (dev)")).toBeTruthy();
   });
