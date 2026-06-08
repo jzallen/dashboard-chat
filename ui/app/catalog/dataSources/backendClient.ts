@@ -1,11 +1,17 @@
 /**
  * backendClient — the minimal HTTP read used by backend-backed catalog sources
- * (e.g. {@link metadataApiSource}). Native fetch, JSON, optional Bearer auth.
+ * (e.g. {@link metadataApiSource}). Native fetch, JSON, cookie-session auth.
  * Unwraps the response envelope: take `.data`, then flatten JSON:API
  * `{ type, id, attributes }` → flat `{ id, ...attributes }`.
  *
- * Decoupled from `app/auth`: the token is a PARAMETER, never imported here, so
- * the catalog stays free of app-auth dependencies.
+ * Auth rides an httpOnly `auth_token` cookie: every helper sets
+ * `credentials:"include"` so the same-origin cookie is sent automatically, and
+ * NO `Authorization` header is built. The `_token` parameter is retained as an
+ * ignored seam (callers like {@link metadataApiSource} still pass one) but never
+ * reaches the wire.
+ *
+ * Decoupled from `app/auth`: nothing here is imported from it, so the catalog
+ * stays free of app-auth dependencies.
  */
 
 /** Flatten a JSON:API resource `{ type, id, attributes }` into `{ id, ...attributes }`. */
@@ -22,20 +28,23 @@ function unwrapResource(item: unknown): unknown {
 }
 
 /**
- * GET `path` and return the unwrapped payload. Adds `Authorization: Bearer
- * <token>` when a token is given. Rejects on a non-2xx response so the catalog's
+ * GET `path` and return the unwrapped payload. Sends the session cookie via
+ * `credentials:"include"`. Rejects on a non-2xx response so the catalog's
  * fallback keeps showing fixtures.
  */
 export async function apiGet<T>(
   path: string,
-  token?: string | null,
+  _token?: string | null,
 ): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
-  if (token) headers.Authorization = `Bearer ${token}`;
 
-  const response = await fetch(path, { method: "GET", headers });
+  const response = await fetch(path, {
+    method: "GET",
+    headers,
+    credentials: "include",
+  });
   if (!response.ok) {
     throw new Error(`GET ${path} failed with status ${response.status}`);
   }
@@ -52,7 +61,7 @@ export async function apiGet<T>(
 }
 
 /**
- * PATCH `path` with a JSON `body`. Mirrors {@link apiGet}: optional Bearer auth,
+ * PATCH `path` with a JSON `body`. Mirrors {@link apiGet}: cookie-session auth,
  * JSON content type, and a throw on any non-2xx response so the caller (the
  * catalog's optimistic write-through) can roll the optimistic state back. The
  * response body is intentionally NOT returned — the write-through revalidates the
@@ -61,16 +70,16 @@ export async function apiGet<T>(
 export async function apiPatch(
   path: string,
   body: unknown,
-  token?: string | null,
+  _token?: string | null,
 ): Promise<void> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
-  if (token) headers.Authorization = `Bearer ${token}`;
 
   const response = await fetch(path, {
     method: "PATCH",
     headers,
+    credentials: "include",
     body: JSON.stringify(body),
   });
   if (!response.ok) {
@@ -80,7 +89,7 @@ export async function apiPatch(
 
 /**
  * POST `path` with an optional JSON `body`, returning the decoded response. Like
- * {@link apiPatch}: optional Bearer auth and a throw on any non-2xx so the
+ * {@link apiPatch}: cookie-session auth and a throw on any non-2xx so the
  * write-through can roll back. The body IS returned (unlike PATCH) so callers
  * that need a server-assigned id (create) can read it; callers that don't
  * (archive/restore) ignore it.
@@ -88,16 +97,16 @@ export async function apiPatch(
 export async function apiPost<T>(
   path: string,
   body?: unknown,
-  token?: string | null,
+  _token?: string | null,
 ): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
-  if (token) headers.Authorization = `Bearer ${token}`;
 
   const response = await fetch(path, {
     method: "POST",
     headers,
+    credentials: "include",
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!response.ok) {
@@ -109,17 +118,21 @@ export async function apiPost<T>(
 /**
  * POST a multipart `FormData` body (file upload), returning the decoded response.
  * Unlike {@link apiPost} it sets NO Content-Type — the browser must set the
- * multipart boundary itself. Optional Bearer auth; throws on any non-2xx.
+ * multipart boundary itself. Cookie-session auth; throws on any non-2xx.
  */
 export async function apiUpload<T>(
   path: string,
   form: FormData,
-  token?: string | null,
+  _token?: string | null,
 ): Promise<T> {
   const headers: Record<string, string> = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
 
-  const response = await fetch(path, { method: "POST", headers, body: form });
+  const response = await fetch(path, {
+    method: "POST",
+    headers,
+    credentials: "include",
+    body: form,
+  });
   if (!response.ok) {
     throw new Error(`POST ${path} failed with status ${response.status}`);
   }

@@ -1,9 +1,25 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import { metadataApiSource } from "../catalog";
 import * as uc from "./useCatalog";
 
-describe("initCatalog", () => {
+// Spy on metadataApiSource while delegating to the real implementation, so we can
+// assert the deps useCatalog injects — notably getToken → null now that the
+// session rides an httpOnly cookie the catalog can neither read nor forward.
+vi.mock("../catalog", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../catalog")>();
+  return { ...actual, metadataApiSource: vi.fn(actual.metadataApiSource) };
+});
+
+describe("initCatalog — catalog composition", () => {
+  it("injects getToken as () => null (the catalog stays decoupled from the cookie session)", async () => {
+    await uc.initCatalog();
+    expect(metadataApiSource).toHaveBeenCalled();
+    const deps = vi.mocked(metadataApiSource).mock.calls[0][0];
+    expect(deps.getToken()).toBeNull();
+  });
+
   // Regression: the root loader re-runs initCatalog on every navigation (incl.
   // a `?view=` toggle). If it weren't idempotent, each call would rebuild the
   // catalog from the fixture seed and drop the live project scope — surfacing

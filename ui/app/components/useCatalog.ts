@@ -16,7 +16,6 @@
  */
 import { useSyncExternalStore } from "react";
 
-import { getToken } from "../auth/tokenStorage";
 import {
   type CatalogSource,
   createDataCatalog,
@@ -57,7 +56,10 @@ export async function initCatalog(): Promise<void> {
   // working state, and subscriptions — so a second call is a no-op.
   if (catalog) return;
   catalog = await createDataCatalog(
-    metadataApiSource({ getToken, getProjectId: () => scopedProjectId }),
+    // Auth rides the httpOnly cookie now; the catalog can neither read nor
+    // forward the token, so getToken yields null (no Bearer header is ever
+    // built). The dep is kept to preserve metadataApiSource's interface.
+    metadataApiSource({ getToken: () => null, getProjectId: () => scopedProjectId }),
     fixtureSource,
   );
 }

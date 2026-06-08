@@ -121,15 +121,17 @@ describe("metadataApiSource — backend project reads", () => {
     });
   });
 
-  it("sends the Bearer token on the request", async () => {
+  it("sends credentials:'include' (cookie session) and no Authorization on the request", async () => {
     const fetchMock = stubProjects({ data: [{ id: "p1", name: "X" }] });
+    // A non-null token is injected to prove the dep is a dead seam: no header.
     const source = metadataApiSource({ getToken: () => "secret-token" });
     await source.getProjects!();
     const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     const init = call[1];
-    expect((init.headers as Record<string, string>).Authorization).toBe(
-      "Bearer secret-token",
-    );
+    expect(init.credentials).toBe("include");
+    expect(
+      (init.headers as Record<string, string>).Authorization,
+    ).toBeUndefined();
   });
 
   it("resolves [] on an empty project list (empty backend → empty picker, not fixtures)", async () => {
@@ -258,16 +260,17 @@ describe("metadataApiSource — lineage core (getNodes/getEdges/getAudit)", () =
     await expect(source.getNodes!()).rejects.toThrow();
   });
 
-  it("sends the Bearer token on lineage requests", async () => {
+  it("sends credentials:'include' and no Authorization on lineage requests", async () => {
     const fetchMock = stubFetch(LINEAGE_ROUTES);
     const source = metadataApiSource({ getToken: () => "secret-token" });
     await source.getNodes!();
     const datasetCall = fetchMock.mock.calls.find((c) =>
       (c[0] as string).startsWith(DATASETS),
     ) as unknown as [string, RequestInit];
-    expect((datasetCall[1].headers as Record<string, string>).Authorization).toBe(
-      "Bearer secret-token",
-    );
+    expect(datasetCall[1].credentials).toBe("include");
+    expect(
+      (datasetCall[1].headers as Record<string, string>).Authorization,
+    ).toBeUndefined();
   });
 });
 
@@ -408,16 +411,17 @@ describe("metadataApiSource — org settings (getOrg)", () => {
     });
   });
 
-  it("sends the Bearer token on the org request", async () => {
+  it("sends credentials:'include' and no Authorization on the org request", async () => {
     const fetchMock = stubFetch({ [ORG]: ORG_BODY });
     const source = metadataApiSource({ getToken: () => "secret-token" });
     await source.getOrg!();
     const orgCall = fetchMock.mock.calls.find(
       (c) => (c[0] as string) === ORG,
     ) as unknown as [string, RequestInit];
-    expect((orgCall[1].headers as Record<string, string>).Authorization).toBe(
-      "Bearer secret-token",
-    );
+    expect(orgCall[1].credentials).toBe("include");
+    expect(
+      (orgCall[1].headers as Record<string, string>).Authorization,
+    ).toBeUndefined();
   });
 
   it("rejects on a non-2xx org response (fixtures kept upstream)", async () => {
@@ -783,7 +787,7 @@ describe("metadataApiSource — audit (getAudit / audit)", () => {
     await expect(source.getAudit!()).rejects.toThrow();
   });
 
-  it("sends the Bearer token on the audit request", async () => {
+  it("sends credentials:'include' and no Authorization on the audit request", async () => {
     const fetchMock = stubFetch({
       [PROJECTS]: { data: [{ id: "p1", name: "Acme" }] },
       [AUDIT_P1]: { data: [] },
@@ -793,9 +797,10 @@ describe("metadataApiSource — audit (getAudit / audit)", () => {
     const call = fetchMock.mock.calls.find((c) =>
       (c[0] as string).endsWith("/audit"),
     ) as unknown as [string, RequestInit];
-    expect((call[1].headers as Record<string, string>).Authorization).toBe(
-      "Bearer secret-token",
-    );
+    expect(call[1].credentials).toBe("include");
+    expect(
+      (call[1].headers as Record<string, string>).Authorization,
+    ).toBeUndefined();
   });
 });
 
@@ -813,7 +818,7 @@ describe("metadataApiSource — toggleAuditEntry (optimistic write-through PATCH
     return fetchMock;
   }
 
-  it("PATCHes the project-scoped audit-entry URL with the enabled body + Bearer", async () => {
+  it("PATCHes the project-scoped audit-entry URL with the enabled body via the cookie session", async () => {
     const fetchMock = stubPatch();
     const source = metadataApiSource({
       getToken: () => "secret-token",
@@ -826,9 +831,10 @@ describe("metadataApiSource — toggleAuditEntry (optimistic write-through PATCH
     expect(call[0]).toBe("/api/projects/p1/audit/ae1");
     expect(call[1].method).toBe("PATCH");
     expect(JSON.parse(call[1].body as string)).toEqual({ enabled: false });
-    expect((call[1].headers as Record<string, string>).Authorization).toBe(
-      "Bearer secret-token",
-    );
+    expect(call[1].credentials).toBe("include");
+    expect(
+      (call[1].headers as Record<string, string>).Authorization,
+    ).toBeUndefined();
   });
 
   it("rejects on a non-2xx PATCH response (drives the catalog rollback)", async () => {
