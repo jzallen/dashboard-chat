@@ -41,10 +41,18 @@ vi.mock("jose", async () => {
   };
 });
 
+import { decodeJwt } from "jose";
+
 import { app } from "./app.ts";
 import { verifyToken } from "./lib/auth.ts";
+import { COOKIE_AUTH_TOKEN, COOKIE_SESSION_FLAG } from "./lib/cookies.ts";
 import { _resetForTests as resetM2m, issueM2mToken } from "./lib/m2m.ts";
 import { issuePat } from "./lib/pat.ts";
+import {
+  _resetForTests as resetSessionStore,
+  getSession,
+  setSession,
+} from "./lib/session-store.ts";
 import { mintUserToken } from "./lib/user-token.ts";
 
 const mockFetch = vi.fn();
@@ -581,5 +589,445 @@ describe("user-token Bearer at protected endpoint (B12)", () => {
     );
     expect(res.status).toBe(401);
     expect(mockFetch).not.toHaveBeenCalled();
+  });
+});
+
+// ----------------------------------------------------------------------------
+// ui-cookie-session — cookie transport, identity & teardown (C1 + C2)
+// ----------------------------------------------------------------------------
+//
+// Slices C1/C2 of the localStorage-Bearer → httpOnly-cookie-session migration
+// (design SSOT: docs/feature/ui-cookie-session/design/delta-and-decisions.md).
+// These pin the auth-proxy contract end to end at the HTTP boundary:
+//
+//   C1 — D1: callback Set-Cookie auth_token (HttpOnly) + session=1 (JS-readable)
+//        D2: callback body STILL carries access_token (frontend/ back-compat)
+//        D3: per-request credential read priority HEADER > COOKIE, applied at
+//            all four sites (catch-all /api/*, /ui-state/*, /worker/*, refresh);
+//            a present header is terminal (an invalid header is NOT rescued by a
+//            valid cookie); cookie-read VERIFIES (presence is not trust)
+//   C2 — D4: GET /api/auth/me (cookie-or-header) → {userId, orgId, email}; 401
+//            when neither; D5: logout clears BOTH cookies and still honours the
+//            Bearer header path (PAT/headless).
+
+interface ParsedSetCookie {
+  name: string;
+  value: string;
+  httpOnly: boolean;
+  secure: boolean;
+  sameSite?: string;
+  path?: string;
+  maxAge?: string;
+}
+
+function parseSetCookie(raw: string): ParsedSetCookie {
+  const parts = raw
+    .split(";")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const [first, ...rest] = parts;
+  const eq = first.indexOf("=");
+  const attrs: Record<string, string | true> = {};
+  for (const seg of rest) {
+    const i = seg.indexOf("=");
+    if (i === -1) attrs[seg.toLowerCase()] = true;
+    else attrs[seg.slice(0, i).toLowerCase()] = seg.slice(i + 1);
+  }
+  return {
+    name: first.slice(0, eq),
+    value: first.slice(eq + 1),
+    httpOnly: attrs.httponly === true,
+    secure: attrs.secure === true,
+    sameSite: typeof attrs.samesite === "string" ? attrs.samesite : undefined,
+    path: typeof attrs.path === "string" ? attrs.path : undefined,
+    maxAge: typeof attrs["max-age"] === "string" ? attrs["max-age"] : undefined,
+  };
+}
+
+/** The first parsed `Set-Cookie` header for `name`, emitted as its own header. */
+function setCookie(res: Response, name: string): ParsedSetCookie | undefined {
+  for (const raw of res.headers.getSetCookie()) {
+    const parsed = parseSetCookie(raw);
+    if (parsed.name === name) return parsed;
+  }
+  return undefined;
+}
+
+async function devSignIn(): Promise<{
+  accessToken: string;
+  expiresIn: number;
+}> {
+  const res = await makeRequest("/api/auth/callback", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code: "dev-auth-code" }),
+  });
+  const body = (await res.json()) as { access_token: string; expires_in: number };
+  return { accessToken: body.access_token, expiresIn: body.expires_in };
+}
+
+describe("ui-cookie-session: callback Set-Cookie + body token (C1, D1/D2)", () => {
+  const originalAuthMode = process.env.AUTH_MODE;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetSessionStore();
+    process.env.AUTH_MODE = "dev";
+  });
+
+  afterEach(() => {
+    resetSessionStore();
+    if (originalAuthMode === undefined) delete process.env.AUTH_MODE;
+    else process.env.AUTH_MODE = originalAuthMode;
+  });
+
+  it("sets the HttpOnly auth_token + JS-readable session cookies and keeps access_token in the body", async () => {
+    const res = await makeRequest("/api/auth/callback", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code: "dev-auth-code" }),
+    });
+    expect(res.status).toBe(200);
+
+    const body = (await res.json()) as { access_token: string; expires_in: number };
+    // D2: the legacy body token survives (frontend/ still reads it).
+    expect(typeof body.access_token).toBe("string");
+    expect(body.access_token.length).toBeGreaterThan(0);
+    expect(typeof body.expires_in).toBe("number");
+
+    // D1: the credential cookie — HttpOnly, SameSite=Lax, Path=/, Max-Age==expiry,
+    // and (dev/HTTP) NOT Secure. Host-only: the serialiser never emits Domain.
+    const auth = setCookie(res, COOKIE_AUTH_TOKEN);
+    expect(auth).toBeDefined();
+    expect(auth!.value).toBe(body.access_token);
+    expect(auth!.httpOnly).toBe(true);
+    expect(auth!.secure).toBe(false);
+    expect((auth!.sameSite ?? "").toLowerCase()).toBe("lax");
+    expect(auth!.path).toBe("/");
+    expect(auth!.maxAge).toBe(String(body.expires_in));
+
+    // D1: the JS-readable sign-in flag — NOT HttpOnly, carries no secret.
+    const flag = setCookie(res, COOKIE_SESSION_FLAG);
+    expect(flag).toBeDefined();
+    expect(flag!.httpOnly).toBe(false);
+    expect(flag!.value).toBe("1");
+    expect(flag!.value).not.toBe(body.access_token);
+    expect((flag!.sameSite ?? "").toLowerCase()).toBe("lax");
+    expect(flag!.path).toBe("/");
+  });
+});
+
+describe("ui-cookie-session: header>cookie credential read at all four sites (C1, D3)", () => {
+  const originalAuthMode = process.env.AUTH_MODE;
+  const originalWorkosClient = process.env.WORKOS_CLIENT_ID;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetSessionStore();
+    resetM2m();
+    process.env.AUTH_MODE = "dev";
+    mockFetch.mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+  });
+
+  afterEach(() => {
+    resetSessionStore();
+    if (originalAuthMode === undefined) delete process.env.AUTH_MODE;
+    else process.env.AUTH_MODE = originalAuthMode;
+    if (originalWorkosClient === undefined) delete process.env.WORKOS_CLIENT_ID;
+    else process.env.WORKOS_CLIENT_ID = originalWorkosClient;
+  });
+
+  it("catch-all /api/*: a cookie-only request authorizes and injects the cookie token's identity", async () => {
+    const { token } = await mintUserToken({
+      sub: "user-cookie",
+      email: "cookie@example.com",
+      name: "Cookie",
+      org_id: "org-cookie",
+      sid: "sid-cookie",
+    });
+
+    const res = await app.fetch(
+      new Request("http://localhost/api/projects", {
+        headers: { Cookie: `${COOKIE_AUTH_TOKEN}=${token}` },
+      }),
+    );
+    expect(res.status).toBe(200);
+
+    const [, init] = mockFetch.mock.calls.at(-1) as [unknown, RequestInit];
+    const headers = init.headers as Headers;
+    expect(headers.get("X-User-Id")).toBe("user-cookie");
+    expect(headers.get("X-Org-Id")).toBe("org-cookie");
+    expect(headers.get("X-User-Email")).toBe("cookie@example.com");
+  });
+
+  it("catch-all /api/*: a valid header wins over an invalid cookie", async () => {
+    const { token } = await mintUserToken({
+      sub: "user-hdr",
+      email: "hdr@example.com",
+      name: "Hdr",
+      org_id: "org-hdr",
+      sid: "sid-hdr",
+    });
+
+    const res = await app.fetch(
+      new Request("http://localhost/api/projects", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Cookie: `${COOKIE_AUTH_TOKEN}=not-a-real-jwt.invalid.cookie`,
+        },
+      }),
+    );
+    expect(res.status).toBe(200);
+    const [, init] = mockFetch.mock.calls.at(-1) as [unknown, RequestInit];
+    const headers = init.headers as Headers;
+    expect(headers.get("X-User-Id")).toBe("user-hdr");
+  });
+
+  it("catch-all /api/*: an invalid header is NOT rescued by a valid cookie (present header is terminal)", async () => {
+    const { token } = await mintUserToken({
+      sub: "user-valid-cookie",
+      email: "vc@example.com",
+      name: "VC",
+      org_id: "org-vc",
+      sid: "sid-vc",
+    });
+
+    const res = await app.fetch(
+      new Request("http://localhost/api/projects", {
+        headers: {
+          Authorization: "Bearer garbage.invalid.header-jwt",
+          Cookie: `${COOKIE_AUTH_TOKEN}=${token}`,
+        },
+      }),
+    );
+    expect(res.status).toBe(401);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("catch-all /api/*: an unverifiable cookie with no header is refused (cookie-read verifies)", async () => {
+    const res = await app.fetch(
+      new Request("http://localhost/api/projects", {
+        headers: { Cookie: `${COOKIE_AUTH_TOKEN}=garbage.not-a-jwt.value` },
+      }),
+    );
+    expect(res.status).toBe(401);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("/ui-state/* (prod branch): falls back to the cookie and injects identity", async () => {
+    process.env.AUTH_MODE = "production";
+    process.env.WORKOS_CLIENT_ID = "test-workos-client";
+    const { token } = await mintUserToken({
+      sub: "u-uis",
+      email: "uis@example.com",
+      name: "Uis",
+      org_id: "o-uis",
+      sid: "sid-uis",
+    });
+
+    const res = await app.fetch(
+      new Request("http://localhost/ui-state/state", {
+        headers: { Cookie: `${COOKIE_AUTH_TOKEN}=${token}` },
+      }),
+    );
+    expect(res.status).toBe(200);
+    const [, init] = mockFetch.mock.calls.at(-1) as [unknown, RequestInit];
+    const headers = init.headers as Headers;
+    expect(headers.get("X-User-Id")).toBe("u-uis");
+    expect(headers.get("X-Org-Id")).toBe("o-uis");
+  });
+
+  it("/ui-state/* (prod branch): an unverifiable cookie with no header is refused", async () => {
+    process.env.AUTH_MODE = "production";
+    process.env.WORKOS_CLIENT_ID = "test-workos-client";
+
+    const res = await app.fetch(
+      new Request("http://localhost/ui-state/state", {
+        headers: { Cookie: `${COOKIE_AUTH_TOKEN}=garbage.not-a-jwt` },
+      }),
+    );
+    expect(res.status).toBe(401);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("/worker/* (prod branch): falls back to the cookie and injects identity", async () => {
+    process.env.AUTH_MODE = "production";
+    process.env.WORKOS_CLIENT_ID = "test-workos-client";
+    const { token } = await mintUserToken({
+      sub: "u-wrk",
+      email: "wrk@example.com",
+      name: "Wrk",
+      org_id: "o-wrk",
+      sid: "sid-wrk",
+    });
+
+    const res = await app.fetch(
+      new Request("http://localhost/worker/chat", {
+        headers: { Cookie: `${COOKIE_AUTH_TOKEN}=${token}` },
+      }),
+    );
+    expect(res.status).toBe(200);
+    const [, init] = mockFetch.mock.calls.at(-1) as [unknown, RequestInit];
+    const headers = init.headers as Headers;
+    expect(headers.get("X-User-Id")).toBe("u-wrk");
+  });
+
+  it("/api/auth/refresh: a cookie-only client can refresh (UC-5)", async () => {
+    const sid = "sid-refresh-cookie";
+    const claims = {
+      sub: "dev-user-001",
+      email: "dev@localhost",
+      name: "Dev User",
+      org_id: "dev-org-001",
+    };
+    const { token } = await mintUserToken({ ...claims, sid });
+    setSession(sid, {
+      workos_refresh_token: "r",
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+      user_claims: claims,
+    });
+
+    const res = await app.fetch(
+      new Request("http://localhost/api/auth/refresh", {
+        method: "POST",
+        headers: { Cookie: `${COOKIE_AUTH_TOKEN}=${token}` },
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { access_token?: string };
+    expect(typeof body.access_token).toBe("string");
+  });
+});
+
+describe("ui-cookie-session: GET /api/auth/me identity (C2, D4)", () => {
+  const originalAuthMode = process.env.AUTH_MODE;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetSessionStore();
+    resetM2m();
+    process.env.AUTH_MODE = "dev";
+  });
+
+  afterEach(() => {
+    resetSessionStore();
+    if (originalAuthMode === undefined) delete process.env.AUTH_MODE;
+    else process.env.AUTH_MODE = originalAuthMode;
+  });
+
+  it("returns the identity carried by the auth_token cookie", async () => {
+    const { token } = await mintUserToken({
+      sub: "me-user",
+      email: "me@example.com",
+      name: "Me",
+      org_id: "me-org",
+      sid: "sid-me",
+    });
+
+    const res = await app.fetch(
+      new Request("http://localhost/api/auth/me", {
+        headers: { Cookie: `${COOKIE_AUTH_TOKEN}=${token}` },
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      userId: "me-user",
+      orgId: "me-org",
+      email: "me@example.com",
+    });
+  });
+
+  it("returns the identity carried by an Authorization header", async () => {
+    const { token } = await mintUserToken({
+      sub: "me-hdr",
+      email: "mehdr@example.com",
+      name: "MeHdr",
+      org_id: "me-hdr-org",
+      sid: "sid-me-hdr",
+    });
+
+    const res = await app.fetch(
+      new Request("http://localhost/api/auth/me", {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      userId: "me-hdr",
+      orgId: "me-hdr-org",
+      email: "mehdr@example.com",
+    });
+  });
+
+  it("returns 401 when neither a cookie nor a header is present", async () => {
+    const res = await app.fetch(new Request("http://localhost/api/auth/me"));
+    expect(res.status).toBe(401);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("ui-cookie-session: POST /api/auth/logout teardown (C2, D5)", () => {
+  const originalAuthMode = process.env.AUTH_MODE;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetSessionStore();
+    resetM2m();
+    process.env.AUTH_MODE = "dev";
+  });
+
+  afterEach(() => {
+    resetSessionStore();
+    if (originalAuthMode === undefined) delete process.env.AUTH_MODE;
+    else process.env.AUTH_MODE = originalAuthMode;
+  });
+
+  it("clears both cookies when carried by the session cookie", async () => {
+    const { accessToken } = await devSignIn();
+
+    const res = await app.fetch(
+      new Request("http://localhost/api/auth/logout", {
+        method: "POST",
+        headers: { Cookie: `${COOKIE_AUTH_TOKEN}=${accessToken}` },
+      }),
+    );
+    expect([200, 204]).toContain(res.status);
+
+    const auth = setCookie(res, COOKIE_AUTH_TOKEN);
+    expect(auth).toBeDefined();
+    expect(auth!.value).toBe("");
+    expect(auth!.maxAge).toBe("0");
+    expect(auth!.path).toBe("/");
+
+    const flag = setCookie(res, COOKIE_SESSION_FLAG);
+    expect(flag).toBeDefined();
+    expect(flag!.value).toBe("");
+    expect(flag!.maxAge).toBe("0");
+    expect(flag!.path).toBe("/");
+  });
+
+  it("via a Bearer header still deletes the server session and clears the cookies", async () => {
+    const { accessToken } = await devSignIn();
+    const sid = decodeJwt(accessToken).sid as string;
+    expect(getSession(sid)).not.toBeNull();
+
+    const res = await app.fetch(
+      new Request("http://localhost/api/auth/logout", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      }),
+    );
+    expect([200, 204]).toContain(res.status);
+
+    // The PAT/headless path is preserved: the server session is gone.
+    expect(getSession(sid)).toBeNull();
+    // ...and the cookie teardown still rides along.
+    expect(setCookie(res, COOKIE_AUTH_TOKEN)?.maxAge).toBe("0");
+    expect(setCookie(res, COOKIE_SESSION_FLAG)?.maxAge).toBe("0");
   });
 });

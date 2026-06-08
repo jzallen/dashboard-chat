@@ -4,6 +4,12 @@ import { Hono } from "hono";
 
 import { IDENTITY_HEADERS, isPublicPath, verifyToken } from "./lib/auth.ts";
 import {
+  buildSetCookie,
+  COOKIE_AUTH_TOKEN,
+  COOKIE_SESSION_FLAG,
+  parseCookieHeader,
+} from "./lib/cookies.ts";
+import {
   authenticateClient,
   isM2mEnabled,
   isM2mToken,
@@ -18,23 +24,23 @@ import {
   revokePat,
 } from "./lib/pat.ts";
 import {
+  computeOrgCreateReissue,
+  type ReissueBaseClaims,
+} from "./lib/post-response-reissue.ts";
+import {
   deleteSession,
   getSession,
   getSessionStatus,
   setSession,
 } from "./lib/session-store.ts";
-import { isUserToken, verifyUserToken } from "./lib/user-token.ts";
-import {
-  computeOrgCreateReissue,
-  type ReissueBaseClaims,
-} from "./lib/post-response-reissue.ts";
 import { createDevProvider } from "./lib/user-auth/dev.ts";
 import {
   type SessionStorePort,
   type UserAuthProvider,
-  WorkOsUserAuthProvider,
   type WorkOsConfig,
+  WorkOsUserAuthProvider,
 } from "./lib/user-auth/workos.ts";
+import { isUserToken, verifyUserToken } from "./lib/user-token.ts";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://api:8000";
 const UI_STATE_URL = process.env.UI_STATE_URL || "http://ui-state:8788";
@@ -55,6 +61,26 @@ function stripReissueHeaders(src: Headers): Headers {
   const headers = new Headers(src);
   for (const name of REISSUE_HEADERS) headers.delete(name);
   return headers;
+}
+
+/**
+ * Per-request credential read for the ui-cookie-session migration (D3): priority
+ * is HEADER > COOKIE. A present `Authorization: Bearer` is the credential —
+ * valid OR not — so its later verification failure is terminal and is NEVER
+ * rescued by the cookie. The `auth_token` cookie is consulted ONLY when no
+ * Bearer header is present (the header-less browser / EventSource case). Returns
+ * the raw token to verify, or null when neither is present. Callers still verify
+ * the token: cookie presence is not trust.
+ */
+function readCredential(c: {
+  req: { header: (name: string) => string | undefined };
+}): string | null {
+  const authHeader = c.req.header("Authorization") || "";
+  if (authHeader.startsWith("Bearer ")) {
+    return authHeader.slice(7);
+  }
+  const cookies = parseCookieHeader(c.req.header("Cookie"));
+  return cookies[COOKIE_AUTH_TOKEN] || null;
 }
 
 // Test-mirror cell for the frontend-coexistence acceptance suite (DD-10,
@@ -144,6 +170,32 @@ app.post("/api/auth/callback", async (c) => {
   try {
     const { accessToken, expiresIn } = await createProviderForRequest()
       .handleCallback({ code, state });
+    // ui-cookie-session (C1/D1): set the credential as an HttpOnly cookie and a
+    // separate JS-readable sign-in flag, as two distinct Set-Cookie headers
+    // (never collapsed — UC-6). Secure is omitted in dev (HTTP) so the cookie
+    // round-trips; host-only (no Domain). D2: keep access_token in the body so
+    // frontend/ (still localStorage-Bearer) does not break.
+    const secure = (process.env.AUTH_MODE || "dev") !== "dev";
+    c.header(
+      "Set-Cookie",
+      buildSetCookie(COOKIE_AUTH_TOKEN, accessToken, {
+        httpOnly: true,
+        sameSite: "Lax",
+        path: "/",
+        maxAge: expiresIn,
+        secure,
+      }),
+      { append: true },
+    );
+    c.header(
+      "Set-Cookie",
+      buildSetCookie(COOKIE_SESSION_FLAG, "1", {
+        sameSite: "Lax",
+        path: "/",
+        secure,
+      }),
+      { append: true },
+    );
     return c.json({ access_token: accessToken, expires_in: expiresIn });
   } catch (e) {
     return mapProviderError(c, e);
@@ -155,11 +207,12 @@ app.post("/api/auth/callback", async (c) => {
 // the freshly-minted token. The session-store's WorkOS refresh token is
 // NOT returned in the body — it never leaves the server (OQ1 (b)).
 app.post("/api/auth/refresh", async (c) => {
-  const authHeader = c.req.header("Authorization") || "";
-  if (!authHeader.startsWith("Bearer ")) {
+  // ui-cookie-session (C1/D3, UC-5): a cookie-only browser holds no readable
+  // token, so read the credential header-first, then fall back to the cookie.
+  const inbound = readCredential(c);
+  if (!inbound) {
     return c.json({ error: "invalid_session" }, 401);
   }
-  const inbound = authHeader.slice(7);
 
   let payload: Awaited<ReturnType<typeof verifyUserToken>>;
   try {
@@ -194,9 +247,11 @@ app.post("/api/auth/refresh", async (c) => {
 // returned regardless of whether the Bearer was valid — the FE just
 // wants to know the server let go (idempotency by design).
 app.post("/api/auth/logout", async (c) => {
-  const authHeader = c.req.header("Authorization") || "";
-  if (authHeader.startsWith("Bearer ")) {
-    const token = authHeader.slice(7);
+  // ui-cookie-session (C2/D5): read the session header-first, then the cookie —
+  // the Bearer path stays intact for PAT/headless clients. Delete the server
+  // session, then clear BOTH cookies on the way out so the browser drops them.
+  const token = readCredential(c);
+  if (token) {
     try {
       const payload = await verifyUserToken(token);
       const sid = typeof payload.sid === "string" ? payload.sid : "";
@@ -205,7 +260,41 @@ app.post("/api/auth/logout", async (c) => {
       // Verification failure: treat as already-logged-out, no-op delete.
     }
   }
+  c.header(
+    "Set-Cookie",
+    buildSetCookie(COOKIE_AUTH_TOKEN, "", { maxAge: 0, path: "/" }),
+    { append: true },
+  );
+  c.header(
+    "Set-Cookie",
+    buildSetCookie(COOKIE_SESSION_FLAG, "", { maxAge: 0, path: "/" }),
+    { append: true },
+  );
   return c.body(null, 204);
+});
+
+// Identity read-back (ui-cookie-session C2/D4). A pure CSR SPA holding an
+// HttpOnly cookie can no longer decode the JWT itself, so it asks the server who
+// it is. Reads the credential cookie-or-header (D3 priority), verifies it, and
+// returns the claim identity; 401 when neither is present or the token is
+// invalid. Registered BEFORE the catch-all app.all('*') so it is served here and
+// not proxied to the backend (which has no such route), and it is NOT a public
+// path — it must 401 without a credential.
+app.get("/api/auth/me", async (c) => {
+  const token = readCredential(c);
+  if (!token) {
+    return c.json({ error: "Missing or invalid Authorization header" }, 401);
+  }
+  try {
+    const identity = await verifyToken(token);
+    return c.json({
+      userId: identity.userId,
+      orgId: identity.orgId,
+      email: identity.email,
+    });
+  } catch {
+    return c.json({ error: "Invalid or expired token" }, 401);
+  }
 });
 
 /**
@@ -428,8 +517,10 @@ async function buildAgentIdentityHeaders(
     return { headers };
   }
 
-  const authHeader = c.req.header("Authorization") || "";
-  if (!authHeader.startsWith("Bearer ")) {
+  // ui-cookie-session (C1/D3): header-first, cookie fallback (prod branch only;
+  // the dev branch above injects DEV_USER unconditionally and is unchanged).
+  const token = readCredential(c);
+  if (!token) {
     return {
       error: Response.json(
         { error: "Missing or invalid Authorization header" },
@@ -438,7 +529,7 @@ async function buildAgentIdentityHeaders(
     };
   }
   try {
-    const identity = await verifyToken(authHeader.slice(7));
+    const identity = await verifyToken(token);
     headers.set("X-User-Id", identity.userId);
     headers.set("X-Org-Id", identity.orgId);
     headers.set("X-User-Email", identity.email);
@@ -516,15 +607,17 @@ app.all("/ui-state/*", async (c) => {
     incomingHeaders.set("X-User-Email", "dev@localhost");
   } else {
     // Production: require a verified token, just like the catch-all branch.
-    const authHeader = c.req.header("Authorization") || "";
-    if (!authHeader.startsWith("Bearer ")) {
+    // ui-cookie-session (C1/D3): header-first, then the auth_token cookie (so a
+    // same-origin EventSource, which cannot set Authorization, authenticates).
+    const token = readCredential(c);
+    if (!token) {
       return c.json(
         { error: "Missing or invalid Authorization header" },
         401,
       );
     }
     try {
-      const identity = await verifyToken(authHeader.slice(7));
+      const identity = await verifyToken(token);
       incomingHeaders.set("X-User-Id", identity.userId);
       incomingHeaders.set("X-Org-Id", identity.orgId);
       incomingHeaders.set("X-User-Email", identity.email);
@@ -705,16 +798,17 @@ app.all("*", async (c) => {
     return proxyRequest(c, incomingHeaders);
   }
 
-  // Extract Bearer token
-  const authHeader = c.req.header("Authorization") || "";
-  if (!authHeader.startsWith("Bearer ")) {
+  // Extract the credential: header-first, then the auth_token cookie
+  // (ui-cookie-session C1/D3). A present Bearer header is terminal — its
+  // verification failure below is NOT rescued by the cookie. The cookie is the
+  // header-less browser path; it is still verified, so presence is not trust.
+  const token = readCredential(c);
+  if (!token) {
     return c.json(
       { error: "Missing or invalid Authorization header" },
       401
     );
   }
-
-  const token = authHeader.slice(7);
 
   try {
     const identity = await verifyToken(token);
