@@ -1,0 +1,34 @@
+[project]
+name = "dashboard-chat-acceptance-ui-cookie-session"
+version = "0.0.1"
+description = "Acceptance tests for ui-cookie-session — migrate ui/ auth from a localStorage Bearer token to an httpOnly cookie session (DISTILL, RED-by-design)."
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0.0,<9.0.0",
+    "httpx>=0.27.0,<1.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+python_files = ["test_*.py"]
+markers = [
+    "real_io: scenario uses real adapters (the local compose stack — real HTTP + auth-proxy + backend + reverse-proxy)",
+    "walking_skeleton: the single end-to-end scenario gating the feature (sign in → cookie session → cookie-borne request → identity → sign out → refused)",
+    "needs_compose_stack: scenario requires the local compose topology reachable on host ports (skipped otherwise)",
+    "happy_path: nominal flow — no failure injection",
+    "error_path: explicit rejection / missing-or-invalid-credential scenario",
+    "regression: locks a behavior that must keep holding (D3 header>cookie priority; D9 Bearer path untouched) — green now and after",
+    "guard: green now AND after the slice lands (not RED-by-design) — locks a contract that must keep holding through the migration / against a plausible mis-implementation",
+    "c1_authproxy_cookies: Slice C1 — Set-Cookie both cookies on callback (keep body token) + cookie-read across the 4 per-request paths (header>cookie) + cookie attrs",
+    "c2_authproxy_me_logout: Slice C2 — GET /api/auth/me (cookie-or-header) + logout cookie-clear",
+    "c3_ui_transport: Slice C3 — ui/ backendClient credentials:include + drop Bearer (validated by ui/ vitest in DELIVER, not by this suite)",
+    "c4_ui_gate: Slice C4 — ui/ hasSession() flag-cookie auth gate + auth-callback stops reading the body token (validated by ui/ vitest in DELIVER)",
+    "pending: traces to a DELIVER slice not yet implemented — RED until that slice lands",
+]
+addopts = [
+    "-ra",
+    "--strict-markers",
+]
