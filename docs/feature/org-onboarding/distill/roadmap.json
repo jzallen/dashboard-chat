@@ -1,0 +1,133 @@
+{
+  "feature": "org-onboarding",
+  "slug": "org-onboarding",
+  "wave": "DISTILL",
+  "generated": "2026-06-08",
+  "scope_boundary": "Org + a single default project ONLY. No member invites, no project naming beyond the one default project. ui/ only (NOT frontend/).",
+  "design_ssot": "docs/feature/org-onboarding/design/delta-and-decisions.md",
+  "acceptance_suite": "tests/acceptance/org-onboarding/ (own pyproject.toml + venv; run: cd tests/acceptance/org-onboarding && uv run --no-project pytest). NOT run by the refinery --auto gate — RED-by-design.",
+  "walking_skeleton": {
+    "scenario": "test_walking_skeleton_org_then_default_project.py::test_orgless_principal_completes_org_and_default_project",
+    "strategy": "C (real local / @real_io) — real compose stack (backend + ui-state + Redis + auth-proxy); no in-memory doubles.",
+    "green_when": "S1 + S2 + S3 + S4 are all delivered (the journey is end to end)."
+  },
+  "primary_target_env": "AUTH_MODE=dev + DEV_NO_ORG=true",
+  "slices": [
+    {
+      "id": "S1",
+      "title": "Backend: created_by column, DEV_NO_ORG DB resolution, drop auto-create",
+      "decisions": ["D1", "D2"],
+      "layer": "backend",
+      "gate_tested": true,
+      "independently_shippable": true,
+      "summary": "Add a nullable organizations.created_by, stamp it on org create, resolve the dev principal's org from the DB under DEV_NO_ORG (ignoring X-Org-Id), and drop the auto-create of 'My First Project'. This is what makes the empty-org state reachable for the dev principal AND frees first-project creation for the project-context step.",
+      "acceptance_criteria": [
+        "When the dev principal (DEV_NO_ORG=true) with no owned org calls GET /api/orgs/me via the ingress, it returns 404 (X-Org-Id header is ignored; org resolved by created_by == user.id).",
+        "When the principal creates an org via POST /api/orgs, the organizations row persists created_by == user.id (gate-tested backend unit test).",
+        "After the org is created, GET /api/orgs/me resolves that org for the same principal under DEV_NO_ORG (200).",
+        "When an org is created via POST /api/orgs, NO project is auto-created (GET /api/projects returns []).",
+        "DEV_NO_ORG defaults to false; with it off, behaviour is unchanged (header claim honoured)."
+      ],
+      "driving_tests": [
+        "tests/acceptance/org-onboarding/test_org_creation_persists_created_by.py",
+        "tests/acceptance/org-onboarding/test_post_orgs_no_longer_auto_creates_project.py",
+        "tests/acceptance/org-onboarding/test_org_absent_from_db_routes_to_onboarding.py",
+        "backend/tests/use_cases/organization/test_create_organization.py (UPDATE: assert zero projects + created_by stamped — keeps the gate green)"
+      ],
+      "files_to_touch": [
+        "backend/app/repositories/metadata/organization_record.py — add created_by: Mapped[str | None] (nullable).",
+        "backend/migrations/versions/018_add_organizations_created_by.py — NEW; add_column nullable String(36); down_revision = 'd7e8f9a0b1c2' (017 head). SQLite + Postgres compatible.",
+        "backend/app/repositories/metadata/repository.py — create_organization accepts + persists created_by.",
+        "backend/app/use_cases/organization/create_organization.py — pass created_by=user.id; DELETE the create_project('My First Project', ...) auto-create.",
+        "backend/app/config.py — add dev_no_org: bool = False (env DEV_NO_ORG).",
+        "backend/app/routers/deps.py (or the /api/orgs/me read path with session access) — under dev_no_org + dev principal, ignore X-Org-Id and resolve org_id from the DB by created_by == user.id.",
+        "backend/tests/use_cases/organization/test_create_organization.py — update the auto-create assertion (now zero projects); add created_by assertion."
+      ],
+      "alembic_note": "Follow the alembic-migration skill: nullable add_column only; real downgrade (drop_column); no data backfill needed. SQLite dev + Postgres prod both support add nullable column without batch mode.",
+      "risks": ["The DB-touching org resolution must run where an AsyncSession is in context; get_current_user currently has no repo. May need the resolution in the org read use case / a deps helper that depends on use_db_context."]
+    },
+    {
+      "id": "S2",
+      "title": "ui/ plumbing: port StateProxy (CSR + Bearer) + provider + session_begin bootstrap",
+      "decisions": ["D3", "D4", "D5"],
+      "layer": "ui",
+      "gate_tested": false,
+      "independently_shippable": true,
+      "summary": "Port frontend/app/lib/state-proxy.ts into ui/ adapted to CSR + localStorage Bearer: forward Authorization: Bearer <token> on session_begin, every /ui-state/state/events POST, and GET /state(+/stream). Wrap it in a StateProxyProvider created once at app entry. On authenticated entry, POST {type: session_begin} and await settle. Defensively adopt X-New-Access-Token → setToken (D5, WorkOS-only; not e2e-gated).",
+      "acceptance_criteria": [
+        "createStateProxy in ui/ attaches Authorization: Bearer <token> (from tokenStorage.getToken()) to every /ui-state call (unit test with injected fetchImpl asserts the header).",
+        "A StateProxyProvider context exposes a single proxy instance shared across routes (the gate + /onboarding read the same proxy).",
+        "On authenticated entry the app POSTs session_begin exactly once and the resulting document is observable via useSelector.",
+        "When a /ui-state response carries X-New-Access-Token, the proxy calls setToken with it (WorkOS defensive path)."
+      ],
+      "driving_tests": [
+        "ui/app/lib/state-proxy.test.ts (NEW vitest — Bearer header on each transport call; X-New-Access-Token adoption). Vitest is NOT gate-run; keep RED-by-skip if scaffolding before impl.",
+        "Exercised end to end by the walking skeleton once S3/S4 land."
+      ],
+      "files_to_touch": [
+        "ui/app/lib/state-proxy.ts — NEW (port; CSR + Bearer; inject fetchImpl/eventSourceFactory).",
+        "ui/app/lib/StateProxyProvider.tsx — NEW (React context; single instance at app entry).",
+        "ui/app/auth/bootstrap.ts (or a new bootstrap hook) — POST session_begin on authenticated entry; await settle.",
+        "ui/app/root.tsx (ui/) or app entry — mount StateProxyProvider.",
+        "Use createLogger from ui/app/lib/log.ts for all logging (never console.*)."
+      ],
+      "risks": ["frontend/ proxy uses credentials:'include' (cookie). ui/ must instead send the Bearer header and NOT rely on cookies; SSE (EventSource) cannot set Authorization headers — confirm the ui-state SSE auth strategy for CSR (query param or rely on the POST-settled document; see upstream-issues UI-3)."]
+    },
+    {
+      "id": "S3",
+      "title": "ui/ onboarding: /onboarding route outside the shell + gate redirect + needs_org org form",
+      "decisions": ["D6"],
+      "layer": "ui",
+      "gate_tested": false,
+      "independently_shippable": true,
+      "summary": "Add /onboarding as a top-level route OUTSIDE the app-shell layout (sibling of /login, /auth/callback) so it renders without Topbar/Overlays. After session_begin settles, the gate redirects to /onboarding when phase == onboarding (onboarding.state in needs_org|creating_org|error_recoverable); verifying is transient (wait, do not redirect). The needs_org surface renders an org-name form that posts org_form_submitted {org_name} and shows the inline org_validation_error.",
+      "acceptance_criteria": [
+        "When an authenticated empty-org principal enters, after session_begin settles they are redirected to /onboarding (not bounced to /login, not /project/undefined).",
+        "/onboarding renders OUTSIDE the app-shell (no Topbar/Overlays) and shows the principal's identity (regions.onboarding.context.user).",
+        "Submitting a valid org name posts org_form_submitted {org_name}; on ready the surface advances to the project step (S4).",
+        "Submitting an invalid/blank org name keeps the user on the org form and shows the inline org_validation_error; state stays needs_org.",
+        "While onboarding.state == verifying the gate waits and does not redirect."
+      ],
+      "driving_tests": [
+        "tests/acceptance/org-onboarding/test_orgless_principal_routes_to_onboarding.py",
+        "tests/acceptance/org-onboarding/test_invalid_org_name_stays_needs_org.py",
+        "ui/app/routes/onboarding.test.tsx (NEW vitest, optional) — gate redirect + form post; not gate-run."
+      ],
+      "files_to_touch": [
+        "ui/app/routes.ts — add route('/onboarding', 'routes/onboarding.tsx') as a top-level sibling of /login + /auth/callback (OUTSIDE app-shell).",
+        "ui/app/routes/onboarding.tsx — NEW; needs_org org-name form → org_form_submitted; inline validation; identity header.",
+        "ui/app/routes/app-shell.tsx — gate: after session_begin settle, redirect to /onboarding when phase == onboarding; wait on verifying.",
+        "Use createLogger for logging."
+      ],
+      "risks": ["The existing app-shell gate redirects to /login on missing token and reads fixture catalog; the new gate must compose with session_begin settle without double-redirect loops."]
+    },
+    {
+      "id": "S4",
+      "title": "ui/ default project: no_projects → create_project_submitted form → app entry",
+      "decisions": ["D6"],
+      "layer": "ui",
+      "gate_tested": false,
+      "independently_shippable": true,
+      "summary": "After onboarding ready, when regions.projectContext.state == no_projects, the /onboarding surface drives the default-project form: it posts create_project_submitted carrying the project name. On project_selected, onboarding is complete and the app navigates in. (Use create_project_submitted, which carries the name — NOT create_project_clicked.)",
+      "acceptance_criteria": [
+        "After org creation, when projectContext.state == no_projects, /onboarding shows the default-project form.",
+        "Submitting the project name posts create_project_submitted carrying the name; on project_selected exactly one project exists with that name.",
+        "On completion (org exists AND default project exists) the app navigates into the workspace (out of /onboarding).",
+        "The name reaches the backend correctly (see upstream-issues UI-1 — reconcile the create_project_submitted name field)."
+      ],
+      "driving_tests": [
+        "tests/acceptance/org-onboarding/test_default_project_completes_onboarding.py",
+        "tests/acceptance/org-onboarding/test_walking_skeleton_org_then_default_project.py (the @walking_skeleton anchor — GREEN closes the feature)"
+      ],
+      "files_to_touch": [
+        "ui/app/routes/onboarding.tsx — add the no_projects default-project form → create_project_submitted; navigate into app on project_selected.",
+        "ui/app/routes/app-shell.tsx — when ready + no_projects, keep the user on /onboarding until project_selected, then enter.",
+        "RECONCILE: the create_project_submitted payload field carrying the name (UI-1) — align ui/ post shape with what project-context's capturePendingProjectName reads.",
+        "Use createLogger for logging."
+      ],
+      "risks": ["UI-1: project-context's create_project_submitted handler reads the name from a field named org_name (misnomer). DELIVER must reconcile the wire payload shape so the submitted name is not dropped (→ empty-name project → backend 422)."]
+    }
+  ],
+  "sequencing": "S1 first (unblocks every acceptance scenario by making the empty-org state reachable + dropping auto-create). S2 next (the ui/ transport everything else rides). S3 then S4 stack the onboarding surface; the walking skeleton goes GREEN when S4 lands. S2–S4 are ui/-only and not gate-run; S1 is gate-tested by backend pytest.",
+  "gate_strategy": "DISTILL's MR touches docs/ + tests/acceptance/ ONLY (no backend/ui source). The refinery --auto gate runs backend ruff+pytest, which stays green (no backend source touched; the acceptance suite is a separate non-collected venv). The acceptance suite is RED-by-design and is run locally/by the agent before DELIVER, not by the queue."
+}
