@@ -218,6 +218,34 @@
       "s": "EXECUTED",
       "d": "PASS",
       "t": "2026-06-10T02:14:18Z"
+    },
+    {
+      "sid": "02-01",
+      "p": "PREPARE",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-06-10T02:52:43Z"
+    },
+    {
+      "sid": "02-01",
+      "p": "RED_ACCEPTANCE",
+      "s": "EXECUTED",
+      "d": "PASS: scenario run as-is, observed SKIP \u2014 'compose stack not reachable (http://localhost:5173 / http://localhost:1042) \u2014 bring it up with `docker compose up -d` from the repo root' \u2014 expected honest state per DLV-3; step-level RED driver is the vitest",
+      "t": "2026-06-10T02:53:06Z"
+    },
+    {
+      "sid": "02-01",
+      "p": "RED_UNIT",
+      "s": "EXECUTED",
+      "d": "PASS: 8 unit tests written (budget 8 behaviors x 2 = 16), 7 fail on behavioral assertions against minimal scaffold",
+      "t": "2026-06-10T02:55:06Z"
+    },
+    {
+      "sid": "02-01",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS: full ui suite 19 files / 189 tests green (baseline 18/181 + 1/8 new), tsc --noEmit clean, wiring check: all 4 files_to_modify in git diff",
+      "t": "2026-06-10T02:56:37Z"
     }
   ]
 }

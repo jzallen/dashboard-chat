@@ -2,8 +2,9 @@
   "roadmap": {
     "project_id": "org-onboarding",
     "created_at": "2026-06-10T00:42:52Z",
-    "total_steps": 6,
-    "phases": 1
+    "extended_at": "2026-06-10",
+    "total_steps": 11,
+    "phases": 2
   },
   "phases": [
     {
@@ -36,7 +37,9 @@
             "backend/app/use_cases/organization/create_organization.py",
             "backend/tests/use_cases/organization/test_create_organization.py"
           ],
-          "depends_on": ["01-01"]
+          "depends_on": [
+            "01-01"
+          ]
         },
         {
           "id": "01-03",
@@ -51,7 +54,9 @@
             "backend/app/repositories/metadata/repository.py",
             "backend/tests/auth/test_deps.py"
           ],
-          "depends_on": ["01-02"]
+          "depends_on": [
+            "01-02"
+          ]
         },
         {
           "id": "01-04",
@@ -63,32 +68,126 @@
           "files_to_modify": [
             "tests/acceptance/org-onboarding/conftest.py"
           ],
-          "depends_on": ["01-03"]
+          "depends_on": [
+            "01-03"
+          ]
         },
         {
           "id": "01-05",
           "name": "Suite self-containment: in-suite fake-WorkOS userinfo fixture (DELIVER-discovered DISTILL gap)",
           "criteria": "tests/acceptance/org-onboarding/conftest.py provides a session-scoped fake-WorkOS HTTP server (stdlib http.server + threading, no new deps) answering GET /oauth/userinfo with 200 {email:'dev@localhost', name:'Dev User'} for any Bearer, bound on 0.0.0.0:14299 (the FAKE_WORKOS_URL default the ui-state container resolves via host.docker.internal). Scenario fixtures that drive session_begin depend on it. If port 14299 is already bound (an external fake-workos is running) the fixture no-ops. With the stack up + DEV_NO_ORG=true, session_begin settles needs_org (not session_rejected/transient). Stack-down behaviour unchanged: scenarios still SKIP, never error.",
-          "description": "AMENDMENT (orchestrator, 2026-06-10): discovered during Phase 2.5 acceptance verification — the onboarding machine's verifying actor re-verifies the Bearer against FAKE_WORKOS_URL/oauth/userinfo; the sibling TS harness self-provisions a fake (tests/acceptance/user-flow-state-machines/steps/fake-workos.ts) but this Python suite did not, so every session_begin settled session_rejected. Recorded in deliver/upstream-issues.md. Test infrastructure only; zero backend source.",
+          "description": "AMENDMENT (orchestrator, 2026-06-10): discovered during Phase 2.5 acceptance verification \u2014 the onboarding machine's verifying actor re-verifies the Bearer against FAKE_WORKOS_URL/oauth/userinfo; the sibling TS harness self-provisions a fake (tests/acceptance/user-flow-state-machines/steps/fake-workos.ts) but this Python suite did not, so every session_begin settled session_rejected. Recorded in deliver/upstream-issues.md. Test infrastructure only; zero backend source.",
           "test_file": "tests/acceptance/org-onboarding/test_org_absent_from_db_routes_to_onboarding.py",
           "scenario_name": "test_org_absent_from_db_routes_to_onboarding",
           "files_to_modify": [
             "tests/acceptance/org-onboarding/conftest.py"
           ],
-          "depends_on": ["01-04"]
+          "depends_on": [
+            "01-04"
+          ]
         },
         {
           "id": "01-06",
           "name": "Fix pre-existing POST /api/orgs 500-on-success (controller/use-case shape mismatch, DUI-3)",
           "criteria": "OrganizationController.post_organization builds the JSON:API envelope from the use case's REAL return shape ({'org_id','org_name'(,'requires_reauth')}): 201 with data.id == org_id, data.attributes.name == org_name, links.self == /api/organizations/{org_id}; requires_reauth surfaces as an attribute when present (workos path) and is absent otherwise (dev path). Characterization tests in backend/tests/controllers/test_organization_controller_char.py are re-pinned to the real use-case shape (the old _Model fiction is removed). Live proof: POST /api/orgs via the ingress returns 201 and the S1 scenario test_post_orgs_no_longer_auto_creates_project PASSES. Whole backend gate suite green; ruff clean.",
-          "description": "AMENDMENT (orchestrator, 2026-06-10): pre-existing defect exposed by live S1 verification — see deliver/upstream-issues.md DUI-3. The success path never worked over HTTP (KeyError -> 500 after commit); the char test pinned a mock shape the use case never returns; ui-state's 500-rule masked it. Iron-Rule-clean: the acceptance scenario's 201 assertion is correct; the char tests being re-pinned are theater (L2 triage).",
+          "description": "AMENDMENT (orchestrator, 2026-06-10): pre-existing defect exposed by live S1 verification \u2014 see deliver/upstream-issues.md DUI-3. The success path never worked over HTTP (KeyError -> 500 after commit); the char test pinned a mock shape the use case never returns; ui-state's 500-rule masked it. Iron-Rule-clean: the acceptance scenario's 201 assertion is correct; the char tests being re-pinned are theater (L2 triage).",
           "test_file": "tests/acceptance/org-onboarding/test_post_orgs_no_longer_auto_creates_project.py",
           "scenario_name": "test_org_create_does_not_auto_create_a_project",
           "files_to_modify": [
             "backend/app/controllers/organization_controller.py",
             "backend/tests/controllers/test_organization_controller_char.py"
           ],
-          "depends_on": ["01-05"]
+          "depends_on": [
+            "01-05"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "02",
+      "name": "S2+S3+S4 ui/ onboarding surface (MR-2): StateProxy port (cookie CSR), /onboarding route + gate, default project \u2014 FINAL slice set",
+      "description": "Implements DISTILL slices S2 (transport + provider/bootstrap), S3 (/onboarding route + app-shell gate, D6) and S4 (default-project completion) on the cookie baseline (ui-cookie-session landed; design/delta-and-decisions.md 'Changed Assumptions 2026-06-10' SUPERSEDES the Bearer-token language: every /ui-state call rides credentials:'include', SSE via EventSource(url,{withCredentials:true}), NO Authorization header, bootstrap gates on hasSession(); D5 X-New-Access-Token adoption is PARKED \u2014 not included). SCOPE GUARD: backend/ source is FROZEN (S1 merged), ui-state runtime is FROZEN, frontend/ is FROZEN. Touchable: ui/**, shared/ui-state-wire/wire-event.ts (type-only addition per ORD-1), tests/acceptance/org-onboarding/** (fixture adjustment only \u2014 never weaken an assertion), docs/feature/org-onboarding/**. GATE EVIDENCE (ORD-7): the refinery gate runs nothing for ui/; per-step RED_UNIT/GREEN evidence is `cd ui && npx vitest run` (baseline 18 files / 181 tests green \u2014 must stay green plus the new tests). The DISTILL acceptance scenarios are exercised against the live compose stack at the orchestrator's Phase 2.5 gate, NOT per step (stack may be down during steps; honest SKIP/RED recording per deliver/wave-decisions.md DLV-3). All new ui/ code logs via createLogger from ui/app/lib/log.ts \u2014 never console.* (ORD-6). The walking skeleton test_orgless_principal_completes_org_and_default_project goes GREEN when 02-05 lands, closing the feature.",
+      "steps": [
+        {
+          "id": "02-01",
+          "name": "S2 transport: port StateProxy into ui/ (cookie CSR) + workspace deps + dev-harness /ui-state proxy",
+          "criteria": "ui/app/lib/state-proxy.ts exists as a near-verbatim CSR port of frontend/app/lib/state-proxy.ts: same ActorRef surface (getSnapshot/send/postEvent/subscribe), injectable fetchImpl/eventSourceFactory, cache-then-fan-out semantics; the SSR seed path (fetchStateDocument / AUTH_PROXY_URL origin resolution) is dropped or kept minimal \u2014 this SPA is CSR-only, the proxy seeds from anonymousStateDocument(). New vitest ui/app/lib/state-proxy.test.ts proves with injected fetchImpl/eventSourceFactory: (a) POST /ui-state/state/events and GET /ui-state/state both carry credentials:'include'; (b) subscribe opens the SSE factory with URL '/ui-state/state/stream' and the default factory constructs EventSource(url,{withCredentials:true}); (c) NO Authorization header is built on any call; (d) postEvent caches the returned document BEFORE fanning out, so a getSnapshot re-read from inside an observer sees the fresh document. ui/package.json dependencies gain \"@dashboard-chat/ui-state-wire\": \"*\", \"@xstate/react\": \"^6.1.0\", \"xstate\": \"^5.28.0\" (ORD-2: all already hoisted in the workspace root node_modules \u2014 no lockfile churn expected beyond package.json; if npm install is needed it runs in the main checkout, not the worktree). ui/vite.config.ts server.proxy gains \"/ui-state\": { target: \"http://localhost:1042\", changeOrigin: true } (ORD-3 \u2014 without it every proxy call 404s in the dev harness). Gate evidence: `cd ui && npx vitest run` fully green (baseline 18 files / 181 tests plus the new file).",
+          "description": "DISTILL S2 (D3/D4), transport half. Cookie baseline makes this a near-verbatim port \u2014 no Bearer headers, no tokenStorage.getToken() (yields null post-migration). RISK (from S2): the dev-mode auth-proxy injects identity unconditionally on /ui-state/*, so cookie-transport bugs hide against the local stack \u2014 the injected-transport unit tests (not the dev stack) are the guard for credentials:'include' correctness. Wire types import from @dashboard-chat/ui-state-wire only \u2014 never from ui-state machine internals. Logging via createLogger (ORD-6).",
+          "test_file": "tests/acceptance/org-onboarding/test_walking_skeleton_org_then_default_project.py",
+          "scenario_name": "test_orgless_principal_completes_org_and_default_project",
+          "files_to_modify": [
+            "ui/app/lib/state-proxy.ts (NEW)",
+            "ui/app/lib/state-proxy.test.ts (NEW)",
+            "ui/package.json",
+            "ui/vite.config.ts"
+          ],
+          "depends_on": [
+            "01-06"
+          ]
+        },
+        {
+          "id": "02-02",
+          "name": "S2 provider: StateProxyProvider context + idempotent ensureBootstrap (session_begin once, gated on hasSession)",
+          "criteria": "ui/app/lib/StateProxyProvider.tsx provides a React context exposing ONE createStateProxy instance (D4 singleton \u2014 the app-shell gate and /onboarding read the same proxy) plus ensureBootstrap(): a once-latched promise that POSTs {type:\"session_begin\"} via postEvent and awaits settle; every subsequent call (from any surface) returns the SAME promise \u2014 exactly one session_begin per app load (ORD-4). The provider is mounted in ui/app/root.tsx's provider tree. ensureBootstrap is a no-op (no POST) when hasSession() is false. New vitest ui/app/lib/StateProxyProvider.test.tsx proves: with the session=1 flag cookie present, ensureBootstrap invoked from two surfaces fires session_begin exactly once and the resulting document is observable via getSnapshot/useSelector; with no session flag, zero session_begin is fired. Gate evidence: `cd ui && npx vitest run` green.",
+          "description": "DISTILL S2 (D4), bootstrap half. ORD-4 rationale: ensureBootstrap is CALLED from the authenticated entry surfaces (app-shell gate in 02-04 and /onboarding in 02-03), each gated on hasSession() \u2014 NOT from a Root mount effect, because Root never remounts on the post-login client-side navigation, so a mount-time-only effect would miss the fresh-login case. This step delivers the provider + latch; the call sites land in 02-03/02-04. Logging via createLogger (ORD-6).",
+          "test_file": "tests/acceptance/org-onboarding/test_walking_skeleton_org_then_default_project.py",
+          "scenario_name": "test_orgless_principal_completes_org_and_default_project",
+          "files_to_modify": [
+            "ui/app/lib/StateProxyProvider.tsx (NEW)",
+            "ui/app/lib/StateProxyProvider.test.tsx (NEW)",
+            "ui/app/root.tsx"
+          ],
+          "depends_on": [
+            "02-01"
+          ]
+        },
+        {
+          "id": "02-03",
+          "name": "S3 route + form: top-level /onboarding outside the shell, needs_org org-name form -> org_form_submitted",
+          "criteria": "ui/app/routes.ts adds route(\"/onboarding\", \"routes/onboarding.tsx\") as a TOP-LEVEL sibling of /login + /auth/callback, OUTSIDE the app-shell layout (ORD-8/D6) \u2014 it renders without Topbar/Overlays. ui/app/routes/onboarding.tsx: when !hasSession() it redirects to /login and NOWHERE else (no double-redirect loop); when authenticated it calls ensureBootstrap() and reads the document via useSelector on the shared proxy; in needs_org it renders the org-name form showing the principal identity from regions.onboarding.context.user and submits postEvent({type:\"org_form_submitted\", payload:{org_name}}); an invalid/blank name renders the inline regions.onboarding.context.org_validation_error and the user stays on the form (state stays needs_org); creating_org renders a progress state; error_recoverable and session_rejected render an honest error surface (no silent fallback). New vitest ui/app/routes/onboarding.test.tsx proves: the form posts org_form_submitted carrying the typed name; the inline validation error renders from the region context; the identity renders; the unauthenticated case navigates to /login only. Gate evidence: `cd ui && npx vitest run` green.",
+          "description": "DISTILL S3 (D6), surface half. The S4 project step extends this same file in 02-05 \u2014 this step covers the org half only. The server enforces the closed onboarding vocabulary (ADR-046 Decision 3): while phase==onboarding only org_form_submitted validates, so the surface must not post anything else before the phase advances. Logging via createLogger (ORD-6).",
+          "test_file": "tests/acceptance/org-onboarding/test_orgless_principal_routes_to_onboarding.py",
+          "scenario_name": "test_session_begin_settles_needs_org_with_identity",
+          "files_to_modify": [
+            "ui/app/routes.ts",
+            "ui/app/routes/onboarding.tsx (NEW)",
+            "ui/app/routes/onboarding.test.tsx (NEW)"
+          ],
+          "depends_on": [
+            "02-02"
+          ]
+        },
+        {
+          "id": "02-04",
+          "name": "S3 gate: app-shell onboarding redirect matrix (verifying waits, needs_org redirects, no_projects stays out)",
+          "criteria": "ui/app/routes/app-shell.tsx composes its EXISTING !hasSession() -> /login redirect with the onboarding gate (ORD-5/D6): it calls ensureBootstrap() (gated on hasSession()); while regions.onboarding.state === \"verifying\" it renders a waiting state and does NOT redirect (verifying is transient); after bootstrap settles it redirects to /onboarding when phase === \"onboarding\" AND regions.onboarding.state in {needs_org, creating_org, error_recoverable}; it ALSO redirects to /onboarding when onboarding is ready/phase advanced but regions.projectContext.state === \"no_projects\" (the user finishes the default-project step before entering); otherwise (ready + projects exist) it renders the shell exactly as today. No double-redirect loops with /onboarding or /login. New vitest ui/app/routes/app-shell.test.tsx proves the redirect matrix: no session -> /login; verifying -> waiting state rendered, no redirect; needs_org -> /onboarding; ready + no_projects -> /onboarding; ready + projects -> shell (Topbar/Outlet) renders. Gate evidence: `cd ui && npx vitest run` green.",
+          "description": "DISTILL S3 (D6), gate half. RISKS: (a) the clientLoader's refreshOrgGlobal() runs for an org-less principal \u2014 GET /api/orgs/me 404s under DEV_NO_ORG and that must not break entry (entry must still reach the gate and redirect to /onboarding, not crash or surface fixture data as if onboarded); (b) double-redirect loop risk \u2014 /onboarding sends an org-less UNauthenticated user only to /login (02-03), and the gate must never bounce a needs_org user back and forth. Logging via createLogger (ORD-6).",
+          "test_file": "tests/acceptance/org-onboarding/test_invalid_org_name_stays_needs_org.py",
+          "scenario_name": "test_blank_org_name_stays_needs_org_with_inline_error",
+          "files_to_modify": [
+            "ui/app/routes/app-shell.tsx",
+            "ui/app/routes/app-shell.test.tsx (NEW)"
+          ],
+          "depends_on": [
+            "02-03"
+          ]
+        },
+        {
+          "id": "02-05",
+          "name": "S4 completion: no_projects default-project form -> create_project_submitted (org_name quirk, UI-1) -> app entry on project_selected",
+          "criteria": "shared/ui-state-wire/wire-event.ts gains the named union member | { type: \"create_project_submitted\"; payload: { org_name: string } } with a comment documenting that org_name carries the PROJECT name (historical machine-side misnomer: the ui-state router posts child_event:{type,payload} and the parent SPREADS payload to top level \u2014 forwardChildEventToActiveChild in ui-state/lib/machines/chat-app/setup/actions.ts \u2014 so project-context's capturePendingProjectName + projectNameValid guard read event.org_name; see distill/upstream-issues.md UI-1). NO ui-state runtime file is modified (type-only seam fix, ORD-1). ui/app/routes/onboarding.tsx: when regions.projectContext.state === \"no_projects\" (onboarding ready / phase advanced) it renders the default-project name form and submits postEvent({type:\"create_project_submitted\", payload:{org_name:<typed PROJECT name>}}); on regions.projectContext.state === \"project_selected\" it navigates into the app (out of /onboarding). The 02-04 gate behaviour holds: no_projects principals stay on /onboarding until project_selected, then enter the shell. Vitest (extending onboarding.test.tsx, plus app-shell.test.tsx if the entry assertion lives there) proves the posted wire shape is EXACTLY {type:\"create_project_submitted\", payload:{org_name:<typed project name>}} (the UI-1 quirk \u2014 name not dropped) and that project_selected triggers navigation into the app. Gate evidence: `cd ui && npx vitest run` green. Completion claim: with the live stack up, the walking skeleton test_orgless_principal_completes_org_and_default_project is expected GREEN at the Phase 2.5 acceptance gate (org-less dev principal -> org -> default project -> app entry).",
+          "description": "DISTILL S4 (D6) + the orchestrator-ratified UI-1 reconciliation (ORD-1, verified in code). Use create_project_submitted, which carries the name \u2014 NOT create_project_clicked (carries no name -> empty-name project -> backend 422). RISK: posting create_project_submitted while phase is still onboarding would 400 against the closed vocabulary ACL \u2014 the form must only render/post once the phase has advanced (projectContext active). Logging via createLogger (ORD-6).",
+          "test_file": "tests/acceptance/org-onboarding/test_default_project_completes_onboarding.py",
+          "scenario_name": "test_no_projects_then_create_project_submitted_completes",
+          "files_to_modify": [
+            "shared/ui-state-wire/wire-event.ts",
+            "ui/app/routes/onboarding.tsx",
+            "ui/app/routes/onboarding.test.tsx",
+            "ui/app/routes/app-shell.test.tsx"
+          ],
+          "depends_on": [
+            "02-04"
+          ]
         }
       ]
     }
@@ -96,20 +195,29 @@
   "implementation_scope": {
     "source_directories": [
       "backend/app/",
-      "backend/migrations/versions/"
+      "backend/migrations/versions/",
+      "ui/app/",
+      "ui/package.json",
+      "ui/vite.config.ts",
+      "shared/ui-state-wire/"
     ],
     "test_directories": [
       "backend/tests/",
-      "tests/acceptance/org-onboarding/"
+      "tests/acceptance/org-onboarding/",
+      "ui/app/ (colocated *.test.ts / *.test.tsx vitest files)"
     ],
     "excluded_patterns": [
       "__init__.py",
-      "__pycache__/**"
+      "__pycache__/**",
+      "ui-state/** (runtime FROZEN \u2014 wire-event.ts type-only addition lives in shared/ui-state-wire/)",
+      "frontend/** (FROZEN \u2014 reference only)",
+      "backend/** source changes beyond Phase 01 (S1 merged, FROZEN for Phase 02)"
     ]
   },
   "validation": {
     "status": "approved",
     "reviewer": "nw-acceptance-designer-reviewer",
-    "approved_at": "2026-06-10T00:55:00Z"
+    "approved_at": "2026-06-10T03:05:00Z",
+    "note": "Phase 02 (S2+S3+S4) approved \u2014 no orphan scenarios, walking skeleton mapped to 02-05, CM-A/B/C pass. Phase 01 approval (2026-06-10T00:55:00Z) preserved; Phase 01 already executed."
   }
 }

@@ -29,6 +29,10 @@ export default defineConfig({
       // reachable inside this devcontainer at http://localhost:1042). Changing
       // this requires a dev-server restart (not HMR).
       "/api": { target: "http://localhost:1042", changeOrigin: true },
+      // StateProxy wire surface (GET /ui-state/state, POST /ui-state/state/events,
+      // GET /ui-state/state/stream SSE) — same auth-proxy container; without this
+      // entry every /ui-state call 404s in the dev harness.
+      "/ui-state": { target: "http://localhost:1042", changeOrigin: true },
     },
   },
 });
