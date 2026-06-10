@@ -180,3 +180,29 @@ auth-proxy → ui-state → backend path end to end — the path TBU defects hid
 See `../distill/roadmap.json` for the slice plan and `../distill/upstream-issues.md` for
 HIGH-severity blockers discovered while reading (notably the `create_project_submitted`
 name-field misnomer and the dev-principal org-reset affordance needed for repeatable runs).
+
+## Changed Assumptions (2026-06-10 — cookie baseline)
+
+`ui-cookie-session` landed between this DISTILL and DELIVER (commits `d34e67d1` C1+C2,
+`7d04209c` C3, `79fb2d60` C4; see `docs/feature/ui-cookie-session/`). `ui/` auth is now an
+**httpOnly cookie session** (`auth_token` cookie + JS-readable `session=1` flag; gate =
+`hasSession()`; `tokenStorage` writes retired; catalog requests ride `credentials:"include"`).
+Three assumptions above are superseded:
+
+1. **§3 / D4 — "adapt the proxy from SSR/cookie → CSR/localStorage Bearer; forward
+   `Authorization: Bearer <token>` on every call"** → SUPERSEDED. The `ui/` StateProxy port
+   uses **`credentials:"include"` + `EventSource(url, {withCredentials:true})`** — the same
+   transport shape as the `frontend/` reference, making S2 a near-verbatim port. No Bearer
+   headers; no `tokenStorage.getToken()` (the function yields null post-migration). Bootstrap
+   gates on `hasSession()` instead of token truthiness.
+2. **D5 — "the `ui/` proxy defensively adopts `X-New-Access-Token` via `setToken`"** →
+   PARKED. Post-migration `ui/` has no consumer of the reissue header (`setToken` is retired);
+   the WorkOS reissue→Set-Cookie conversion is an explicit auth-proxy follow-up
+   (ui-cookie-session D8/UC-4). The DEV flow needs no reissue (D1 DB resolution) — unchanged.
+3. **upstream-issues UI-3 (SSE auth under CSR + Bearer)** → DISSOLVED. The credential is a
+   cookie now; `EventSource` carries it with `withCredentials`. No query-param token, no
+   fetch-based SSE reader, no POST-settled-docs-only constraint needed.
+
+The roadmap's S2 slice (`../distill/roadmap.json`, `revised` field) was rewritten
+accordingly. D1/D2/D6 and slices S1/S3/S4 are unaffected (S3's app-shell gate now composes
+with `hasSession()` rather than a readable token — behaviorally identical at the gate seam).

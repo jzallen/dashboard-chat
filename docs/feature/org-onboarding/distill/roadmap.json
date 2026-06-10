@@ -3,6 +3,7 @@
   "slug": "org-onboarding",
   "wave": "DISTILL",
   "generated": "2026-06-08",
+  "revised": "2026-06-10 — cookie baseline: ui-cookie-session landed (auth_token httpOnly cookie + session=1 flag; ui/ requests ride credentials:'include'; tokenStorage writes retired; auth gate = hasSession()). S2 rewritten from Bearer-adaptation to cookie transport; the UI-3 risk (SSE cannot carry a Bearer) is DISSOLVED (EventSource withCredentials carries the cookie); the D5 X-New-Access-Token adoption is PARKED (see ui-cookie-session D8/UC-4 — ui/ has no consumer of the reissue header post-migration).",
   "scope_boundary": "Org + a single default project ONLY. No member invites, no project naming beyond the one default project. ui/ only (NOT frontend/).",
   "design_ssot": "docs/feature/org-onboarding/design/delta-and-decisions.md",
   "acceptance_suite": "tests/acceptance/org-onboarding/ (own pyproject.toml + venv; run: cd tests/acceptance/org-onboarding && uv run --no-project pytest). NOT run by the refinery --auto gate — RED-by-design.",
@@ -48,30 +49,30 @@
     },
     {
       "id": "S2",
-      "title": "ui/ plumbing: port StateProxy (CSR + Bearer) + provider + session_begin bootstrap",
-      "decisions": ["D3", "D4", "D5"],
+      "title": "ui/ plumbing: port StateProxy (CSR + cookie session) + provider + session_begin bootstrap",
+      "decisions": ["D3", "D4"],
       "layer": "ui",
       "gate_tested": false,
       "independently_shippable": true,
-      "summary": "Port frontend/app/lib/state-proxy.ts into ui/ adapted to CSR + localStorage Bearer: forward Authorization: Bearer <token> on session_begin, every /ui-state/state/events POST, and GET /state(+/stream). Wrap it in a StateProxyProvider created once at app entry. On authenticated entry, POST {type: session_begin} and await settle. Defensively adopt X-New-Access-Token → setToken (D5, WorkOS-only; not e2e-gated).",
+      "summary": "Port frontend/app/lib/state-proxy.ts into ui/ on the cookie baseline (ui-cookie-session): every /ui-state call uses credentials:'include' so the httpOnly auth_token cookie rides automatically — the SAME transport shape as the frontend/ reference, so this is now a near-verbatim port (no Bearer headers, no tokenStorage). SSE via EventSource(url, {withCredentials:true}) works because the credential is a cookie (UI-3 dissolved). Wrap it in a StateProxyProvider created once at app entry. On authenticated entry (hasSession()), POST {type: session_begin} and await settle. D5 (X-New-Access-Token adoption) is PARKED — ui/ no longer consumes the reissue header (ui-cookie-session D8/UC-4).",
       "acceptance_criteria": [
-        "createStateProxy in ui/ attaches Authorization: Bearer <token> (from tokenStorage.getToken()) to every /ui-state call (unit test with injected fetchImpl asserts the header).",
+        "createStateProxy in ui/ sends credentials:'include' on every /ui-state call (POST /state/events, GET /state) and opens the SSE stream with withCredentials:true; NO Authorization header is built (unit test with injected fetchImpl/eventSourceFactory asserts this).",
         "A StateProxyProvider context exposes a single proxy instance shared across routes (the gate + /onboarding read the same proxy).",
-        "On authenticated entry the app POSTs session_begin exactly once and the resulting document is observable via useSelector.",
-        "When a /ui-state response carries X-New-Access-Token, the proxy calls setToken with it (WorkOS defensive path)."
+        "On authenticated entry (hasSession() true) the app POSTs session_begin exactly once and the resulting document is observable via useSelector.",
+        "With no session (hasSession() false) the proxy does not bootstrap (no session_begin fired during the login round-trip)."
       ],
       "driving_tests": [
-        "ui/app/lib/state-proxy.test.ts (NEW vitest — Bearer header on each transport call; X-New-Access-Token adoption). Vitest is NOT gate-run; keep RED-by-skip if scaffolding before impl.",
+        "ui/app/lib/state-proxy.test.ts (NEW vitest — credentials:'include' on each transport call; withCredentials on the SSE factory; no Authorization header; no bootstrap without a session). Vitest is NOT gate-run; keep RED-by-skip if scaffolding before impl.",
         "Exercised end to end by the walking skeleton once S3/S4 land."
       ],
       "files_to_touch": [
-        "ui/app/lib/state-proxy.ts — NEW (port; CSR + Bearer; inject fetchImpl/eventSourceFactory).",
+        "ui/app/lib/state-proxy.ts — NEW (near-verbatim port from frontend/; credentials:'include' + withCredentials SSE; inject fetchImpl/eventSourceFactory).",
         "ui/app/lib/StateProxyProvider.tsx — NEW (React context; single instance at app entry).",
-        "ui/app/auth/bootstrap.ts (or a new bootstrap hook) — POST session_begin on authenticated entry; await settle.",
+        "ui/app/auth/bootstrap.ts (or a new bootstrap hook) — POST session_begin on authenticated entry gated on hasSession(); await settle.",
         "ui/app/root.tsx (ui/) or app entry — mount StateProxyProvider.",
         "Use createLogger from ui/app/lib/log.ts for all logging (never console.*)."
       ],
-      "risks": ["frontend/ proxy uses credentials:'include' (cookie). ui/ must instead send the Bearer header and NOT rely on cookies; SSE (EventSource) cannot set Authorization headers — confirm the ui-state SSE auth strategy for CSR (query param or rely on the POST-settled document; see upstream-issues UI-3)."]
+      "risks": ["The dev-mode auth-proxy injects identity unconditionally on /ui-state/* (no credential required in dev), so cookie-transport bugs may hide locally — the unit tests (not the dev stack) are the guard for credentials:'include' correctness."]
     },
     {
       "id": "S3",
@@ -99,7 +100,7 @@
         "ui/app/routes/app-shell.tsx — gate: after session_begin settle, redirect to /onboarding when phase == onboarding; wait on verifying.",
         "Use createLogger for logging."
       ],
-      "risks": ["The existing app-shell gate redirects to /login on missing token and reads fixture catalog; the new gate must compose with session_begin settle without double-redirect loops."]
+      "risks": ["The existing app-shell gate redirects to /login on hasSession() false (cookie flag, ui-cookie-session C4) and reads fixture catalog; the new onboarding gate must compose with session_begin settle without double-redirect loops."]
     },
     {
       "id": "S4",
