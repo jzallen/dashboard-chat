@@ -579,6 +579,57 @@ Probe failure for HARD adapters → process exits with `health.startup.refused` 
 
 ---
 
+#### `client-driven-onboarding` (DESIGN — 2026-06-10 — application scope, propose mode)
+
+**Author:** Morgan (nw-solution-architect)
+**ADR:** ADR-050 (application contracts — reissue cookie, org-id carry, failure causes, mode discovery, closed wire vocabulary, engaged flip; Proposed)
+**Companions (same wave):** ADR-048 (Titan, system scope), ADR-049 (Hera, domain scope) — this pass pins the concrete contracts both deliberately delegated
+**Seed (fixed inputs):** `docs/feature/client-driven-onboarding/design-intent.md` (boundary assignments user-ratified, not re-litigated; open points (a)–(f) are this pass's deliverable)
+**Deliverable:** `docs/feature/client-driven-onboarding/design/application-architecture.md`
+**Status:** Proposed → awaiting user ratification of AR-1–AR-8 (reissue emission posture, org-id header, cause enums + backend validation relocation, config endpoint, KPI retry trigger retirement, acceptance migration strategy, ReducedContext pruning, session-chat vocabulary) → solution-architect-reviewer → DISTILL
+
+**Decision summary.** Pins the six open points: **(a)** the org-scoped reissue rides `Set-Cookie: auth_token=…` (ui-cookie-session D1 attributes, D8 un-parked) **alongside** the retained `X-New-Access-Token` header (unconditional dual emission — `frontend/`/PAT stay header-based per D2/D9); the client does nothing (httpOnly), and Phase D's automatic project POST rides the refreshed claim; dev mode needs no special case (`DEV_NO_ORG` DB resolution). **(b)** the WorkOS-minted org id reaches the forwarded backend write as a trusted **`X-Provisioned-Org-Id`** header (joins the `IDENTITY_HEADERS` strip-then-inject list; backend passes it to the repo `id=` — the WorkOS id IS the local id, dev stays backend-generated); body-rewrite and id-in-body rejected as forgeable/stream-breaking. **(c)** failure contracts: backend statuses relayed verbatim, WorkOS-egress failures synthesize a 502 envelope, the pre-check 409 mirrors the backend's JSON:API shape; cause enums pinned (`org_name_taken`/`org_name_invalid` re-edit; `org_create_failed` retryable; compensated-vs-orphaned client-indistinguishable by design); manual-retry-only for org create, probe-first convergence for the default project, probe transport failures never reportable. **(d)** mode discovery = side-effect-free `GET /api/auth/config → {mode}` (cacheable; login.tsx renders the dev affordance only when the server says `dev`; folding into `/api/auth/login` rejected — it mints CSRF state per call). **(e)** the `ChatAppWireEvent` union becomes **closed** (catch-all retired; `*_reported` members + cause enums + the session-chat vocabulary executing DR-8; `org_form_submitted`/`create_project_submitted`/`switching_project_intent`/`retry_clicked` die — upstream issue UI-1 closes structurally); router ACL widens to the full closed vocabulary, compile-bound to the shared union; document deltas pinned (phase loses `rejected`; `verifying→awaiting_org_report` etc.; `ReducedContext` pruned); migration mapped file-by-file for the shipped `ui/` surfaces (new `onboarding-driver.ts` client policy module; `ProjectNameForm` deleted — Phase D automatic) and per-test for `tests/acceptance/org-onboarding/` (rework-in-place: driver does the real POSTs + reports; one test rewritten against new backend 422 validation; one survives as-is). **(f)** the engaged flip is gated on `regions.projectContext.state === "project_selected"` + non-null `active_scope.project_id` on the report POST's own response document (`phase === "chat"` is routing convenience — the document SSOT demotes phase from state-of-record); duplicates/stale tabs converge per ADR-049 phase-gating.
+
+**New components introduced:**
+
+| Component | Role | Location (planned) |
+|---|---|---|
+| `org-create-workflow` | Pre-check → WorkOS provision → forward (with id header) → compensate orchestration; fault-injection-testable unit | `auth-proxy/lib/org-create-workflow.ts` |
+| `onboarding-driver` | Relocated client flow policy: SSOT probes, status→cause mapping, outcome reports, Phase-D auto default project, retry policies | `ui/app/lib/onboarding-driver.ts` |
+| Name-availability endpoint | `GET /api/orgs/availability?name=` over the existing `get_organization_by_name` (ADR-048 layer A) | `backend/app/routers/organizations.py` |
+
+**Integration points (new/changed):**
+
+| Integration | Direction | Contract |
+|---|---|---|
+| auth-proxy → backend pre-check | `GET /api/orgs/availability?name=` | `200 {available: bool}`; same identity headers + correlation id as the forward |
+| auth-proxy → backend forward | `POST /api/orgs` + `X-Provisioned-Org-Id` | Trusted header (strip-then-inject); repo `id=` pass-through |
+| auth-proxy → client | org-create `201` response | `Set-Cookie auth_token` + `session=1` (D1 attributes) + retained `X-New-Access-Token` pair |
+| client → auth-proxy | `GET /api/auth/config` | `{mode: "dev"\|"workos"}`, `max-age=300`, no credential |
+| client → ui-state | `POST /ui-state/state/events` | Closed `ChatAppWireEvent` union (shared SSOT); unknown type → 400; out-of-phase → convergence |
+
+**External integrations annotated for DEVOPS handoff:**
+
+> Contract coverage recommended for the auth-proxy → WorkOS org-provisioning boundary (POST /organizations, POST /user_management/organization_memberships, DELETE /organizations/{id}) — golden-fixture consumer-driven contracts against a fake WorkOS via the `WORKOS_BASE` pin (ADR-048 R4), exercising timeout, membership failure, and compensation failure. Pact is overkill for three calls; the fake + gold tests in CI acceptance suffice. The ADR-048 assumption "WorkOS does not enforce org-name uniqueness" MUST be validated during DELIVER.
+
+**Earned-Trust contract.** System-scope probes inherited (ADR-048 §7: workos-mode soft-fail startup probe; ui-state probe surface shrinks to Redis-only). Application additions: the client reports only definitive SSOT answers (probe transport failures are not reportable); the `WORKOS_BASE` seam is the fault-injection target for the interception's gold tests; the closed union is compile-bound producer↔validator (`z.ZodType<ChatAppWireEvent>`) so vocabulary drift is a build failure, not a runtime surprise.
+
+**Quality gates passed (this DESIGN wave, application-scope pass).**
+
+- [x] All six seed open points (a)–(f) pinned with options + recommendation + exact contract (`application-architecture.md`).
+- [x] File-by-file delta across auth-proxy / backend / ui-state / ui/ / shared / compose, every row grounded file:line.
+- [x] Explicit cleanup (DELETE) inventory incl. the compose override pin whose comment names this feature as its sunset.
+- [x] C4 component diagram (interception + client-drive loop) in Mermaid.
+- [x] Reuse Analysis hard gate: two justified NEW modules + one new route; everything else EXTEND/SHRINK/DELETE/REUSE.
+- [x] Migration path for the shipped org-onboarding surfaces + per-test acceptance verdicts (incl. the Spec-8 crash-regression scenario).
+- [x] AC behavioral (document predicates + HTTP statuses), not implementation-coupled.
+- [x] External integration annotated with contract-test recommendation (WorkOS provisioning).
+- [x] Quality attributes addressed (ISO 25010 delta table in `application-architecture.md`).
+- [ ] User ratification of AR-1–AR-8 pending.
+- [ ] Peer review pending (Atlas — `solution-architect-reviewer`).
+
+---
+
 ## Cross-section index
 
 | ADR | Section | Summary |
@@ -599,4 +650,6 @@ Probe failure for HARD adapters → process exits with `health.startup.refused` 
 | ADR-031 | System | Frontend tier transition — Remix alongside nginx (Proposed) |
 | ADR-041 | Domain | Session-onboarding domain realignment (Proposed) |
 | ADR-042 | Domain | Session-onboarding adopts the server-authoritative store (Proposed) |
+| ADR-048 | System | Auth-proxy owns the WorkOS write workflow — org-create interception, credential/AUTH_MODE consolidation (Proposed) |
 | ADR-049 | Domain | Client-reported outcome event model + INV-PCO trust invariant — amends ADR-041 (Proposed) |
+| ADR-050 | Application | Client-driven-onboarding application contracts — reissue cookie, org-id carry, failure causes, mode discovery, closed wire vocabulary, engaged flip (Proposed) |
