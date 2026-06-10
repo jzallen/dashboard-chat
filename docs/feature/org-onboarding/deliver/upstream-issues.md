@@ -68,3 +68,41 @@ auth-proxy); the suite's `REVERSE_PROXY_URL` env was pointed at the auth-proxy
 host port (`http://localhost:1042`) for the S1 verification run, exercising the
 full auth-proxy → ui-state → backend path. S2–S4 (ui/ render layer) WILL need the
 real reverse-proxy image (`bazel build` of the frontend images) — plan for it.
+
+---
+
+## DUI-4 — `metadataApiSource` org-global memo had no invalidation (HIGH, RESOLVED in MR-2 / step 02-05 fix cycle 2)
+
+**Where:** `ui/app/catalog/dataSources/metadataApiSource.ts` (predates this feature).
+
+`projectsPromise` memoized the org-global `GET /api/projects` for the app's
+lifetime; `invalidateScope` deliberately left it intact. Consequence:
+`refreshOrgGlobal()` could never observe org-global changes — the app-shell's
+pre-onboarding refresh latched `[]` and the onboarding-completion refresh
+re-served it (stale "No projects yet" shell after completing onboarding;
+found by the live browser pass, invisible at the API seam).
+
+**Resolution:** optional `invalidateOrgGlobal()` on the catalog source port,
+implemented by the metadata source (clears the one org-global memo) and called
+by `revalidateOrgGlobal` before its reads. Memoization within a refresh cycle
+is preserved.
+
+## DUI-5 — StateProxy module singleton vs a future logout feature (LOW / informational)
+
+`StateProxyProvider`'s default proxy is a module-level singleton and the
+bootstrap latch is per-provider-mount. TODAY this is safe: ui/ has no
+production logout (`_session.ts` signOut is a test scaffold) and the login
+round-trip is a full page load, so module state cannot survive a user switch.
+IF a client-side logout ever lands, it must tear down or replace the proxy
+(stale document cache + latch) or User B could briefly observe User A's
+document. Raised by the Phase-4 adversarial review (D4); refuted as a current
+defect, recorded as a constraint on the future logout design.
+
+## DUI-6 — Acceptance suite JSON:API parse defect (MEDIUM, RESOLVED in MR-2)
+
+Three `list_projects` parse sites in the DISTILL suite read `r.get("name")` on
+JSON:API rows (name nests under `attributes`), so the S4 + walking-skeleton
+scenarios failed against a correctly-working stack and the no-auto-create
+scenario's name check was vacuous. Fixed (attributes-aware parse, flat-shape
+fallback); assertions unchanged. The suite's own org assertions already read
+`data.attributes.name` — the project sites were the outliers.
