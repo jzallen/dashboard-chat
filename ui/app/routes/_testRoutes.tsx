@@ -12,7 +12,8 @@ import { type RouteObject } from "react-router";
 
 import { ThemeProvider } from "../components/AppShell/ThemeProvider";
 import { FlashedNodeProvider } from "../components/FlashedNodeProvider";
-import { createStateProxy, type StateProxy } from "../lib/state-proxy";
+import { scriptedStateProxy } from "../lib/_stateProxyTestKit";
+import { type StateProxy } from "../lib/state-proxy";
 import { StateProxyProvider } from "../lib/StateProxyProvider";
 import AppShell from "./app-shell";
 import AuthCallbackRoute from "./auth-callback";
@@ -80,17 +81,7 @@ function settledStateDocument(): ChatAppStateDocument {
  *  is a silent fake (happy-dom has no EventSource). */
 function settledStateProxy(): StateProxy {
   const doc = settledStateDocument();
-  return createStateProxy({
-    seed: doc,
-    fetchImpl: (async () =>
-      ({ ok: true, status: 200, json: async () => doc }) as Response) as
-      typeof fetch,
-    eventSourceFactory: () => ({
-      addEventListener() {},
-      close() {},
-      onerror: null,
-    }),
-  });
+  return scriptedStateProxy(doc, () => doc).proxy;
 }
 
 /** The provider tree root.tsx renders the route tree under. */

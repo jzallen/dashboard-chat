@@ -19,6 +19,7 @@ import { render } from "@testing-library/react";
 import { useEffect } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { dropSessionFlag, giveSessionFlag } from "./_stateProxyTestKit";
 import { createStateProxy } from "./state-proxy";
 import { StateProxyProvider, type StateProxyApi, useStateProxy } from "./StateProxyProvider";
 
@@ -71,16 +72,6 @@ function BootstrappingSurface() {
 function CapturingSurface({ capture }: { capture: (api: StateProxyApi) => void }) {
   capture(useStateProxy());
   return null;
-}
-
-// ── session flag cookie helpers (happy-dom) ──────────────────────────────────
-
-function giveSessionFlag() {
-  document.cookie = "session=1";
-}
-
-function dropSessionFlag() {
-  document.cookie = "session=1; expires=Thu, 01 Jan 1970 00:00:00 GMT";
 }
 
 afterEach(dropSessionFlag);

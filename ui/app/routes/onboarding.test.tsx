@@ -41,7 +41,6 @@
 import {
   anonymousStateDocument,
   type ChatAppStateDocument,
-  type ChatAppWireEvent,
   type ReducedContext,
 } from "@dashboard-chat/ui-state-wire";
 import { fireEvent, render, screen } from "@testing-library/react";
@@ -49,7 +48,12 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { refreshOrgGlobal } from "../components/useCatalog";
-import { createStateProxy, type StateProxy } from "../lib/state-proxy";
+import {
+  dropSessionFlag,
+  giveSessionFlag,
+  scriptedStateProxy as scriptedProxy,
+} from "../lib/_stateProxyTestKit";
+import { type StateProxy } from "../lib/state-proxy";
 import { StateProxyProvider } from "../lib/StateProxyProvider";
 import OnboardingRoute from "./onboarding";
 
@@ -120,43 +124,6 @@ function projectPhaseDocument(
   };
 }
 
-// ── test doubles (at the proxy's transport port only) ────────────────────────
-
-/** Records every posted wire event and resolves the document `respond` scripts
- *  for it — the fake server. */
-function scriptedTransport(
-  respond: (event: ChatAppWireEvent) => ChatAppStateDocument,
-) {
-  const posted: ChatAppWireEvent[] = [];
-  const fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
-    const event = JSON.parse(String(init?.body)) as ChatAppWireEvent;
-    posted.push(event);
-    const doc = respond(event);
-    return { ok: true, status: 200, json: async () => doc } as Response;
-  }) as typeof fetch;
-  return { fetchImpl, posted };
-}
-
-/** happy-dom has no EventSource — a silent fake stream satisfies subscribe. */
-const fakeEventSourceFactory = () => ({
-  addEventListener() {},
-  close() {},
-  onerror: null as ((ev: unknown) => void) | null,
-});
-
-function scriptedProxy(
-  seed: ChatAppStateDocument,
-  respond: (event: ChatAppWireEvent) => ChatAppStateDocument,
-) {
-  const { fetchImpl, posted } = scriptedTransport(respond);
-  const proxy = createStateProxy({
-    seed,
-    fetchImpl,
-    eventSourceFactory: fakeEventSourceFactory,
-  });
-  return { proxy, posted };
-}
-
 // ── render through the real route tree shape (top-level, outside the shell) ──
 
 function renderOnboarding(proxy: StateProxy) {
@@ -174,16 +141,6 @@ function renderOnboarding(proxy: StateProxy) {
     </StateProxyProvider>,
   );
   return { router, ...utils };
-}
-
-// ── session flag cookie helpers (happy-dom) ──────────────────────────────────
-
-function giveSessionFlag() {
-  document.cookie = "session=1";
-}
-
-function dropSessionFlag() {
-  document.cookie = "session=1; expires=Thu, 01 Jan 1970 00:00:00 GMT";
 }
 
 afterEach(dropSessionFlag);

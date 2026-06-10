@@ -18,7 +18,6 @@ import {
   anonymousStateDocument,
   type ChatAppPhase,
   type ChatAppStateDocument,
-  type ChatAppWireEvent,
 } from "@dashboard-chat/ui-state-wire";
 import { render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
@@ -31,7 +30,8 @@ import {
   installCatalogForTest,
   refreshOrgGlobal,
 } from "../components/useCatalog";
-import { createStateProxy, type StateProxy } from "../lib/state-proxy";
+import { scriptedStateProxy } from "../lib/_stateProxyTestKit";
+import { type StateProxy } from "../lib/state-proxy";
 import { StateProxyProvider } from "../lib/StateProxyProvider";
 import { fixtureFallback, NO_PRIMARY } from "./_fixtureCatalog";
 import AppShell, { clientLoader } from "./app-shell";
@@ -105,25 +105,10 @@ function stateDocument(
   };
 }
 
-/** A proxy whose transport is scripted at the port: every POST returns `doc`,
- *  the SSE stream is a silent fake (happy-dom has no EventSource). */
-function scriptedProxy(seed: ChatAppStateDocument, respondWith?: ChatAppStateDocument) {
-  const posted: ChatAppWireEvent[] = [];
-  const responded = respondWith ?? seed;
-  const fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
-    posted.push(JSON.parse(String(init?.body)) as ChatAppWireEvent);
-    return { ok: true, status: 200, json: async () => responded } as Response;
-  }) as typeof fetch;
-  const proxy = createStateProxy({
-    seed,
-    fetchImpl,
-    eventSourceFactory: () => ({
-      addEventListener() {},
-      close() {},
-      onerror: null as ((ev: unknown) => void) | null,
-    }),
-  });
-  return { proxy, posted };
+/** The shared scripted proxy, pinned to one document: every POST returns
+ *  `doc` — the document never advances, so each gate branch stays observable. */
+function scriptedProxy(doc: ChatAppStateDocument) {
+  return scriptedStateProxy(doc, () => doc);
 }
 
 /** Render the shell layout at "/" under the providers root.tsx supplies, with
