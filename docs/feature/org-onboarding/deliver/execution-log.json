@@ -246,6 +246,41 @@
       "s": "EXECUTED",
       "d": "PASS: full ui suite 19 files / 189 tests green (baseline 18/181 + 1/8 new), tsc --noEmit clean, wiring check: all 4 files_to_modify in git diff",
       "t": "2026-06-10T02:56:37Z"
+    },
+    {
+      "sid": "02-01",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS: commit ea016f3a feat(ui): port StateProxy to ui/ on the cookie CSR transport (Step-ID: 02-01 trailer)",
+      "t": "2026-06-10T02:57:09Z"
+    },
+    {
+      "sid": "02-01",
+      "p": "RED_ACCEPTANCE",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-06-10T02:57:58Z"
+    },
+    {
+      "sid": "02-01",
+      "p": "RED_UNIT",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-06-10T02:57:59Z"
+    },
+    {
+      "sid": "02-01",
+      "p": "GREEN",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-06-10T02:57:59Z"
+    },
+    {
+      "sid": "02-01",
+      "p": "COMMIT",
+      "s": "EXECUTED",
+      "d": "PASS",
+      "t": "2026-06-10T02:57:59Z"
     }
   ]
 }
