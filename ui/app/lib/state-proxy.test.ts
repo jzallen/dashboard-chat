@@ -201,6 +201,60 @@ describe("createStateProxy (cookie CSR transport)", () => {
     expect(proxy.getSnapshot()).toEqual(streamed);
   });
 
+  it("a server-sent `error` SSE frame pushes its parsed data to observers' error callback — cache stays last-known-good, stream stays open", () => {
+    const sources: FakeEventSource[] = [];
+    const proxy = createStateProxy({
+      fetchImpl: fetchReturning(documentWithSequence(1)).impl,
+      eventSourceFactory: (url) => {
+        const source = new FakeEventSource(url);
+        sources.push(source);
+        return source;
+      },
+    });
+
+    const errorsSeen: unknown[] = [];
+    proxy.subscribe({ error: (e) => errorsSeen.push(e) });
+
+    const lastGood = documentWithSequence(5);
+    sources[0].emit("state", JSON.stringify(lastGood));
+    sources[0].emit(
+      "error",
+      JSON.stringify({ code: "stream_failed", message: "upstream gone" }),
+    );
+
+    expect(errorsSeen).toEqual([
+      { code: "stream_failed", message: "upstream gone" },
+    ]);
+    expect(proxy.getSnapshot()).toEqual(lastGood);
+    expect(sources[0].closed).toBe(false);
+  });
+
+  it("a transport onerror notifies observers with the raw event and does NOT tear down the stream — cache stays last-known-good", () => {
+    const sources: FakeEventSource[] = [];
+    const proxy = createStateProxy({
+      fetchImpl: fetchReturning(documentWithSequence(1)).impl,
+      eventSourceFactory: (url) => {
+        const source = new FakeEventSource(url);
+        sources.push(source);
+        return source;
+      },
+    });
+
+    const errorsSeen: unknown[] = [];
+    proxy.subscribe({ error: (e) => errorsSeen.push(e) });
+
+    const lastGood = documentWithSequence(6);
+    sources[0].emit("state", JSON.stringify(lastGood));
+
+    const transportEvent = { type: "error", target: "connection dropped" };
+    sources[0].onerror?.(transportEvent);
+
+    expect(errorsSeen).toHaveLength(1);
+    expect(errorsSeen[0]).toBe(transportEvent);
+    expect(proxy.getSnapshot()).toEqual(lastGood);
+    expect(sources[0].closed).toBe(false);
+  });
+
   it("a non-2xx POST response throws a Response carrying the status and leaves the cache last-known-good", async () => {
     const failingFetch = (async () =>
       ({ ok: false, status: 409, json: async () => ({}) }) as Response) as typeof fetch;
