@@ -151,12 +151,17 @@ context-map boundary. The system-level context map relevant to
 
 | Context | Owner (source tree) | Subdomain class | Role |
 |---|---|---|---|
-| **Authentication** | `auth-proxy/` | Generic (commodity — JWT verify, identity injection, token SSOT) | Verifies the WorkOS-issued JWT, injects identity headers, forwards the Bearer. Token SSOT (ADR-016). |
-| **Session-Onboarding** | `ui-state/` (the realigned machine) | Supporting (enables core; bespoke org-binding flow) | Brings an already-authenticated principal to an org-scoped, app-ready state. |
-| **Org / Project** | `backend/` | Supporting | Owns org + project + dataset state; org creation + JWT reissue. |
-| **WorkOS** (external) | external IdP (fake-workos in dev/ci) | Generic | OIDC handshake (upstream, out of band) + `/oauth/userinfo` re-verification target. |
+| **Authentication** | `auth-proxy/` | Generic (commodity — JWT verify, identity injection, token SSOT) | Verifies the WorkOS-issued JWT, injects identity headers, forwards the Bearer. Token SSOT (ADR-016). *(Amended 2026-06-10, ADR-048/049: also sole AUTH_MODE reader + ALL WorkOS interaction incl. the org-create IdP half + the org-scoped reissue.)* |
+| **Session-Onboarding** | `ui-state/` (the realigned machine) | Supporting (enables core; bespoke org-binding flow) | Brings an already-authenticated principal to an org-scoped, app-ready state. *(Renamed 2026-06-10 → **Presentation Coordination** — still ONE bounded context per ADR-039; the ChatApp coordinator's onboarding/project-context/session-chat regions are an internal SRP partition. ADR-049: zero network egress; transitions on client-reported outcome events only.)* |
+| **Org / Project** | `backend/` | Supporting | Owns org + project + dataset state; ~~org creation + JWT reissue~~ *(superseded 2026-06-10, ADR-048/049: pure resource store — org creation's IdP half + the reissue belong to Authentication; backend keeps the resource half: local row, name uniqueness, `created_by`)*. |
+| **WorkOS** (external) | external IdP (fake-workos in dev/ci) | Generic | OIDC handshake (upstream, out of band) ~~+ `/oauth/userinfo` re-verification target~~ *(re-verify retired 2026-06-10, ADR-049; auth-proxy is the sole WorkOS boundary, incl. org provisioning per ADR-048)*. |
+| **Client (ui/)** *(added 2026-06-10, ADR-049)* | `ui/` | — (the driving party, not a server-side subdomain) | Drives the flow, owns ALL writes (catalog write-through pattern), probes the SSOTs, reports outcomes to ui-state. |
 
-### Context map (session-onboarding)
+### Context map (session-onboarding) — SUPERSEDED IN PART 2026-06-10 (ADR-049; see amended map below)
+
+The two ui-state-downstream edges in this diagram (Conformist re-verify to
+WorkOS; Customer-Supplier to Org/Project) are **deleted** by ADR-048/049 —
+retained here as history.
 
 ```mermaid
 flowchart LR
@@ -172,9 +177,38 @@ flowchart LR
     end
 
     AUTH -->|"Customer-Supplier + ACL at router<br/>(verified headers + forwarded Bearer)"| SO
-    SO -->|"Conformist via re-verification<br/>(GET /oauth/userinfo, Bearer)"| WORKOS
-    SO -->|"Customer-Supplier<br/>(POST /api/orgs, reissue)"| ORG
+    SO -->|"Conformist via re-verification<br/>(GET /oauth/userinfo, Bearer)<br/>— RETIRED (ADR-049)"| WORKOS
+    SO -->|"Customer-Supplier<br/>(POST /api/orgs, reissue)<br/>— RETIRED (ADR-048/049)"| ORG
     AUTH -.->|"verifies JWT against (JWKS)"| WORKOS
+```
+
+### Context map (amended — client-driven-onboarding, 2026-06-10, ADR-049)
+
+The ui-state context (now **Presentation Coordination**) has **no downstream
+suppliers at all** (zero egress, ADR-048); the client (ui/) is the driving
+party; org creation's IdP half lives in Authentication, its resource half in
+backend Org/Project.
+
+```mermaid
+flowchart LR
+    subgraph external["External"]
+        WORKOS["WorkOS<br/>(OIDC IdP + org provisioning)"]
+    end
+    subgraph driving["Driving party"]
+        UI["Client (ui/)<br/>drives the flow, owns ALL writes,<br/>reports outcomes"]
+    end
+    subgraph generic["Generic subdomains"]
+        AUTH["Authentication<br/>(auth-proxy — identity SSOT,<br/>sole AUTH_MODE reader,<br/>ALL WorkOS interaction, reissue)"]
+    end
+    subgraph supporting["Supporting subdomains"]
+        PSC["Presentation Coordination<br/>(ui-state — ChatApp coordinator;<br/>ZERO egress)"]
+        ORG["Org / Project<br/>(backend — resource SSOT;<br/>pure store)"]
+    end
+
+    UI -->|"Customer-Supplier<br/>(every read+write via the sole ingress)"| AUTH
+    AUTH -->|"Customer-Supplier + ACL at router<br/>(verified identity headers IN;<br/>outcome reports admitted under INV-PCO)"| PSC
+    AUTH -->|"Customer-Supplier<br/>(forwarded resource ops;<br/>org-create interception, ADR-048)"| ORG
+    AUTH -.->|"ACL — sole WorkOS boundary<br/>(OIDC + org provisioning + compensation)"| WORKOS
 ```
 
 **ACL annotation.** The `/flow/session-onboarding/*` router is the
@@ -183,6 +217,20 @@ Anti-Corruption Layer between Authentication's wire vocabulary
 (`principal_id`, `session_started{user, org}`). ACL rule enforced:
 **identity from the verified token / verified headers, never a client body
 claim** (closes the pre-existing `persona_email`-as-DTO production gap).
+
+**ACL annotation — amended 2026-06-10 (ADR-049, INV-PCO).** The
+identity-from-headers rule **survives, absolute and unchanged**. Client-posted
+**outcome reports** (`org_created_reported`, `project_created_reported`, …)
+are a different trust category, governed by the named invariant **INV-PCO
+(Presentation-Coordination-Only trust)**: ui-state state — the
+`ChatAppStateDocument`, every region context field, every outcome event — is
+trusted for presentation coordination ONLY; never an authorization input,
+never a resource-existence oracle, never identity. The backend remains the
+resource SSOT, auth-proxy the identity SSOT; enforcement is by construction
+(ui-state has zero egress, no downstream component reads it, reports apply
+only to the reporting principal's own header-keyed actor — a false report can
+only break the liar's own screen). The router ACL survives re-scoped to
+well-formedness + phase-applicability validation (shape, not truth).
 
 ### Aggregate — OnboardSession
 
@@ -216,6 +264,14 @@ Retired wire vocabulary (was authentication-context leakage):
 `sign_in_clicked`, `auth_callback_resolved`, `auth_failed`, `anonymous`,
 `authenticating`. Renamed: `authenticated_no_org → needs_org`.
 
+**Amended 2026-06-10 (ADR-049):** the actor-driven half of this lifecycle is
+superseded by the client-reported outcome model — `verifying` →
+`awaiting_org_report` (no invoke), `creating_org` retired, `session_rejected`
+retired (its producer, the re-verify, is gone), `error_recoverable` retained
+and made genuinely retryable (accepts outcome reports). Full statecharts +
+Given/When/Then:
+`docs/feature/client-driven-onboarding/design/domain-model.md` §4–§6.
+
 ### Read-model substrate (ES-vs-store)
 
 Session-onboarding adopts the **server-authoritative `SettledStateStore`**
@@ -224,16 +280,26 @@ flow in the system, no written audit/temporal requirement, and the store
 eliminates the emission-completeness invariant that produced this feature's
 defect. Lands after ADR-040 LEAF-5 (sequencing constraint).
 
-### Ubiquitous language glossary (Session-Onboarding context)
+### Ubiquitous language glossary (Presentation Coordination context — renamed from Session-Onboarding 2026-06-10, ADR-049)
 
 | Term | Meaning | Replaces |
 |---|---|---|
 | Session onboarding | Bringing an already-authenticated principal to an org-scoped app-ready state | "login" (happens upstream) |
 | Principal | Verified user identity injected by auth-proxy (`X-User-Id`) | `persona` (a dev fixture) |
-| Re-verification | Defense-in-depth re-check of the forwarded Bearer against WorkOS `/oauth/userinfo` | "authentication" |
-| Verified user | The WorkOS profile (`email`, `display_name`) from re-verification | `persona_email`/`persona_display_name` body claims |
-| Org binding | The (org_id, org_name) the principal operates under | — |
-| Session rejected | Terminal state when re-verification fails | — (new) |
+| Re-verification | Defense-in-depth re-check of the forwarded Bearer against WorkOS `/oauth/userinfo` *(RETIRED 2026-06-10, ADR-049 — auth-proxy is the sole verifier)* | "authentication" |
+| Verified user | The WorkOS profile (`email`, `display_name`) ~~from re-verification~~ *(amended 2026-06-10: from auth-proxy-verified identity headers at cold-start, ADR-049 DR-4)* | `persona_email`/`persona_display_name` body claims |
+| Org binding | The (org_id, org_name) the principal operates under *(amended 2026-06-10: a **display snapshot** sourced from outcome reports, never authoritative — INV-PCO)* | — |
+| Session rejected | Terminal state when re-verification fails *(RETIRED 2026-06-10, ADR-049 — auth failure is auth-proxy's 401, never a ui-state state)* | — (new) |
+
+Glossary additions (2026-06-10, ADR-049 — Presentation Coordination context):
+
+| Term | Meaning | Replaces |
+|---|---|---|
+| Outcome report | A client-posted `*_reported` event narrating a result the client observed from the SSOTs; admitted under INV-PCO as a presentation-coordination signal, never a fact | the `loadSession`/`createOrg`/`resolveInitialScope`/`createProject`/`switchProject` invokes (retired) |
+| Existence probe | The client's sparse read (`GET /api/orgs/me`, `GET /api/projects*`) through the normal ingress, whose answer it reports | the machine-internal `getUserOrg`/`resolveInitialScope` calls |
+| Display snapshot | An org/project value held in ui-state context purely for rendering; sourced from reports; never authoritative | — |
+| Convergence | Late/duplicate/contradicted reports are absorbed without error; the returned document tells the reporter the actual current state (multi-tab safety) | the settled-child crash + the `partial-setup` dead-end |
+| INV-PCO | The Presentation-Coordination-Only trust invariant (see the amended ACL annotation above) | — |
 
 ### Domain-model features
 
@@ -265,6 +331,60 @@ OQ-5 empirical check. Full table: `wave-decisions.md` §2.
 **Sequencing constraint.** Lands AFTER ADR-040 LEAF-4/5/6 (do not entangle
 with the in-flight hexagonal-transport series). The store substrate (ADR-042)
 is only real after LEAF-5.
+
+#### `client-driven-onboarding` (DESIGN — 2026-06-10 — domain scope, propose mode)
+
+**Author:** Hera (nw-ddd-architect)
+**ADR:** ADR-049 (client-reported outcome event model, Proposed; amends ADR-041 — supersession map in ADR-049 §2)
+**Companion (system scope, same wave):** ADR-048 (Titan)
+**Seed (fixed inputs):** `docs/feature/client-driven-onboarding/design-intent.md` (boundary assignments user-ratified, not re-litigated)
+**Deliverable:** `docs/feature/client-driven-onboarding/design/domain-model.md`
+**Status:** Proposed → awaiting user ratification of DR-1–DR-8 (in-flight-state model, naming family, identity-seed source, rejection-arm retirement, D8 echo retirement, crash-class option, session-chat sequencing) → ddd-architect-reviewer → solution-architect pass
+
+**Decision summary.** ui-state becomes a **pure presentation-state
+coordinator**: the onboarding + project-context regions transition only on
+**client-reported outcome events** (`org_exists_reported` /
+`org_missing_reported` / `org_created_reported` /
+`org_create_failed_reported{cause}` / `scope_resolved_reported` /
+`no_projects_reported` / `scope_mismatch_reported{cause}` /
+`project_created_reported` / `project_create_failed_reported{cause}` /
+`project_switched_reported`; `session_begin`, `open_deep_link`,
+`back_to_projects_clicked`, `__force_failure__` kept) over the unchanged
+ADR-046 `/state` transport. The `*_reported` suffix is deliberate ubiquitous
+language marking each event as a client observation admitted under the new
+named invariant **INV-PCO** (presentation-coordination-only trust), which
+resolves the apparent tension with ADR-041's ACL rule: identity-from-headers
+survives absolute; outcome body claims are coordination signals, never facts
+— the backend stays the resource SSOT, auth-proxy the identity SSOT, and a
+false report can only break the reporter's own screen. No server-visible
+in-flight states (`org_form_submitted` / `create_project_submitted` retire;
+retry = re-POST + re-report — every failure outcome retryable per ADR-048's
+binding constraint; the `partial-setup` dead-end dies). The settled-child
+**process-crash class** (root-level total forward → `sendTo` into a stopped
+phase-scoped child) is made **unrepresentable** by phase-gated
+vocabulary routing — events are accepted only on the parent states whose
+invoked child is alive, the wire union closes (the `{type: string}` catch-all
+retires), and out-of-phase reports converge via the returned document. The
+engaged-state flip (seed open point f) keeps its shape: the unchanged
+`isInitialProjectSelected` `onSnapshot` guard fires when the client's
+`project_created_reported` settles project-context in `project_selected`; the
+client enters the app on the POST's own response document. The chat-app
+parent, `/state` transport, hybrid persistence (ADR-042/044), and the
+`ready`/`error_recoverable` wire literals (auth-proxy KPI sniffer) are all
+reused; the egress actors, the re-verify, `session_rejected`/`user_rejected`,
+and the actor-driven wire events are retired.
+
+**Quality gates passed (this DESIGN wave, domain-scope pass).**
+
+- [x] Context-map amendment with explicit ADR-041 supersession map (`domain-model.md` §1).
+- [x] ACL rule re-examined and resolved as a named invariant with by-construction enforcement (§2).
+- [x] Ubiquitous-language vocabulary with naming-options tables where contested (§3).
+- [x] Both machines redesigned at the event level: statecharts + Given/When/Then incl. probe, 409, orphan-retry, Phase D, engaged flip (§4–§5).
+- [x] Crash class grounded in live code (file:line) and eliminated with options + recommendation (§6).
+- [x] Reuse Analysis hard gate: zero unjustified CREATE NEW (§7).
+- [x] ES/CQRS posture re-confirmed against ADR-042 (no drift toward event sourcing) (§8).
+- [ ] User ratification of DR-1–DR-8 pending.
+- [ ] Peer review pending (`ddd-architect-reviewer`).
 
 ---
 
@@ -479,3 +599,4 @@ Probe failure for HARD adapters → process exits with `health.startup.refused` 
 | ADR-031 | System | Frontend tier transition — Remix alongside nginx (Proposed) |
 | ADR-041 | Domain | Session-onboarding domain realignment (Proposed) |
 | ADR-042 | Domain | Session-onboarding adopts the server-authoritative store (Proposed) |
+| ADR-049 | Domain | Client-reported outcome event model + INV-PCO trust invariant — amends ADR-041 (Proposed) |
