@@ -47,10 +47,7 @@ def test_no_projects_then_create_project_submitted_completes(
 
     # When: they submit a name for their first project.
     doc = driver.post_event(
-        {
-            "type": "create_project_submitted",
-            "payload": {"name": project_name, "org_name": project_name},
-        },
+        {"type": "create_project_submitted", "payload": {"org_name": project_name}},
         bearer=bearer,
     ).json()
 

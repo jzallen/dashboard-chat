@@ -66,9 +66,10 @@ def test_orgless_principal_completes_org_and_default_project(
     doc = driver.post_event(
         {
             "type": "create_project_submitted",
-            # name carried under both keys — see upstream-issues.md UI-1 (the
-            # machine's pending-name field is misnamed `org_name`).
-            "payload": {"name": project_name, "org_name": project_name},
+            # Resolved wire contract (was upstream-issues.md UI-1): `org_name`
+            # carries the project name, codified as a named member in
+            # shared/ui-state-wire/wire-event.ts — exactly what production posts.
+            "payload": {"org_name": project_name},
         },
         bearer=bearer,
     ).json()
