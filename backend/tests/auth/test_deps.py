@@ -154,9 +154,7 @@ class TestGetCurrentUser:
         assert user.id == USER_1
         assert user.org_id == ORG_OTHER  # resolved from DB, contextvar claim ignored
 
-    async def test_dev_no_org_yields_none_org_when_user_owns_no_org(
-        self, monkeypatch, db_session: AsyncSession
-    ):
+    async def test_dev_no_org_yields_none_org_when_user_owns_no_org(self, monkeypatch, db_session: AsyncSession):
         """DEV_NO_ORG=true: an org-less principal gets org_id None (drives onboarding)."""
         from app.config import Settings
 
