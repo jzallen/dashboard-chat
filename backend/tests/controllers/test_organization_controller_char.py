@@ -12,8 +12,6 @@ Special attention: `get_my_organization` has THREE branches (L339-344):
   - Failure(error)                         -> _error_response dispatch
 """
 
-from dataclasses import dataclass
-from typing import Any
 from unittest.mock import AsyncMock, patch
 
 from returns.result import Failure, Success
@@ -21,35 +19,48 @@ from returns.result import Failure, Success
 from app.controllers.http_controller import HTTPController
 from app.use_cases.organization.exceptions import ExternalServiceError
 
-
-@dataclass
-class _Model:
-    id: str
-    name: str = "Org"
-
-    def serialize(self) -> dict[str, Any]:
-        return {"id": self.id, "name": self.name}
-
-
 # ---------------------------------------------------------------------------
 # post_organization (L326-333)
 # ---------------------------------------------------------------------------
 
 
 class TestPostOrganizationCharacterization:
+    """Pinned to the use case's REAL return shape (DUI-3 correction, step 01-06).
+
+    The original pins mocked a fictional `_Model` that serialized to
+    {"id", "name"} — a shape `create_organization` NEVER returns. The real use
+    case returns {"org_id", "org_name"(, "requires_reauth")}, so the pinned 201
+    path was unreachable over real HTTP (it always 500'd on KeyError). That was
+    testing theater (L2 of the test-refactoring catalog); these tests now feed
+    the controller the real use-case dict end to end and assert the JSON:API
+    envelope the ingress consumers actually receive.
+    """
+
     @patch("app.controllers.http_controller.organization_use_cases")
-    async def test_success_returns_201_with_envelope(self, mock_uc):
-        mock_uc.create_organization = AsyncMock(return_value=Success(_Model("org-1", "Acme")))
+    async def test_success_returns_201_with_envelope_built_from_real_use_case_shape(self, mock_uc):
+        mock_uc.create_organization = AsyncMock(return_value=Success({"org_id": "org-1", "org_name": "Acme"}))
         body, status = await HTTPController.post_organization("Acme", user="USER_SENTINEL")
         assert status == 201
         assert body["data"]["type"] == "organizations"
         assert body["data"]["id"] == "org-1"
         assert body["data"]["attributes"]["name"] == "Acme"
+        # Dev path: the use case omits requires_reauth — the envelope must too.
+        assert "requires_reauth" not in body["data"]["attributes"]
         assert body["links"]["self"] == "/api/organizations/org-1"
 
     @patch("app.controllers.http_controller.organization_use_cases")
+    async def test_workos_requires_reauth_surfaces_as_attribute(self, mock_uc):
+        mock_uc.create_organization = AsyncMock(
+            return_value=Success({"org_id": "org-2", "org_name": "Acme", "requires_reauth": True})
+        )
+        body, status = await HTTPController.post_organization("Acme", user="USER_SENTINEL")
+        assert status == 201
+        assert body["data"]["id"] == "org-2"
+        assert body["data"]["attributes"]["requires_reauth"] is True
+
+    @patch("app.controllers.http_controller.organization_use_cases")
     async def test_forwards_name_and_user(self, mock_uc):
-        mock_uc.create_organization = AsyncMock(return_value=Success(_Model("org-1", "X")))
+        mock_uc.create_organization = AsyncMock(return_value=Success({"org_id": "org-1", "org_name": "X"}))
         await HTTPController.post_organization("X", user="USER_SENTINEL")
         mock_uc.create_organization.assert_awaited_once_with(name="X", user="USER_SENTINEL")
 

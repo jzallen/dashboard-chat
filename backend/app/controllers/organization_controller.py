@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 from returns.result import Failure, Success
 
-from ._result_mapper import error_response, serialize
+from ._result_mapper import error_response
 from .response_wrapper import wrap_jsonapi_single
 
 if TYPE_CHECKING:
@@ -40,9 +40,16 @@ class OrganizationController:
         result = await _uc().create_organization(name=name, user=user)
         match result:
             case Success(data):
-                serialized = serialize(data)
+                # The use case returns {"org_id", "org_name"(, "requires_reauth")};
+                # map it to the JSON:API resource shape (id, attributes.name, and
+                # requires_reauth kept as an attribute when present — the workos
+                # frontend flow reads it to re-trigger login). See DUI-3.
+                org_id = data["org_id"]
+                organization = {"id": org_id, "name": data["org_name"]}
+                if "requires_reauth" in data:
+                    organization["requires_reauth"] = data["requires_reauth"]
                 return (
-                    wrap_jsonapi_single("organizations", serialized, f"/api/organizations/{serialized['id']}"),
+                    wrap_jsonapi_single("organizations", organization, f"/api/organizations/{org_id}"),
                     201,
                 )
             case Failure(error):
