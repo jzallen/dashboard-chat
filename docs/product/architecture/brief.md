@@ -27,7 +27,7 @@ ran DESIGN.
 | Source | Constraint | Effect on system architecture |
 |---|---|---|
 | ADR-001 | Hono over Express for new Node services | All new Node tiers ship on Hono; no per-service framework re-litigation |
-| ADR-016 | Auth-proxy is the sole production ingress (for backend; aspirational for agent today) | New privileged-operation tiers MUST route through auth-proxy; the door is documented for future migration of `/worker/*` to also route through auth-proxy |
+| ADR-016 | Auth-proxy is the sole production ingress (for backend; aspirational for agent today) | New privileged-operation tiers MUST route through auth-proxy; the door is documented for future migration of `/worker/*` to also route through auth-proxy. ADR-048 (client-driven-onboarding) removes the last in-network bypass besides the agent's: ui-state's direct-to-backend egress is retired |
 | ADR-018 | Capability-presence dispatch — `REDIS_URL` set → Redis tier; unset → noop fallback | All new tiers that need durable replay reuse this dispatch shape verbatim; no new env-var conventions |
 | ADR-015 | nginx routing rule `/api/channels/:id/presentation-state` → agent direct (load-bearing for ADR-015's directive log) | Must be preserved through any frontend tier transition; ADR-031 honors this |
 
@@ -89,6 +89,35 @@ Compose acceptance stack grows from 5 services (ADR-016) to **7 services** (+`ui
 - [x] Pushbacks on Morgan's design documented (`upstream-changes.md` Changes 9-13).
 - [ ] Peer review pending (`system-designer-reviewer`).
 
+#### `client-driven-onboarding` (DESIGN — 2026-06-10 — system-scope pass)
+
+**Author:** Titan (nw-system-designer)
+**ADR:** ADR-048 (auth-proxy owns the WorkOS write workflow, Proposed)
+**Seed (fixed inputs):** `docs/feature/client-driven-onboarding/design-intent.md` (user-ratified boundary assignments — not re-litigated)
+**Feature design:** `docs/feature/client-driven-onboarding/design/system-architecture.md`
+**Status:** Proposed → awaiting user ratification of R1–R5 (failure/compensation layering, probe posture, agent AUTH_MODE scoping, WORKOS_BASE pin, timeout numbers) → domain + application passes
+
+**Decision summary.** The WorkOS write workflow (org create + membership) relocates from the backend to **auth-proxy via interception of `POST /api/orgs`** in the existing catch-all proxy path — the request-side twin of the already-shipped post-response reissue seam, which is simultaneously extended to emit the org-scoped token as `Set-Cookie` (un-parking ui-cookie-session D8). Auth-proxy becomes the **sole WorkOS credential holder and sole AUTH_MODE reader** on the org/onboarding path: backend loses `AUTH_MODE` + all `WORKOS_*` env and config fields (`_create_workos_org` deleted); ui-state loses **all network egress** (`BACKEND_URL`, `FAKE_WORKOS_URL` retired), removing its documented ADR-016 bypass and the machine-internal I/O behind the 2026-06-10 fragility. Failure strategy: **backend name pre-check before any WorkOS egress** (a 409 can never orphan an IdP org) layered with **best-effort compensation delete** on failed persist; accept-and-reconcile rejected (no scheduler for a ~0.001 QPS path; uncompensated orphans are inert + alertable via `workos.org_compensate.fail`).
+
+**Topology verdict: no structural change.** Zero new containers/replicas/ports; **zero nginx changes** (`location /api/` already routes mode-discovery, login, and org-create to auth-proxy — verified against `frontend/nginx.conf`). Org-create availability traverses WorkOS through auth-proxy instead of backend — same external dependency, relocated, one fewer in-network credential holder. The compose AUTH_MODE split-brain becomes unrepresentable; the override's interim api pin is deleted on schedule.
+
+**Observability stance.** Structured stdout-JSON on the interception path (`org_create.intercepted`, `workos.org_create.*`, `workos.membership_create.*`, `workos.org_compensate.*`, `auth.reissue.emitted`) reusing the existing KPI emitter; correlation-id mandatory per ADR-030 inheritance. Probe: workos-mode startup reachability probe SOFT-fails (`health.startup.degraded`) — the sole ingress must not crashloop on an IdP blip; ui-state's probe surface shrinks to Redis only (no egress left to probe).
+
+**Quality gates passed (this DESIGN wave, system-scope pass).**
+
+- [x] Capacity estimation before architecture (org-create ~0.001 QPS; +300–600 ms p50 relocated, not added — `system-architecture.md` §0).
+- [x] Failure/compensation decision with explicit options + trade-offs (§2 matrix; A+B layered recommended).
+- [x] Reverse-proxy routing verified against the live nginx conf (zero delta, §3).
+- [x] Credential-surface deltas enumerated per container with file:line evidence (§4).
+- [x] Observability surface specified (events + alert conditions + correlation-id, §5).
+- [x] Earned-trust probe contract updated for the relocated egress (§7).
+- [x] Topology/SPOF delta assessed and explicitly null (§8).
+- [x] C4 context + container diagrams (before-bypass vs after) in Mermaid (§8).
+- [x] Reuse Analysis hard gate: zero unjustified CREATE NEW (§9).
+- [x] Open points routed to the next passes (org-id carry, outcome events, mode-discovery shape — design-intent (a)–(f)).
+- [ ] User ratification of R1–R5 pending.
+- [ ] Peer review pending (`system-designer-reviewer`).
+
 ### Cross-section index (system-scope ADRs)
 
 | ADR | Summary |
@@ -100,6 +129,7 @@ Compose acceptance stack grows from 5 services (ADR-016) to **7 services** (+`ui
 | ADR-018 | Redis-only SessionEventReader (supersedes ADR-017) |
 | ADR-030 | UI-state tier topology + single-replica scaling (Proposed) |
 | ADR-031 | Frontend tier transition — Remix alongside nginx, not replacing (Proposed) |
+| ADR-048 | Auth-proxy owns the WorkOS write workflow — org-create interception, credential/AUTH_MODE consolidation, ui-state egress removal (Proposed) |
 
 ---
 
