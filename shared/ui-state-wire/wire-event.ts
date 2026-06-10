@@ -20,6 +20,17 @@ export type ChatAppWireEvent =
   // onboarding closed vocabulary (validated server-side while onboarding is the
   // active phase; unmodeled type → HTTP 400 — see Decision 3 ACL)
   | { type: "org_form_submitted"; payload: { org_name: string } }
+  // default-project creation (project-context vocabulary — legal only once the
+  // phase has ADVANCED past onboarding; forwarded verbatim as child_event).
+  // UI-1 QUIRK: `org_name` carries the PROJECT name — a historical machine-side
+  // misnomer. The ui-state router posts child_event:{type,payload}, the parent
+  // SPREADS payload to top level (forwardChildEventToActiveChild in
+  // ui-state/lib/machines/chat-app/setup/actions.ts), and project-context's
+  // capturePendingProjectName + projectNameValid guard read event.org_name.
+  // Type-only seam fix making the contract explicit and type-checked at the ui/
+  // post site — NO ui-state runtime change. See
+  // docs/feature/org-onboarding/distill/upstream-issues.md (UI-1).
+  | { type: "create_project_submitted"; payload: { org_name: string } }
   // failure-simulation side-channel (gate-authorized; env-gated knob)
   | { type: "__force_failure__"; payload: { tag: string } }
   // project switch — maps to the parent's PROJECT_SWITCH (reaches project-context

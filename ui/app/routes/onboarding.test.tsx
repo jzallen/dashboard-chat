@@ -12,6 +12,19 @@
 //   (e) the non-form region states render honest surfaces (waiting / progress /
 //       state-name-plus-cause errors / neutral continuing placeholder).
 //
+// S4 completion behaviors (step 02-05, D6):
+//   (f) phase advanced + projectContext no_projects → the default-project name
+//       form renders (replacing the 02-03 "Continuing…" placeholder);
+//   (g) submitting it posts EXACTLY create_project_submitted with the typed
+//       PROJECT name under payload.org_name (the UI-1 wire quirk — the field is
+//       a historical machine-side misnomer; the name must not be dropped);
+//   (h) projectContext project_selected → navigate out of /onboarding into the
+//       app (the 02-04 shell gate takes over);
+//   (i) the inline regions.projectContext.context.project_validation_error
+//       renders when the settled document carries it (server-side validation);
+//   (j) error_recoverable renders the state name + cause; resolving_initial_scope
+//       renders a waiting surface until the region settles.
+//
 // Driving port: the route component rendered via a memory router under
 // StateProxyProvider (the same provider tree root.tsx supplies). Driven port
 // boundary: the proxy's injected fetchImpl + eventSourceFactory — the only test
@@ -62,6 +75,35 @@ function onboardingDocument(
   };
 }
 
+/** A settled document whose phase has ADVANCED past onboarding (the org exists;
+ *  onboarding region is ready) with projectContext in `state`, plus optional
+ *  projectContext reduced-context overrides. */
+function projectPhaseDocument(
+  projectContextState: string,
+  contextOverrides: Partial<ReducedContext> = {},
+): ChatAppStateDocument {
+  const doc = anonymousStateDocument();
+  return {
+    ...doc,
+    phase: "project_context",
+    sequence_id: doc.sequence_id + 1,
+    regions: {
+      ...doc.regions,
+      onboarding: {
+        state: "ready",
+        context: { ...doc.regions.onboarding.context, user: { ...IDENTITY } },
+      },
+      projectContext: {
+        state: projectContextState,
+        context: {
+          ...doc.regions.projectContext.context,
+          ...contextOverrides,
+        },
+      },
+    },
+  };
+}
+
 // ── test doubles (at the proxy's transport port only) ────────────────────────
 
 /** Records every posted wire event and resolves the document `respond` scripts
@@ -104,16 +146,18 @@ function scriptedProxy(
 function renderOnboarding(proxy: StateProxy) {
   const router = createMemoryRouter(
     [
+      { path: "/", element: <div>APP</div> },
       { path: "/onboarding", element: <OnboardingRoute /> },
       { path: "/login", element: <div>LOGIN</div> },
     ],
     { initialEntries: ["/onboarding"] },
   );
-  return render(
+  const utils = render(
     <StateProxyProvider proxy={proxy}>
       <RouterProvider router={router} />
     </StateProxyProvider>,
   );
+  return { router, ...utils };
 }
 
 // ── session flag cookie helpers (happy-dom) ──────────────────────────────────
@@ -236,4 +280,113 @@ describe("OnboardingRoute", () => {
       expect(screen.getByText(/org_create_failed/)).toBeTruthy();
     },
   );
+});
+
+// ── S4 completion: default-project step (02-05) ──────────────────────────────
+
+describe("OnboardingRoute — default-project step (phase advanced)", () => {
+  it("no_projects: renders the default-project name form", async () => {
+    giveSessionFlag();
+    const noProjects = projectPhaseDocument("no_projects");
+    const { proxy, posted } = scriptedProxy(noProjects, () => noProjects);
+
+    renderOnboarding(proxy);
+
+    expect(await screen.findByLabelText(/project name/i)).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /create project/i }),
+    ).toBeTruthy();
+    // The form renders only — nothing is posted until the user submits
+    // (posting create_project_submitted during phase onboarding would 400).
+    expect(
+      posted.filter((e) => e.type === "create_project_submitted"),
+    ).toHaveLength(0);
+  });
+
+  it("submitting posts EXACTLY create_project_submitted with the typed PROJECT name under payload.org_name (UI-1 quirk)", async () => {
+    giveSessionFlag();
+    const noProjects = projectPhaseDocument("no_projects");
+    const { proxy, posted } = scriptedProxy(noProjects, (event) =>
+      event.type === "create_project_submitted"
+        ? projectPhaseDocument("creating_project")
+        : noProjects,
+    );
+
+    renderOnboarding(proxy);
+
+    fireEvent.change(await screen.findByLabelText(/project name/i), {
+      target: { value: "My First Project" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /create project/i }));
+
+    // The scripted server advances to creating_project → the progress surface.
+    expect(await screen.findByText(/creating your project/i)).toBeTruthy();
+    const createEvents = posted.filter(
+      (e) => e.type === "create_project_submitted",
+    );
+    expect(createEvents).toEqual([
+      {
+        type: "create_project_submitted",
+        payload: { org_name: "My First Project" },
+      },
+    ]);
+  });
+
+  it("project_selected: navigates out of /onboarding into the app", async () => {
+    giveSessionFlag();
+    const selected = projectPhaseDocument("project_selected");
+    const { proxy } = scriptedProxy(selected, () => selected);
+
+    const { router } = renderOnboarding(proxy);
+
+    expect(await screen.findByText("APP")).toBeTruthy();
+    expect(router.state.location.pathname).toBe("/");
+    expect(screen.queryByLabelText(/project name/i)).toBeNull();
+  });
+
+  it("a server-rejected name renders the inline project_validation_error and the user stays on the form", async () => {
+    giveSessionFlag();
+    const rejected = projectPhaseDocument("no_projects", {
+      project_validation_error: {
+        kind: "invalid_project_name",
+        message: "Project name must not be blank",
+      },
+    });
+    const { proxy } = scriptedProxy(rejected, () => rejected);
+
+    renderOnboarding(proxy);
+
+    expect(
+      await screen.findByText("Project name must not be blank"),
+    ).toBeTruthy();
+    // Still on the form — state stayed no_projects.
+    expect(screen.getByLabelText(/project name/i)).toBeTruthy();
+  });
+
+  it("error_recoverable: renders the state name AND the cause — no silent fallback", async () => {
+    giveSessionFlag();
+    const doc = projectPhaseDocument("error_recoverable", {
+      underlying_cause_tag: "project_create_failed",
+    });
+    const { proxy } = scriptedProxy(doc, () => doc);
+
+    renderOnboarding(proxy);
+
+    expect(await screen.findByText(/error_recoverable/)).toBeTruthy();
+    expect(screen.getByText(/project_create_failed/)).toBeTruthy();
+  });
+
+  it("resolving_initial_scope: renders a waiting surface until the region settles — no form, no posts", async () => {
+    giveSessionFlag();
+    const resolving = projectPhaseDocument("resolving_initial_scope");
+    const { proxy, posted } = scriptedProxy(resolving, () => resolving);
+
+    renderOnboarding(proxy);
+
+    expect(await screen.findByText(/setting up your workspace/i)).toBeTruthy();
+    expect(screen.queryByLabelText(/project name/i)).toBeNull();
+    expect(
+      posted.filter((e) => e.type === "create_project_submitted"),
+    ).toHaveLength(0);
+  });
 });
