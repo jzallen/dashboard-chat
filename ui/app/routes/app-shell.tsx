@@ -2,11 +2,16 @@
 
    - Redirects to /login when there's no session, so an unauthenticated deep-link
      folds into the dev sign-in.
+   - Authenticated entries pass the onboarding gate (D6): bootstrap the
+     StateProxy document, wait while it's still verifying, fold onboarding-phase
+     principals (and org'd principals with no projects yet) into /onboarding,
+     and only then render the chrome.
    - useChat() is the transient assistant-dock context (chatOpen); it stays out
      of the URL.
    - The chrome is <Topbar/> <Outlet/> <Overlays/> under ThemeProvider (provided
      by root.tsx). */
-import { useCallback, useMemo } from "react";
+import { useSelector } from "@xstate/react";
+import { useCallback, useEffect, useMemo } from "react";
 import { Navigate, Outlet, useLocation } from "react-router";
 
 import { hasSession } from "../auth/tokenStorage";
@@ -21,6 +26,7 @@ import { useUpload } from "../components/Upload";
 import { catalog, refreshOrgGlobal, useCatalog } from "../components/useCatalog";
 import { ChatProvider } from "../lib/chatContext";
 import { useNavIntents } from "../lib/nav";
+import { useStateProxy } from "../lib/StateProxyProvider";
 
 // The first authenticated entry point: fetch the real org-global payloads
 // (projects/org) so they replace the fixture seed before any child route (the
@@ -91,11 +97,70 @@ function Chrome() {
   );
 }
 
-export default function AppShell() {
-  if (!hasSession()) return <Navigate to="/login" replace />;
+/* ─── the onboarding gate (D6) ────────────────────────────────────────────────
+
+   Engaged only when a session exists. Reads the StateProxy document (the one
+   app-wide proxy from StateProxyProvider) and dispatches:
+
+     onboarding verifying           → waiting surface (transient; ALSO the
+                                      anonymous pre-first-frame document — never
+                                      a redirect)
+     phase rejected                 → /onboarding (02-03 renders the honest
+                                      session_rejected surface — one surface)
+     phase onboarding + needs_org /
+       creating_org /
+       error_recoverable            → /onboarding
+     phase advanced + projectContext
+       no_projects                  → /onboarding (the default-project step)
+     anything else                  → the chrome, exactly as before
+
+   /onboarding never redirects an authenticated user back here, and the gate
+   never targets /login when a session exists — no loops. */
+
+const ONBOARDING_ACTIVE_STATES = new Set([
+  "needs_org",
+  "creating_org",
+  "error_recoverable",
+]);
+
+function OnboardingGate() {
+  const { proxy, ensureBootstrap } = useStateProxy();
+  const phase = useSelector(proxy, (doc) => doc.phase);
+  const onboardingState = useSelector(
+    proxy,
+    (doc) => doc.regions.onboarding.state,
+  );
+  const projectContextState = useSelector(
+    proxy,
+    (doc) => doc.regions.projectContext.state,
+  );
+
+  useEffect(() => {
+    void ensureBootstrap();
+  }, [ensureBootstrap]);
+
+  if (phase === "rejected") return <Navigate to="/onboarding" replace />;
+  if (onboardingState === "verifying") {
+    return (
+      <main className="shell-waiting">
+        <p>Checking your session…</p>
+      </main>
+    );
+  }
+  if (phase === "onboarding" && ONBOARDING_ACTIVE_STATES.has(onboardingState)) {
+    return <Navigate to="/onboarding" replace />;
+  }
+  if (phase !== "onboarding" && projectContextState === "no_projects") {
+    return <Navigate to="/onboarding" replace />;
+  }
   return (
     <ChatProvider>
       <Chrome />
     </ChatProvider>
   );
+}
+
+export default function AppShell() {
+  if (!hasSession()) return <Navigate to="/login" replace />;
+  return <OnboardingGate />;
 }

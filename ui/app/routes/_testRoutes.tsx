@@ -3,11 +3,17 @@
    tests assemble the equivalent tree here with createMemoryRouter and render it
    under the same provider tree root.tsx supplies. Kept beside the route modules
    so it stays in lockstep with the real table. */
-import type { ReactNode } from "react";
+import {
+  anonymousStateDocument,
+  type ChatAppStateDocument,
+} from "@dashboard-chat/ui-state-wire";
+import { type ReactNode, useState } from "react";
 import { type RouteObject } from "react-router";
 
 import { ThemeProvider } from "../components/AppShell/ThemeProvider";
 import { FlashedNodeProvider } from "../components/FlashedNodeProvider";
+import { createStateProxy, type StateProxy } from "../lib/state-proxy";
+import { StateProxyProvider } from "../lib/StateProxyProvider";
 import AppShell from "./app-shell";
 import AuthCallbackRoute from "./auth-callback";
 import ChatsRoute from "./chats";
@@ -49,11 +55,52 @@ export const testRouteTree: RouteObject[] = [
   },
 ];
 
+/** A SETTLED StateProxy document — phase past onboarding, a project selected —
+ *  so the app-shell onboarding gate (02-04) renders the chrome for these
+ *  route/nav tests exactly as before the gate existed. Tests that exercise the
+ *  gate itself inject their own scripted proxy (see app-shell.test.tsx). */
+function settledStateDocument(): ChatAppStateDocument {
+  const doc = anonymousStateDocument();
+  return {
+    ...doc,
+    phase: "chat",
+    sequence_id: doc.sequence_id + 1,
+    regions: {
+      ...doc.regions,
+      onboarding: { ...doc.regions.onboarding, state: "ready" },
+      projectContext: {
+        ...doc.regions.projectContext,
+        state: "project_selected",
+      },
+    },
+  };
+}
+
+/** A proxy with no network: POSTs answer the settled document, the SSE stream
+ *  is a silent fake (happy-dom has no EventSource). */
+function settledStateProxy(): StateProxy {
+  const doc = settledStateDocument();
+  return createStateProxy({
+    seed: doc,
+    fetchImpl: (async () =>
+      ({ ok: true, status: 200, json: async () => doc }) as Response) as
+      typeof fetch,
+    eventSourceFactory: () => ({
+      addEventListener() {},
+      close() {},
+      onerror: null,
+    }),
+  });
+}
+
 /** The provider tree root.tsx renders the route tree under. */
 export function TestProviders({ children }: { children: ReactNode }) {
+  const [proxy] = useState(settledStateProxy);
   return (
     <ThemeProvider>
-      <FlashedNodeProvider>{children}</FlashedNodeProvider>
+      <FlashedNodeProvider>
+        <StateProxyProvider proxy={proxy}>{children}</StateProxyProvider>
+      </FlashedNodeProvider>
     </ThemeProvider>
   );
 }
