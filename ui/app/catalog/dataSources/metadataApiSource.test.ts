@@ -180,6 +180,38 @@ describe("metadataApiSource — backend project reads", () => {
   });
 });
 
+describe("metadataApiSource — invalidateOrgGlobal (org-global memo invalidation)", () => {
+  it("getProjects re-fetches after invalidateOrgGlobal() and observes the CHANGED backend list", async () => {
+    // The backend list changes between fetches (onboarding creates the first
+    // project): the memo must be droppable so the change is observable.
+    const bodies = [
+      { data: [] }, // pre-onboarding: legitimately empty backend
+      { data: [{ id: "p1", name: "Acme" }] }, // post-onboarding: project exists
+    ];
+    let call = 0;
+    const fetchMock = vi.fn(async () => {
+      const body = bodies[Math.min(call++, bodies.length - 1)];
+      return { ok: true, status: 200, json: async () => body };
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const source = metadataApiSource({ getToken: () => "tok" });
+
+    // First read latches the empty list (memoized — second read shares it).
+    await expect(source.getProjects!()).resolves.toEqual([]);
+    await expect(source.getProjects!()).resolves.toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    source.invalidateOrgGlobal!();
+
+    // The next read RE-FETCHES and observes the new backend state.
+    const after = await source.getProjects!();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(after).toEqual([
+      { id: "p1", name: "Acme", desc: "", datasets: 0, models: 0 },
+    ]);
+  });
+});
+
 describe("metadataApiSource — lineage core (getNodes/getEdges/getAudit)", () => {
   const countPaths = (fetchMock: ReturnType<typeof vi.fn>) => {
     const counts: Record<string, number> = {};

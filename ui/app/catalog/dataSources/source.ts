@@ -65,6 +65,13 @@ export interface CatalogSource {
    * don't cache.
    */
   invalidateScope?(projectId: string): void;
+  /**
+   * Drop any cached ORG-GLOBAL reads (e.g. a memoized project-list fetch) so
+   * the next read re-fetches fresh. Called by `refreshOrgGlobal` before its
+   * re-reads — without this, a memoizing source re-serves the first (possibly
+   * pre-onboarding, empty) result forever. No-op for sources that don't cache.
+   */
+  invalidateOrgGlobal?(): void;
 }
 
 /**

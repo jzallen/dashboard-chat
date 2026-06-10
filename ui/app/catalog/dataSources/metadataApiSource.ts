@@ -282,8 +282,16 @@ export function metadataApiSource(
     sessionsByPid.delete(pid);
   };
 
+  // Drop the org-global memo (the project-list fetch) so the next getProjects
+  // re-fetches. Called by refreshOrgGlobal before its re-reads — without this
+  // the memo latches the first (possibly pre-onboarding, empty) list forever.
+  const invalidateOrgGlobal = (): void => {
+    projectsPromise = undefined;
+  };
+
   return {
     invalidateScope,
+    invalidateOrgGlobal,
     async getProjects(): Promise<ProjectSummary[]> {
       const projects = await fetchProjects();
       // Resolve even when empty — an empty backend means an empty picker, which

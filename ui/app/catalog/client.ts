@@ -144,6 +144,11 @@ export async function createDataCatalog(
   // selectProject (the project-layout loader). On rejection the seeded fallback
   // value is kept.
   const revalidateOrgGlobal = async (): Promise<void> => {
+    // Drop the source's org-global memo FIRST so the reads below actually
+    // re-fetch — a memoizing source would otherwise re-serve its first
+    // (possibly pre-onboarding, empty) result forever. Optional: sources that
+    // don't cache (the fixture) simply omit it.
+    primary.invalidateOrgGlobal?.();
     const tasks: Promise<void>[] = [];
     if (primary.getProjects) {
       tasks.push(

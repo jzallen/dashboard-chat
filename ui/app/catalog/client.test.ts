@@ -402,6 +402,38 @@ describe("createDataCatalog — stale-while-revalidate (primary over fallback)",
     expect(catalog.listProjects()).toEqual(BACKEND_PROJECTS);
   });
 
+  it("refreshOrgGlobal drops the primary's org-global memo FIRST, so a later refresh observes the updated projects list", async () => {
+    // Simulate metadataApiSource's memo: getProjects latches its first result
+    // until invalidateOrgGlobal drops it. If refreshOrgGlobal does not call
+    // invalidateOrgGlobal before re-reading, the second refresh re-serves the
+    // latched pre-onboarding [] and the new project never lands.
+    let backend: ProjectSummary[] = [];
+    let memo: ProjectSummary[] | undefined;
+    const primary: PartialCatalogSource = {
+      getProjects: () => Promise.resolve((memo ??= backend)),
+      invalidateOrgGlobal: () => {
+        memo = undefined;
+      },
+    };
+    const catalog = await createDataCatalog(primary, fallbackWithProjects());
+
+    await catalog.refreshOrgGlobal(); // latches the empty pre-onboarding list
+    expect(catalog.listProjects()).toEqual([]);
+
+    backend = BACKEND_PROJECTS; // onboarding created the first project
+    await catalog.refreshOrgGlobal();
+    expect(catalog.listProjects()).toEqual(BACKEND_PROJECTS);
+  });
+
+  it("refreshOrgGlobal tolerates a primary WITHOUT invalidateOrgGlobal (no crash, projects still land)", async () => {
+    const primary: PartialCatalogSource = {
+      getProjects: () => Promise.resolve(BACKEND_PROJECTS),
+    };
+    const catalog = await createDataCatalog(primary, fallbackWithProjects());
+    await expect(catalog.refreshOrgGlobal()).resolves.toBeUndefined();
+    expect(catalog.listProjects()).toEqual(BACKEND_PROJECTS);
+  });
+
   it("a primary that does not implement a getter keeps the fallback value", async () => {
     const catalog = await createDataCatalog({}, fallbackWithProjects());
     await catalog.refreshOrgGlobal();
