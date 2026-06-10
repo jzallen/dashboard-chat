@@ -8,10 +8,13 @@ feature is unbuilt: the intended DISTILL posture.
 
 from __future__ import annotations
 
+import http.server
 import json
 import os
 import socket
 import subprocess
+import threading
+from collections.abc import Iterator
 from urllib.parse import urlparse
 
 import pytest
@@ -60,8 +63,69 @@ def requires_compose_stack(reverse_proxy_url: str, auth_proxy_url: str) -> None:
         )
 
 
+# ── in-suite fake WorkOS (01-05) ─────────────────────────────────────────────
+# The onboarding machine's `verifying` actor (ui-state getWorkOSUserInfo)
+# re-verifies the Bearer against ${FAKE_WORKOS_URL}/oauth/userinfo
+# unconditionally — non-200/unreachable → session_rejected. The compose
+# dashboard-ui-state container defaults FAKE_WORKOS_URL to
+# host.docker.internal:14299 (extra_hosts host-gateway already wired), so the
+# suite self-provisions a loopback-fake on the host, mirroring the sibling TS
+# suite's fake-workos.ts. Stdlib only (http.server + threading + json).
+_FAKE_WORKOS_BIND = ("0.0.0.0", 14299)
+_FAKE_WORKOS_PROFILE = {"email": "dev@localhost", "name": "Dev User"}
+
+
+class _FakeWorkOSHandler(http.server.BaseHTTPRequestHandler):
+    """GET /oauth/userinfo → 200 dev profile. Any Bearer accepted."""
+
+    def do_GET(self) -> None:  # noqa: N802 — BaseHTTPRequestHandler contract
+        if self.path.split("?", 1)[0] != "/oauth/userinfo":
+            self.send_response(404)
+            self.end_headers()
+            return
+        body = json.dumps(_FAKE_WORKOS_PROFILE).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+        """Silence per-request stderr logging."""
+
+
+@pytest.fixture(scope="session")
+def fake_workos_userinfo() -> Iterator[None]:
+    """Session-scoped fake-WorkOS userinfo endpoint on 0.0.0.0:14299.
+
+    Lazy: only fixtures that drive session_begin (``dev_jwt`` /
+    ``fresh_dev_principal``) depend on it, so a stack-down run that skips
+    early never pays for it. NO-OP when port 14299 is already bound — an
+    external fake-workos (e.g. the TS harness's) is running and serves the
+    same contract. Daemon thread + non-blocking shutdown: no teardown hang.
+    """
+    try:
+        server = http.server.ThreadingHTTPServer(_FAKE_WORKOS_BIND, _FakeWorkOSHandler)
+    except OSError:
+        yield  # port taken → an external fake-workos owns the contract
+        return
+    thread = threading.Thread(
+        target=server.serve_forever, name="fake-workos-userinfo", daemon=True
+    )
+    thread.start()
+    try:
+        yield
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 @pytest.fixture()
-def dev_jwt(requires_compose_stack: None, driver: OnboardingDriver) -> str:
+def dev_jwt(
+    requires_compose_stack: None,
+    fake_workos_userinfo: None,
+    driver: OnboardingDriver,
+) -> str:
     """A dev JWT for the empty-org principal (AUTH_MODE=dev)."""
     return driver.mint_dev_jwt()
 
@@ -160,7 +224,9 @@ def _delete_owned_orgs() -> None:
 
 
 @pytest.fixture()
-def fresh_dev_principal(driver: OnboardingDriver, dev_jwt: str) -> str:
+def fresh_dev_principal(
+    driver: OnboardingDriver, dev_jwt: str, fake_workos_userinfo: None
+) -> str:
     """ENFORCE the empty-org precondition: the dev principal owns NO org.
 
     DEV_NO_ORG (slice S1) resolves org by ``created_by == dev-user-001``; a
