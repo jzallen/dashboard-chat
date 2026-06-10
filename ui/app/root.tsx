@@ -16,6 +16,7 @@ import { Links, Meta, Outlet, Scripts, ScrollRestoration } from "react-router";
 import { ThemeProvider } from "./components/AppShell";
 import { FlashedNodeProvider } from "./components/FlashedNodeProvider";
 import { initCatalog } from "./components/useCatalog";
+import { StateProxyProvider } from "./lib/StateProxyProvider";
 
 export function Layout({ children }: { children: ReactNode }) {
   return (
@@ -70,7 +71,9 @@ export default function Root() {
   return (
     <ThemeProvider>
       <FlashedNodeProvider>
-        <Outlet />
+        <StateProxyProvider>
+          <Outlet />
+        </StateProxyProvider>
       </FlashedNodeProvider>
     </ThemeProvider>
   );
