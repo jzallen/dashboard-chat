@@ -1,0 +1,90 @@
+{
+  "roadmap": {
+    "project_id": "org-onboarding",
+    "created_at": "2026-06-10T00:42:52Z",
+    "total_steps": 4,
+    "phases": 1
+  },
+  "phases": [
+    {
+      "id": "01",
+      "name": "S1 backend affordances (MR-1): organizations.created_by, DEV_NO_ORG DB-resolved identity, drop project auto-create",
+      "description": "Implements DISTILL slice S1 only (design decisions D1 + D2). Makes the empty-org state reachable for the dev principal and frees first-project creation for the project-context region. SCOPE NOTE: slices S2-S4 (ui/ StateProxy port, /onboarding route, default-project form) are explicitly OUT OF SCOPE for this roadmap and land in a separate later MR by another worker -- their DISTILL acceptance scenarios are intentionally not mapped here and are not orphans. Per UI-4, created_by must NOT appear on any wire response (OrgSettings stays as-is); ownership is asserted via gate-tested unit tests and DEV_NO_ORG resolution behaviour only.",
+      "steps": [
+        {
+          "id": "01-01",
+          "name": "Add nullable organizations.created_by column (ORM + migration 018 + round-trip test)",
+          "criteria": "OrganizationRecord exposes created_by as a nullable String(36) mapped column. New migration backend/migrations/versions/018_add_organizations_created_by.py has down_revision 'd7e8f9a0b1c2' (verified 017 head), performs a plain nullable add_column on upgrade and a real drop_column on downgrade (SQLite + Postgres compatible, no batch mode, no data backfill). Gate-tested proof: new round-trip test backend/tests/test_migration_018_round_trip.py (modeled on the 017 round-trip test) shows upgrade head -> column present, downgrade -1 -> column absent, upgrade head -> column present again. Existing rows remain valid (column nullable, no default required).",
+          "description": "Pure schema affordance for D1. This step is the prerequisite of the linked acceptance scenario (which needs the column to persist ownership); the gate-tested proof for this step itself is the migration round-trip test.",
+          "test_file": "tests/acceptance/org-onboarding/test_org_creation_persists_created_by.py",
+          "scenario_name": "test_org_creation_links_owner_so_principal_resolves_it",
+          "files_to_modify": [
+            "backend/app/repositories/metadata/organization_record.py",
+            "backend/migrations/versions/018_add_organizations_created_by.py (NEW)",
+            "backend/tests/test_migration_018_round_trip.py (NEW)"
+          ]
+        },
+        {
+          "id": "01-02",
+          "name": "Stamp created_by on org create and drop the 'My First Project' auto-create (D2)",
+          "criteria": "MetadataRepository.create_organization accepts created_by: str | None = None and persists it to the new column. The create_organization use case passes created_by=user.id on BOTH the dev and workos paths, and the create_project(name='My First Project', ...) auto-create call is DELETED. Gate-tested proof in backend/tests/use_cases/organization/test_create_organization.py: (a) after creating an org, the principal has ZERO projects (the former auto-create assertion inverted), and (b) the persisted org row satisfies org_record.created_by == TEST_USER.id (direct column assertion). UI-4 invariant holds: created_by appears on NO wire response -- the OrgSettings response of GET /api/orgs/me is byte-identical to today.",
+          "description": "Behavioural change behind POST /api/orgs: ownership is recorded, first-project creation now belongs solely to the project-context region (user-driven, delivered in S4 -- out of scope here). The DISTILL scenario test_org_create_does_not_auto_create_a_project asserts GET /api/projects returns [] after org creation.",
+          "test_file": "tests/acceptance/org-onboarding/test_post_orgs_no_longer_auto_creates_project.py",
+          "scenario_name": "test_org_create_does_not_auto_create_a_project",
+          "files_to_modify": [
+            "backend/app/repositories/metadata/repository.py",
+            "backend/app/use_cases/organization/create_organization.py",
+            "backend/tests/use_cases/organization/test_create_organization.py"
+          ],
+          "depends_on": ["01-01"]
+        },
+        {
+          "id": "01-03",
+          "name": "DEV_NO_ORG flag: resolve the principal's org from the DB by created_by, ignoring X-Org-Id (D1)",
+          "criteria": "Settings gains dev_no_org: bool = False (env DEV_NO_ORG); with the flag OFF (default) request identity behaviour is byte-identical to today (header/contextvar org claim honoured) and the whole existing backend suite stays green. With DEV_NO_ORG=true: get_current_user (backend/app/routers/deps.py) gains db: AsyncSession = Depends(use_db_context) and IGNORES the X-Org-Id header AND the contextvar org claim, resolving org_id via a new repository lookup get_organization_by_created_by(user_id) -- earliest created_at wins when the user owns several orgs, None when the user owns no org. Because the seam is get_current_user, the WHOLE request identity is consistent: GET /api/orgs/me returns 404 for an org-less principal and 200 resolving the owned org after creation; the POST /api/orgs already-has-org rejection and /api/projects scoping see the same resolved org. Driving unit tests extend backend/tests/auth/test_deps.py: flag on -> header ignored, owned org resolved, None when no org; flag off -> unchanged.",
+          "description": "Orchestrator-ratified seam decision: DB resolution lives in get_current_user, not the org read use case. CAUTION for the crafter: existing tests in backend/tests/auth/test_deps.py call get_current_user(request) DIRECTLY without DI -- the new db parameter must not break those direct calls (they must stay green unmodified in spirit; Iron Rule applies).",
+          "test_file": "tests/acceptance/org-onboarding/test_org_absent_from_db_routes_to_onboarding.py",
+          "scenario_name": "test_org_absent_from_db_routes_to_onboarding",
+          "files_to_modify": [
+            "backend/app/config.py",
+            "backend/app/routers/deps.py",
+            "backend/app/repositories/metadata/repository.py",
+            "backend/tests/auth/test_deps.py"
+          ],
+          "depends_on": ["01-02"]
+        },
+        {
+          "id": "01-04",
+          "name": "UI-2: fresh_dev_principal fixture ENFORCES the empty-org precondition (acceptance reset janitor)",
+          "criteria": "In tests/acceptance/org-onboarding/conftest.py the fresh_dev_principal fixture ENFORCES (not merely asserts) the empty-org precondition: a test-only janitor deletes the dev principal's owned orgs (organizations.created_by == 'dev-user-001') and their projects out-of-band via docker exec dashboard-api (DB-level via python/sqlite3 inside the container), mirroring the sibling suite's clean_projects_for_dev_user pattern (tests/acceptance/project-and-chat-session-management/conftest.py line 175). After the janitor runs, GET /api/orgs/me under DEV_NO_ORG returns 404 for the dev principal, making the onboarding scenario repeatable across consecutive suite runs against the SAME backend DB (run twice back-to-back: both runs reach the empty-org state). No destructive API endpoint is added -- there is no DELETE /api/orgs and none may be introduced.",
+          "description": "Closes upstream issue UI-2 (state pollution made empty-org scenarios RED for the wrong reason after the first run). Test-infrastructure only: touches the acceptance conftest, zero backend source.",
+          "test_file": "tests/acceptance/org-onboarding/test_org_absent_from_db_routes_to_onboarding.py",
+          "scenario_name": "test_org_absent_from_db_routes_to_onboarding",
+          "files_to_modify": [
+            "tests/acceptance/org-onboarding/conftest.py"
+          ],
+          "depends_on": ["01-03"]
+        }
+      ]
+    }
+  ],
+  "implementation_scope": {
+    "source_directories": [
+      "backend/app/",
+      "backend/migrations/versions/"
+    ],
+    "test_directories": [
+      "backend/tests/",
+      "tests/acceptance/org-onboarding/"
+    ],
+    "excluded_patterns": [
+      "__init__.py",
+      "__pycache__/**"
+    ]
+  },
+  "validation": {
+    "status": "approved",
+    "reviewer": "nw-acceptance-designer-reviewer",
+    "approved_at": "2026-06-10T00:55:00Z"
+  }
+}

@@ -20,6 +20,7 @@ class OrganizationRecord(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     slug: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
     region: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'us-east-1'"))
     default_engine: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'duckdb'"))
     default_materialization: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'view'"))
