@@ -58,5 +58,6 @@ def test_no_projects_then_create_project_submitted_completes(
     assert driver.region_state(doc, "projectContext") == "project_selected"
     listing = driver.list_projects(bearer=bearer).json()
     rows = listing.get("data", listing) if isinstance(listing, dict) else listing
-    names = [r.get("name") for r in rows]
+    # JSON:API rows nest name under attributes; tolerate a flat shape too.
+    names = [r.get("name") or r.get("attributes", {}).get("name") for r in rows]
     assert names == [project_name], f"expected exactly the one default project, got {names}"

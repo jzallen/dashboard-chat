@@ -1,0 +1,8 @@
+# org-onboarding acceptance override: DEV_NO_ORG makes the empty-org state
+# reachable for the dev principal (org resolved from the DB by created_by,
+# X-Org-Id ignored). Used by tests/acceptance/org-onboarding/ — see
+# docs/feature/org-onboarding/deliver/wave-decisions.md.
+services:
+  api:
+    environment:
+      DEV_NO_ORG: "true"

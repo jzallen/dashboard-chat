@@ -47,5 +47,6 @@ def test_org_create_does_not_auto_create_a_project(
     assert rows == [], f"expected zero projects after org create, got {rows!r}"
 
     # And: no "My First Project" exists by name.
-    names = [r.get("name") for r in rows]
+    # JSON:API rows nest name under attributes; tolerate a flat shape too.
+    names = [r.get("name") or r.get("attributes", {}).get("name") for r in rows]
     assert "My First Project" not in names

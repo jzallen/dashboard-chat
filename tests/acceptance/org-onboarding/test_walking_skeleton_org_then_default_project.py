@@ -76,7 +76,9 @@ def test_orgless_principal_completes_org_and_default_project(
     # Then: the first project is created and onboarding is complete.
     assert driver.region_state(doc, "projectContext") == "project_selected"
     projects = driver.list_projects(bearer=bearer).json()
-    names = [p.get("name") for p in (projects.get("data", projects) if isinstance(projects, dict) else projects)]
+    rows = projects.get("data", projects) if isinstance(projects, dict) else projects
+    # JSON:API rows nest name under attributes; tolerate a flat shape too.
+    names = [p.get("name") or p.get("attributes", {}).get("name") for p in rows]
     assert project_name in names
 
     # And: onboarding complete = org exists AND a default project exists.
