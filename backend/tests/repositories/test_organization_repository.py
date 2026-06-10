@@ -76,3 +76,36 @@ class TestGetOrganizationByCreatedBy:
 
         assert found is not None
         assert found["id"] == ORG_1
+
+    async def test_identical_created_at_tie_breaks_on_smaller_id(self, repo, db_session):
+        """Two owned orgs with the SAME created_at must resolve deterministically.
+
+        Org ids are uuidv7 (chronological), so id-ascending is the honest
+        secondary key. The larger-id org is inserted and flushed FIRST so a
+        stable-but-wrong ordering (e.g. SQLite returning insertion/rowid order
+        on a created_at tie) picks the wrong row and fails this test.
+        """
+        same_instant = datetime(2026, 3, 1, tzinfo=UTC)
+        db_session.add(
+            OrganizationRecord(
+                id=ORG_OTHER,  # larger uuidv7 — inserted first on purpose
+                name="Tied Org Larger Id",
+                created_by=USER_1,
+                created_at=same_instant,
+            )
+        )
+        await db_session.flush()
+        db_session.add(
+            OrganizationRecord(
+                id=ORG_1,  # smaller uuidv7 — inserted second
+                name="Tied Org Smaller Id",
+                created_by=USER_1,
+                created_at=same_instant,
+            )
+        )
+        await db_session.commit()
+
+        found = await repo.get_organization_by_created_by(USER_1)
+
+        assert found is not None
+        assert found["id"] == ORG_1

@@ -843,12 +843,13 @@ class MetadataRepository:
         """Get the organization a user created (DEV_NO_ORG resolution, D1).
 
         When the user created several organizations, the earliest
-        ``created_at`` wins. Returns None when the user created none.
+        ``created_at`` wins; ties break on id ascending (ids are uuidv7,
+        so chronological). Returns None when the user created none.
         """
         result = await self._session.execute(
             select(OrganizationRecord)
             .where(OrganizationRecord.created_by == user_id)
-            .order_by(OrganizationRecord.created_at.asc())
+            .order_by(OrganizationRecord.created_at.asc(), OrganizationRecord.id.asc())
             .limit(1)
         )
         org = result.scalar_one_or_none()
