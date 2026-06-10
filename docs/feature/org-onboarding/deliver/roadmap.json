@@ -2,7 +2,7 @@
   "roadmap": {
     "project_id": "org-onboarding",
     "created_at": "2026-06-10T00:42:52Z",
-    "total_steps": 4,
+    "total_steps": 6,
     "phases": 1
   },
   "phases": [
@@ -64,6 +64,31 @@
             "tests/acceptance/org-onboarding/conftest.py"
           ],
           "depends_on": ["01-03"]
+        },
+        {
+          "id": "01-05",
+          "name": "Suite self-containment: in-suite fake-WorkOS userinfo fixture (DELIVER-discovered DISTILL gap)",
+          "criteria": "tests/acceptance/org-onboarding/conftest.py provides a session-scoped fake-WorkOS HTTP server (stdlib http.server + threading, no new deps) answering GET /oauth/userinfo with 200 {email:'dev@localhost', name:'Dev User'} for any Bearer, bound on 0.0.0.0:14299 (the FAKE_WORKOS_URL default the ui-state container resolves via host.docker.internal). Scenario fixtures that drive session_begin depend on it. If port 14299 is already bound (an external fake-workos is running) the fixture no-ops. With the stack up + DEV_NO_ORG=true, session_begin settles needs_org (not session_rejected/transient). Stack-down behaviour unchanged: scenarios still SKIP, never error.",
+          "description": "AMENDMENT (orchestrator, 2026-06-10): discovered during Phase 2.5 acceptance verification — the onboarding machine's verifying actor re-verifies the Bearer against FAKE_WORKOS_URL/oauth/userinfo; the sibling TS harness self-provisions a fake (tests/acceptance/user-flow-state-machines/steps/fake-workos.ts) but this Python suite did not, so every session_begin settled session_rejected. Recorded in deliver/upstream-issues.md. Test infrastructure only; zero backend source.",
+          "test_file": "tests/acceptance/org-onboarding/test_org_absent_from_db_routes_to_onboarding.py",
+          "scenario_name": "test_org_absent_from_db_routes_to_onboarding",
+          "files_to_modify": [
+            "tests/acceptance/org-onboarding/conftest.py"
+          ],
+          "depends_on": ["01-04"]
+        },
+        {
+          "id": "01-06",
+          "name": "Fix pre-existing POST /api/orgs 500-on-success (controller/use-case shape mismatch, DUI-3)",
+          "criteria": "OrganizationController.post_organization builds the JSON:API envelope from the use case's REAL return shape ({'org_id','org_name'(,'requires_reauth')}): 201 with data.id == org_id, data.attributes.name == org_name, links.self == /api/organizations/{org_id}; requires_reauth surfaces as an attribute when present (workos path) and is absent otherwise (dev path). Characterization tests in backend/tests/controllers/test_organization_controller_char.py are re-pinned to the real use-case shape (the old _Model fiction is removed). Live proof: POST /api/orgs via the ingress returns 201 and the S1 scenario test_post_orgs_no_longer_auto_creates_project PASSES. Whole backend gate suite green; ruff clean.",
+          "description": "AMENDMENT (orchestrator, 2026-06-10): pre-existing defect exposed by live S1 verification — see deliver/upstream-issues.md DUI-3. The success path never worked over HTTP (KeyError -> 500 after commit); the char test pinned a mock shape the use case never returns; ui-state's 500-rule masked it. Iron-Rule-clean: the acceptance scenario's 201 assertion is correct; the char tests being re-pinned are theater (L2 triage).",
+          "test_file": "tests/acceptance/org-onboarding/test_post_orgs_no_longer_auto_creates_project.py",
+          "scenario_name": "test_org_create_does_not_auto_create_a_project",
+          "files_to_modify": [
+            "backend/app/controllers/organization_controller.py",
+            "backend/tests/controllers/test_organization_controller_char.py"
+          ],
+          "depends_on": ["01-05"]
         }
       ]
     }
