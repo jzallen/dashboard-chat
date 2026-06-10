@@ -27,6 +27,14 @@ services:
     build: ./backend
     image: dashboard-chat/api:ui-state-dev
     pull_policy: build
+    # Pin the backend to dev mode alongside the auth-proxy pin above: the two
+    # services otherwise read AUTH_MODE independently, and a stray `.env`
+    # (AUTH_MODE=workos) splits the stack — dev sign-in works but org-create
+    # takes the real-WorkOS path and 502s. One override, one mode.
+    # Interim guard until auth-proxy becomes the sole AUTH_MODE reader
+    # (docs/feature/client-driven-onboarding/design-intent.md).
+    environment:
+      AUTH_MODE: dev
     volumes:
       - ./backend/data:/data
 
