@@ -34,6 +34,7 @@ import { type FormEvent, useEffect, useState } from "react";
 import { Navigate, useNavigate } from "react-router";
 
 import { hasSession } from "../auth/tokenStorage";
+import { refreshOrgGlobal } from "../components/useCatalog";
 import { createLogger } from "../lib/log";
 import { type StateProxy } from "../lib/state-proxy";
 import { useStateProxy } from "../lib/StateProxyProvider";
@@ -56,12 +57,25 @@ export default function OnboardingRoute() {
   }, [authenticated, ensureBootstrap]);
 
   // Onboarding complete — enter the app. Also covers landing on /onboarding
-  // ALREADY project_selected: navigate away immediately.
+  // ALREADY project_selected: navigate away immediately. The app-shell's
+  // org-global catalog was loaded BEFORE this org/project existed
+  // (shouldRevalidate false by design), so refresh it FIRST — otherwise the
+  // user lands on a stale "No projects yet" shell. A failed refresh must not
+  // trap the user here: log it and navigate anyway (a reload recovers).
   const projectSelected = projectContext.state === "project_selected";
   useEffect(() => {
     if (authenticated && projectSelected) {
       log.info("onboarding.project_selected.entering_app", {});
-      navigate("/", { replace: true });
+      void (async () => {
+        try {
+          await refreshOrgGlobal();
+        } catch (error: unknown) {
+          log.error("onboarding.refresh_org_global.failed", {
+            error: String(error),
+          });
+        }
+        navigate("/", { replace: true });
+      })();
     }
   }, [authenticated, projectSelected, navigate]);
 

@@ -25,10 +25,19 @@
 //   (j) error_recoverable renders the state name + cause; resolving_initial_scope
 //       renders a waiting surface until the region settles.
 //
+// Fix cycle (02-05, integration-gate finding):
+//   (k) on project_selected the route awaits refreshOrgGlobal() BEFORE
+//       navigating into the app (the app-shell clientLoader ran before the
+//       org/project existed and shouldRevalidate is false — the stale
+//       org-global catalog must be refreshed at the handoff);
+//   (l) a rejected refresh is logged and STILL navigates — never traps the
+//       user on /onboarding (a reload recovers).
+//
 // Driving port: the route component rendered via a memory router under
 // StateProxyProvider (the same provider tree root.tsx supplies). Driven port
-// boundary: the proxy's injected fetchImpl + eventSourceFactory — the only test
-// doubles, scripted at the transport port. No network, no EventSource.
+// boundaries: the proxy's injected fetchImpl + eventSourceFactory (scripted at
+// the transport port) and the useCatalog module seam (refreshOrgGlobal),
+// vi.mocked as the route's catalog driven port. No network, no EventSource.
 import {
   anonymousStateDocument,
   type ChatAppStateDocument,
@@ -37,11 +46,18 @@ import {
 } from "@dashboard-chat/ui-state-wire";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { refreshOrgGlobal } from "../components/useCatalog";
 import { createStateProxy, type StateProxy } from "../lib/state-proxy";
 import { StateProxyProvider } from "../lib/StateProxyProvider";
 import OnboardingRoute from "./onboarding";
+
+// The route's catalog driven port — the same module seam the app-shell
+// clientLoader uses. Mocked as a module boundary (NOT an internal class).
+vi.mock("../components/useCatalog", () => ({
+  refreshOrgGlobal: vi.fn(() => Promise.resolve()),
+}));
 
 // ── scripted documents ───────────────────────────────────────────────────────
 
@@ -171,6 +187,11 @@ function dropSessionFlag() {
 }
 
 afterEach(dropSessionFlag);
+
+beforeEach(() => {
+  vi.mocked(refreshOrgGlobal).mockReset();
+  vi.mocked(refreshOrgGlobal).mockResolvedValue(undefined);
+});
 
 // ── behaviors ────────────────────────────────────────────────────────────────
 
@@ -342,6 +363,47 @@ describe("OnboardingRoute — default-project step (phase advanced)", () => {
     expect(await screen.findByText("APP")).toBeTruthy();
     expect(router.state.location.pathname).toBe("/");
     expect(screen.queryByLabelText(/project name/i)).toBeNull();
+  });
+
+  it("project_selected: awaits refreshOrgGlobal BEFORE navigating — the org-global catalog is stale at the handoff", async () => {
+    giveSessionFlag();
+    let resolveRefresh!: () => void;
+    vi.mocked(refreshOrgGlobal).mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveRefresh = resolve;
+        }),
+    );
+    const selected = projectPhaseDocument("project_selected");
+    const { proxy } = scriptedProxy(selected, () => selected);
+
+    const { router } = renderOnboarding(proxy);
+
+    // Refresh in flight — still on /onboarding, refresh requested exactly once.
+    expect(await screen.findByText(/entering the app/i)).toBeTruthy();
+    expect(refreshOrgGlobal).toHaveBeenCalledTimes(1);
+    expect(router.state.location.pathname).toBe("/onboarding");
+
+    resolveRefresh();
+
+    // Only AFTER the refresh settles does navigation occur.
+    expect(await screen.findByText("APP")).toBeTruthy();
+    expect(router.state.location.pathname).toBe("/");
+  });
+
+  it("project_selected: a rejected refreshOrgGlobal still navigates into the app — never traps the user", async () => {
+    giveSessionFlag();
+    vi.mocked(refreshOrgGlobal).mockRejectedValue(
+      new Error("catalog refresh failed"),
+    );
+    const selected = projectPhaseDocument("project_selected");
+    const { proxy } = scriptedProxy(selected, () => selected);
+
+    const { router } = renderOnboarding(proxy);
+
+    expect(await screen.findByText("APP")).toBeTruthy();
+    expect(router.state.location.pathname).toBe("/");
+    expect(refreshOrgGlobal).toHaveBeenCalledTimes(1);
   });
 
   it("a server-rejected name renders the inline project_validation_error and the user stays on the form", async () => {
