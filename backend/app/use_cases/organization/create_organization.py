@@ -26,13 +26,16 @@ async def create_organization(
     *,
     repositories: "RepositoryContainer",
 ) -> dict:
-    """Create a new organization and a default project.
+    """Create a new organization, stamping the creating user as owner.
 
     For WorkOS mode: creates org in WorkOS, links user via membership, then
-    creates local records. Returns requires_reauth=True so the frontend
+    creates the local record. Returns requires_reauth=True so the frontend
     can re-trigger login for a fresh token with org_id.
 
-    For dev mode: creates local records only.
+    For dev mode: creates the local record only.
+
+    No project is auto-created — first-project creation belongs solely to
+    the project-context onboarding flow (org-onboarding D2).
     """
     _ensure_user_has_no_org(user)
 
@@ -47,12 +50,6 @@ async def create_organization(
 
     org, requires_reauth = await _create_org_record(name, user.id, metadata_repo, settings)
     org_id = org["id"]
-
-    await metadata_repo.create_project(
-        name="My First Project",
-        org_id=org_id,
-        created_by=user.id,
-    )
 
     result = {"org_id": org_id, "org_name": org["name"]}
     if requires_reauth:
@@ -79,10 +76,10 @@ async def _create_org_record(name, user_id, metadata_repo, settings):
             api_key=settings.workos_api_key,
             api_url=settings.workos_api_url,
         )
-        org = await metadata_repo.create_organization(name=name, id=org_id)
+        org = await metadata_repo.create_organization(name=name, id=org_id, created_by=user_id)
     else:
         requires_reauth = False
-        org = await metadata_repo.create_organization(name=name)
+        org = await metadata_repo.create_organization(name=name, created_by=user_id)
     return org, requires_reauth
 
 

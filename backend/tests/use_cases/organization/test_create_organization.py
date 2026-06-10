@@ -35,7 +35,10 @@ class TestCreateOrganization:
             case Failure(error):
                 pytest.fail(f"Expected success, got: {error}")
 
-    async def test_create_org_when_new_org_creates_default_project(self, db_session: AsyncSession):
+    async def test_create_org_when_new_org_creates_no_projects(self, db_session: AsyncSession):
+        """Inverted per org-onboarding D2: POST /api/orgs no longer auto-creates
+        a 'My First Project' — first-project creation belongs solely to the
+        project-context creating_project step."""
         set_session(db_session)
 
         result = await create_organization(name="New Org", user=TEST_USER)
@@ -48,9 +51,7 @@ class TestCreateOrganization:
                     .scalars()
                     .all()
                 )
-                assert len(projects) == 1
-                assert projects[0].name == "My First Project"
-                assert projects[0].created_by == TEST_USER.id
+                assert len(projects) == 0
             case Failure(error):
                 pytest.fail(f"Expected success, got: {error}")
 
@@ -98,6 +99,7 @@ class TestCreateOrganization:
                 ).scalar_one_or_none()
                 assert org is not None
                 assert org.name == "Test Org"
+                assert org.created_by == TEST_USER.id
             case Failure(error):
                 pytest.fail(f"Expected success, got: {error}")
 

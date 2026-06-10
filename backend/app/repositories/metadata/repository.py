@@ -817,9 +817,10 @@ class MetadataRepository:
         self,
         name: str,
         id: str | None = None,
+        created_by: str | None = None,
     ) -> dict[str, Any]:
         """Create a new organization."""
-        kwargs = {"name": name}
+        kwargs = {"name": name, "created_by": created_by}
         if id is not None:
             kwargs["id"] = id
         org = OrganizationRecord(**kwargs)
