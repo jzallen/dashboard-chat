@@ -11,7 +11,8 @@
    bootstraps.
 
    The proxy is injectable (prop) for tests; the default is one lazily-created
-   module singleton. Call sites for ensureBootstrap land in 02-03/02-04. */
+   module singleton. ensureBootstrap's call sites are the authenticated entry
+   surfaces: the app-shell onboarding gate and /onboarding. */
 import {
   createContext,
   type ReactNode,

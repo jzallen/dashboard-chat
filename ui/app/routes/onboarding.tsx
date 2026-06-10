@@ -29,6 +29,10 @@
    org_form_submitted (Decision 3 closed vocabulary) — posting
    create_project_submitted then would 400 against the ADR-046 ACL, so the
    project form renders only after the phase has advanced. */
+import {
+  type ReducedContext,
+  type RegionView,
+} from "@dashboard-chat/ui-state-wire";
 import { useSelector } from "@xstate/react";
 import { type FormEvent, useEffect, useState } from "react";
 import { Navigate, useNavigate } from "react-router";
@@ -40,6 +44,10 @@ import { type StateProxy } from "../lib/state-proxy";
 import { useStateProxy } from "../lib/StateProxyProvider";
 
 const log = createLogger("onboarding");
+
+/** The server-declared inline validation shape (the wire SSOT's
+ *  org_validation_error / project_validation_error fields share it). */
+type ValidationError = ReducedContext["org_validation_error"];
 
 export default function OnboardingRoute() {
   const authenticated = hasSession();
@@ -113,13 +121,7 @@ function ProjectPhaseSurface({
   region,
 }: {
   proxy: StateProxy;
-  region: {
-    state: string;
-    context: {
-      underlying_cause_tag: string | null;
-      project_validation_error: { kind: string; message: string } | null;
-    };
-  };
+  region: RegionView;
 }) {
   switch (region.state) {
     case "no_projects":
@@ -152,7 +154,7 @@ function ProjectNameForm({
   validationError,
 }: {
   proxy: StateProxy;
-  validationError: { kind: string; message: string } | null;
+  validationError: ValidationError;
 }) {
   const [projectName, setProjectName] = useState("");
 
@@ -202,8 +204,7 @@ function OrgNameForm({
   context,
 }: {
   proxy: StateProxy;
-  context: { user: { email: string | null; display_name: string | null };
-    org_validation_error: { kind: string; message: string } | null };
+  context: ReducedContext;
 }) {
   const [orgName, setOrgName] = useState("");
   const { user, org_validation_error: validationError } = context;
