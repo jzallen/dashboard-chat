@@ -18,24 +18,51 @@ async def use_db_context(db: AsyncSession = Depends(get_db)) -> AsyncSession:
     return db
 
 
-async def get_current_user(request: Request) -> AuthUser:
+async def get_current_user(
+    request: Request,
+    db: AsyncSession = Depends(use_db_context),
+) -> AuthUser:
     """Read user identity from proxy headers, fall back to contextvar.
 
     When TRUST_PROXY_HEADERS is true and X-User-Id is present, constructs
     AuthUser from proxy headers (set by auth-proxy after token validation).
     Otherwise falls back to the contextvar set by AuthMiddleware.
+
+    When DEV_NO_ORG is true, the org claim (X-Org-Id header or contextvar
+    org_id) is IGNORED and the org is resolved from the database by
+    ``organizations.created_by`` instead (D1). The ``db`` dependency is
+    only touched on that path, so flag-off behaviour is unchanged.
     """
     settings = get_settings()
+    user: AuthUser | None = None
     if settings.trust_proxy_headers:
         user_id = request.headers.get("X-User-Id")
         if user_id:
-            return AuthUser(
+            user = AuthUser(
                 id=user_id,
                 org_id=request.headers.get("X-Org-Id"),
                 email=request.headers.get("X-User-Email", ""),
             )
-    # Fallback for direct access (tests, standalone mode)
-    return get_auth_user()
+    if user is None:
+        # Fallback for direct access (tests, standalone mode)
+        user = get_auth_user()
+    if settings.dev_no_org:
+        return await _resolve_org_by_created_by(user, db)
+    return user
+
+
+async def _resolve_org_by_created_by(user: AuthUser, db: AsyncSession) -> AuthUser:
+    """DEV_NO_ORG (D1): replace the claimed org with the org the user created.
+
+    Earliest ``created_at`` wins when the user created several orgs;
+    org_id is None when the user created none (drives onboarding).
+    """
+    from dataclasses import replace
+
+    from app.repositories.metadata import MetadataRepository
+
+    org = await MetadataRepository(db).get_organization_by_created_by(user.id)
+    return replace(user, org_id=org["id"] if org else None)
 
 
 async def authorize_project_access(

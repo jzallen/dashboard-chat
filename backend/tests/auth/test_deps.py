@@ -99,6 +99,88 @@ class TestGetCurrentUser:
         assert user.id == USER_1
         assert user.org_id == ORG_1
 
+    async def test_dev_no_org_ignores_proxy_org_header_and_resolves_owned_org(
+        self, monkeypatch, db_session: AsyncSession
+    ):
+        """DEV_NO_ORG=true: X-Org-Id is ignored; org resolved from DB by created_by."""
+        from app.config import Settings
+        from app.repositories.metadata import OrganizationRecord
+
+        monkeypatch.setattr(
+            "app.routers.deps.get_settings",
+            lambda: Settings(trust_proxy_headers=True, dev_no_org=True),
+        )
+        db_session.add(OrganizationRecord(id=ORG_1, name="Owned Org", created_by=USER_1))
+        await db_session.commit()
+
+        from starlette.requests import Request
+
+        scope = {
+            "type": "http",
+            "headers": [
+                (b"x-user-id", USER_1.encode()),
+                (b"x-org-id", b"proxy-org-id"),
+                (b"x-user-email", b"proxy@test.com"),
+            ],
+        }
+        request = Request(scope)
+
+        user = await get_current_user(request, db_session)
+
+        assert user.id == USER_1
+        assert user.org_id == ORG_1  # resolved from DB, header claim ignored
+
+    async def test_dev_no_org_ignores_contextvar_org_claim_and_resolves_owned_org(
+        self, monkeypatch, db_session: AsyncSession
+    ):
+        """DEV_NO_ORG=true: contextvar org claim is ignored too; identity is consistent."""
+        from app.config import Settings
+        from app.repositories.metadata import OrganizationRecord
+
+        monkeypatch.setattr(
+            "app.routers.deps.get_settings",
+            lambda: Settings(dev_no_org=True),
+        )
+        # Contextvar user (autouse fixture) claims ORG_1; the DB says the user owns ORG_OTHER.
+        db_session.add(OrganizationRecord(id=ORG_OTHER, name="Owned Org", created_by=USER_1))
+        await db_session.commit()
+
+        from starlette.requests import Request
+
+        request = Request({"type": "http", "headers": []})
+
+        user = await get_current_user(request, db_session)
+
+        assert user.id == USER_1
+        assert user.org_id == ORG_OTHER  # resolved from DB, contextvar claim ignored
+
+    async def test_dev_no_org_yields_none_org_when_user_owns_no_org(
+        self, monkeypatch, db_session: AsyncSession
+    ):
+        """DEV_NO_ORG=true: an org-less principal gets org_id None (drives onboarding)."""
+        from app.config import Settings
+
+        monkeypatch.setattr(
+            "app.routers.deps.get_settings",
+            lambda: Settings(trust_proxy_headers=True, dev_no_org=True),
+        )
+
+        from starlette.requests import Request
+
+        scope = {
+            "type": "http",
+            "headers": [
+                (b"x-user-id", USER_1.encode()),
+                (b"x-org-id", b"proxy-org-id"),
+            ],
+        }
+        request = Request(scope)
+
+        user = await get_current_user(request, db_session)
+
+        assert user.id == USER_1
+        assert user.org_id is None
+
 
 class TestAuthorizeProjectAccess:
     """authorize_project_access verifies org ownership."""

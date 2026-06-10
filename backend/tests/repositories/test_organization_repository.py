@@ -1,9 +1,13 @@
 """Characterization tests for Organization operations on MetadataRepository.
 
-Covers create_organization and get_organization.
+Covers create_organization, get_organization, and
+get_organization_by_created_by.
 """
 
-from tests.uuidv7_fixtures import ORG_1
+from datetime import UTC, datetime
+
+from app.repositories.metadata import OrganizationRecord
+from tests.uuidv7_fixtures import ORG_1, ORG_OTHER, USER_1
 
 
 class TestCreateOrganization:
@@ -30,3 +34,45 @@ class TestGetOrganization:
 
     async def test_returns_none_when_not_found(self, repo):
         assert await repo.get_organization("nonexistent-id") is None
+
+
+class TestGetOrganizationByCreatedBy:
+    """DEV_NO_ORG (D1): resolve the org a principal owns via created_by."""
+
+    async def test_returns_owned_org(self, repo):
+        await repo.create_organization(name="Owned Org", id=ORG_1, created_by=USER_1)
+
+        found = await repo.get_organization_by_created_by(USER_1)
+
+        assert found is not None
+        assert found["id"] == ORG_1
+        assert found["name"] == "Owned Org"
+
+    async def test_returns_none_when_user_owns_no_org(self, repo):
+        await repo.create_organization(name="Someone Elses Org", id=ORG_1, created_by="someone-else")
+
+        assert await repo.get_organization_by_created_by(USER_1) is None
+
+    async def test_earliest_created_at_wins_with_two_orgs(self, repo, db_session):
+        db_session.add(
+            OrganizationRecord(
+                id=ORG_OTHER,
+                name="Later Org",
+                created_by=USER_1,
+                created_at=datetime(2026, 2, 1, tzinfo=UTC),
+            )
+        )
+        db_session.add(
+            OrganizationRecord(
+                id=ORG_1,
+                name="Earlier Org",
+                created_by=USER_1,
+                created_at=datetime(2026, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+
+        found = await repo.get_organization_by_created_by(USER_1)
+
+        assert found is not None
+        assert found["id"] == ORG_1

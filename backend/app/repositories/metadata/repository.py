@@ -839,6 +839,24 @@ class MetadataRepository:
         return _mappers.organization_to_dict(org)
 
     @handle_repository_exceptions
+    async def get_organization_by_created_by(self, user_id: str) -> dict[str, Any] | None:
+        """Get the organization a user created (DEV_NO_ORG resolution, D1).
+
+        When the user created several organizations, the earliest
+        ``created_at`` wins. Returns None when the user created none.
+        """
+        result = await self._session.execute(
+            select(OrganizationRecord)
+            .where(OrganizationRecord.created_by == user_id)
+            .order_by(OrganizationRecord.created_at.asc())
+            .limit(1)
+        )
+        org = result.scalar_one_or_none()
+        if not org:
+            return None
+        return _mappers.organization_to_dict(org)
+
+    @handle_repository_exceptions
     async def get_organization_by_name(self, name: str) -> dict[str, Any] | None:
         """Get an organization by name (point lookup on the unique name index).
 
