@@ -237,6 +237,30 @@ app.post("/api/auth/refresh", async (c) => {
   try {
     const { accessToken, expiresIn } =
       await createProviderForRequest().refresh(sid);
+    // Re-set the credential cookies so a cookie-only browser's session slides
+    // forward on the keep-alive beat (the body token serves header/PAT clients).
+    // Mirrors the callback's dual Set-Cookie (ui-cookie-session C1/D1).
+    const secure = (process.env.AUTH_MODE || "dev") !== "dev";
+    c.header(
+      "Set-Cookie",
+      buildSetCookie(COOKIE_AUTH_TOKEN, accessToken, {
+        httpOnly: true,
+        sameSite: "Lax",
+        path: "/",
+        maxAge: expiresIn,
+        secure,
+      }),
+      { append: true },
+    );
+    c.header(
+      "Set-Cookie",
+      buildSetCookie(COOKIE_SESSION_FLAG, "1", {
+        sameSite: "Lax",
+        path: "/",
+        secure,
+      }),
+      { append: true },
+    );
     return c.json({ access_token: accessToken, expires_in: expiresIn });
   } catch (e) {
     return mapProviderError(c, e);
@@ -251,12 +275,24 @@ app.post("/api/auth/logout", async (c) => {
   // ui-cookie-session (C2/D5): read the session header-first, then the cookie —
   // the Bearer path stays intact for PAT/headless clients. Delete the server
   // session, then clear BOTH cookies on the way out so the browser drops them.
+  // workos mode: the WorkOS SSO session outlives the local one, so clearing the
+  // cookie alone lets the next /api/auth/login silently re-authenticate. Capture
+  // the WorkOS session id (stored at callback) BEFORE dropping the local session
+  // and hand the SPA a WorkOS end-session url to navigate to — that actually
+  // terminates the SSO session. dev mode has no SSO session → no url (204).
+  let logoutUrl: string | null = null;
   const token = readCredential(c);
   if (token) {
     try {
       const payload = await verifyUserToken(token);
       const sid = typeof payload.sid === "string" ? payload.sid : "";
-      if (sid) await createProviderForRequest().logout(sid);
+      if (sid) {
+        if ((process.env.AUTH_MODE || "dev") !== "dev") {
+          const wsid = getSession(sid)?.workos_session_id;
+          if (wsid) logoutUrl = buildWorkosLogoutUrl(wsid);
+        }
+        await createProviderForRequest().logout(sid);
+      }
     } catch {
       // Verification failure: treat as already-logged-out, no-op delete.
     }
@@ -271,8 +307,23 @@ app.post("/api/auth/logout", async (c) => {
     buildSetCookie(COOKIE_SESSION_FLAG, "", { maxAge: 0, path: "/" }),
     { append: true },
   );
-  return c.body(null, 204);
+  return logoutUrl ? c.json({ logout_url: logoutUrl }) : c.body(null, 204);
 });
+
+/**
+ * Build the WorkOS end-session URL for a WorkOS session id (the `sid` captured at
+ * callback). Navigating the browser here terminates the SSO session. `return_to`
+ * is included only when `WORKOS_LOGOUT_REDIRECT` is set (it must be whitelisted in
+ * the WorkOS dashboard); otherwise WorkOS uses its configured default.
+ */
+function buildWorkosLogoutUrl(workosSessionId: string): string {
+  const base = process.env.WORKOS_BASE || "https://api.workos.com";
+  const url = new URL(`${base}/user_management/sessions/logout`);
+  url.searchParams.set("session_id", workosSessionId);
+  const returnTo = process.env.WORKOS_LOGOUT_REDIRECT;
+  if (returnTo) url.searchParams.set("return_to", returnTo);
+  return url.toString();
+}
 
 // Identity read-back (ui-cookie-session C2/D4). A pure CSR SPA holding an
 // HttpOnly cookie can no longer decode the JWT itself, so it asks the server who

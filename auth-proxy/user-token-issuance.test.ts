@@ -531,6 +531,68 @@ describe("logout — dev mode", () => {
   });
 });
 
+describe("logout — workos mode (WorkOS end-session)", () => {
+  /** Issue a token via the dev callback (the local keypair verifies regardless
+   *  of mode), attach a stored WorkOS session id, then flip to workos so the
+   *  logout handler reads AUTH_MODE + the stored sid at request time. */
+  async function issueTokenWithWorkosSession(
+    workosSessionId: string | undefined,
+  ): Promise<string> {
+    const callbackRes = await app.fetch(
+      new Request("http://localhost/api/auth/callback", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: "dev-auth-code" }),
+      }),
+    );
+    const { access_token } = (await callbackRes.json()) as {
+      access_token: string;
+    };
+    const sid = decodeJwt(access_token).sid as string;
+    setSession(sid, {
+      workos_refresh_token: "r",
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+      user_claims: { sub: "u", email: "u@x", name: "U", org_id: "" },
+      workos_session_id: workosSessionId,
+    });
+    return access_token;
+  }
+
+  it("returns a WorkOS end-session logout_url built from the stored session id", async () => {
+    const token = await issueTokenWithWorkosSession("session_01WOS");
+    process.env.AUTH_MODE = "workos";
+    process.env.WORKOS_BASE = "https://api.workos.test";
+
+    const res = await app.fetch(
+      new Request("http://localhost/api/auth/logout", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { logout_url: string };
+    expect(body.logout_url).toContain(
+      "https://api.workos.test/user_management/sessions/logout",
+    );
+    expect(body.logout_url).toContain("session_id=session_01WOS");
+  });
+
+  it("falls back to 204 (no url) when the session carries no WorkOS session id", async () => {
+    const token = await issueTokenWithWorkosSession(undefined);
+    process.env.AUTH_MODE = "workos";
+
+    const res = await app.fetch(
+      new Request("http://localhost/api/auth/logout", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+    );
+
+    expect(res.status).toBe(204);
+  });
+});
+
 describe("refresh — workos mode", () => {
   beforeEach(() => {
     process.env.AUTH_MODE = "workos";
@@ -711,6 +773,22 @@ describe("refresh — dev mode", () => {
     const sid = decodeJwt(access_token).sid as string;
     return { token: access_token, sid };
   }
+
+  it("re-sets the auth_token + session cookies so a cookie-only client slides forward", async () => {
+    const { token } = await issueDevToken();
+
+    const res = await app.fetch(
+      new Request("http://localhost/api/auth/refresh", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    const cookies = res.headers.getSetCookie();
+    expect(cookies.some((c) => c.startsWith("auth_token="))).toBe(true);
+    expect(cookies.some((c) => c.startsWith("session=1"))).toBe(true);
+  });
 
   it("rejects with 401 session_expired when the session has aged out", async () => {
     const original = await issueDevToken();

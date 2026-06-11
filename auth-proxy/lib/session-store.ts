@@ -37,6 +37,10 @@ export interface SessionPayload {
   /** Epoch-second timestamp when the session is no longer valid. */
   expires_at: number;
   user_claims: SessionUserClaims;
+  /** The WorkOS session id (the `sid` claim of the WorkOS access token), needed
+   *  to build the WorkOS end-session URL on logout so the SSO session is actually
+   *  terminated. Optional: absent for dev sessions and any token without a `sid`. */
+  workos_session_id?: string;
 }
 
 const entries = new Map<string, SessionPayload>();

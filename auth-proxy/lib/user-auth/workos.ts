@@ -92,6 +92,10 @@ export class WorkOsUserAuthProvider implements UserAuthProvider {
       workos_refresh_token: workos.refresh_token,
       expires_at: Math.floor(Date.now() / 1000) + expiresIn,
       user_claims: claims,
+      // The WorkOS access token's `sid` claim IS the WorkOS session id — captured
+      // here so logout can build the WorkOS end-session URL (the auth-proxy mints
+      // its OWN `sid` above for the local session store; they are distinct).
+      workos_session_id: decodeWorkosSessionId(workos.access_token),
     });
     return { accessToken: token, sid, expiresIn };
   }
@@ -235,5 +239,24 @@ export class WorkOsUserAuthProvider implements UserAuthProvider {
       throw new Error("service_error");
     }
     return (await response.json()) as WorkOsAuthenticateResponse;
+  }
+}
+
+/**
+ * Best-effort decode of a WorkOS access token's `sid` (session id) claim — the
+ * value needed to build the WorkOS end-session URL on logout. The token is NOT
+ * verified here (it is WorkOS-issued and was just exchanged); we only read its
+ * payload. Returns undefined for a malformed token or an absent `sid`.
+ */
+export function decodeWorkosSessionId(accessToken: string): string | undefined {
+  try {
+    const payload = accessToken.split(".")[1];
+    if (!payload) return undefined;
+    const claims = JSON.parse(
+      Buffer.from(payload, "base64url").toString("utf8"),
+    ) as { sid?: unknown };
+    return typeof claims.sid === "string" ? claims.sid : undefined;
+  } catch {
+    return undefined;
   }
 }
