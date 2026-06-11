@@ -5,11 +5,14 @@ Gherkin (features/org-onboarding.feature):
 
 Driving port: the user-facing ingress (`POST /api/orgs`). Creating an organisation
 must NOT side-effect a "My First Project" — first-project creation now belongs
-solely to the project-context `create_project_submitted` step.
+solely to the client's automatic Phase-D `POST /api/projects` step (ADR-050 §c:
+POST /api/orgs is not the project trigger).
 
-RED until: S1 (D2 — drop the create_project call in create_organization) lands.
-Under current code an org create auto-creates exactly one "My First Project", so
-the empty-projects assertion fails.
+SURVIVES near-as-is under client-driven-onboarding (AR-6): it already drives the
+real `POST /api/orgs` directly with no ui-state write event, so the write-model
+change does not touch it. It is a regression LOCK on the no-auto-create behaviour
+shipped by the original org-onboarding S1; it is expected GREEN on a stack that
+already dropped the auto-create, and guards against its reintroduction.
 """
 
 from __future__ import annotations
@@ -17,14 +20,14 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from driver import OnboardingDriver
+from driver import OnboardingDriver, row_names
 
 pytestmark = [
     pytest.mark.real_io,
     pytest.mark.needs_compose_stack,
     pytest.mark.needs_dev_no_org,
     pytest.mark.regression,
-    pytest.mark.s1_backend,
+    pytest.mark.cdo_s2,
 ]
 
 
@@ -47,6 +50,4 @@ def test_org_create_does_not_auto_create_a_project(
     assert rows == [], f"expected zero projects after org create, got {rows!r}"
 
     # And: no "My First Project" exists by name.
-    # JSON:API rows nest name under attributes; tolerate a flat shape too.
-    names = [r.get("name") or r.get("attributes", {}).get("name") for r in rows]
-    assert "My First Project" not in names
+    assert "My First Project" not in row_names(rows)

@@ -1,7 +1,7 @@
 [project]
 name = "dashboard-chat-acceptance-org-onboarding"
 version = "0.0.1"
-description = "Acceptance tests for org-onboarding — empty-org principal creates an org + default project, then enters the app (DISTILL)."
+description = "Acceptance tests for client-driven-onboarding — empty-org principal probes, creates an org + default project (client-driven, report-based), then enters the app (DISTILL, reworked in place per AR-6)."
 requires-python = ">=3.11"
 dependencies = []
 
@@ -18,17 +18,18 @@ python_files = ["test_*.py"]
 asyncio_mode = "auto"
 markers = [
     "real_io: scenario uses real adapters (the local compose stack — real HTTP + backend + ui-state + Redis + auth-proxy)",
-    "walking_skeleton: the single end-to-end scenario gating the feature (org-less principal → org → default project → app entry)",
+    "walking_skeleton: the single end-to-end scenario gating the feature (org-less principal → probe+report → org → automatic default project → app entry)",
     "needs_compose_stack: scenario requires the local compose topology reachable on host ports (skipped otherwise)",
     "needs_dev_no_org: scenario requires the backend started with DEV_NO_ORG=true AND a dev principal with no org in the DB (the empty-org precondition)",
     "happy_path: nominal flow — no failure injection",
-    "error_path: explicit validation/rejection scenario",
-    "regression: locks a behavior change (D2 — no backend auto-create of a default project)",
-    "s1_backend: Slice 1 — created_by column + DEV_NO_ORG DB resolution + drop auto-create",
-    "s2_ui_plumbing: Slice 2 — port StateProxy (CSR+Bearer) + provider + session_begin bootstrap",
-    "s3_ui_onboarding: Slice 3 — /onboarding route + gate redirect + needs_org org form",
-    "s4_ui_default_project: Slice 4 — no_projects → create_project_submitted form → app entry",
-    "pending: traces to a DELIVER slice not yet implemented — RED until that slice lands",
+    "error_path: explicit validation/rejection/recovery scenario",
+    "regression: locks a behavior guarantee (no backend auto-create; the late/duplicate-report convergence + liveness crash regression)",
+    # client-driven-onboarding DELIVER slices (carpaccio — see distill/roadmap.json)
+    "cdo_s1: CDO-S1 — walking skeleton: closed-union happy vocabulary + ui-state report-driven realignment (dev happy path, end to end)",
+    "cdo_s2: CDO-S2 — backend pure-resource contracts: OrgCreate name validation (422), availability endpoint, X-Provisioned-Org-Id, WorkOS shrink, no-auto-create lock",
+    "cdo_s3: CDO-S3 — failure-class robustness + crash-class elimination: report-accepting error_recoverable, probe-first convergence, phase-gated routing, closed-union edge",
+    "cdo_s4: CDO-S4 — auth-proxy mode discovery (GET /api/auth/config) + reissue Set-Cookie (D8) + retry-KPI cleanup",
+    "cdo_s5: CDO-S5 — ui/ client-drive surfaces (onboarding-driver, login mode UI, app-shell gate) + auth-proxy workos org-create interception (DELIVER-unit / fake-WorkOS coverage; no new python acceptance scenario)",
 ]
 addopts = [
     "-ra",

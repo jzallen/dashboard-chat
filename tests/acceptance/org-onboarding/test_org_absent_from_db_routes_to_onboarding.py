@@ -8,11 +8,13 @@ EXISTING IN THE APP DB (GET /api/orgs/me → 404), NOT on the token's org claim.
 principal whose claimed org is not a row in our DB must land in onboarding.
 
 Driving port: the user-facing ingress. With DEV_NO_ORG the injected X-Org-Id
-header is ignored and the org is resolved from the DB by `created_by`; with no
-matching row, /api/orgs/me 404s and the session settles `needs_org`.
+header is ignored and the org is resolved from the DB by ``created_by``; with no
+matching row, /api/orgs/me 404s, the client reports ``org_not_found``, and the
+session settles ``needs_org``.
 
-RED until: S1 (DEV_NO_ORG DB resolution) lands — under current code the header
-claim short-circuits to a 200 and the session settles `ready`.
+RED on the pre-feature stack because: ``org_not_found`` is not a wire member yet
+(the closed onboarding ACL rejects it as unknown → HTTP 400), so the report never
+drives the region. RED for the right reason: the report-driven model is unimplemented.
 """
 
 from __future__ import annotations
@@ -24,8 +26,8 @@ pytestmark = [
     pytest.mark.real_io,
     pytest.mark.needs_compose_stack,
     pytest.mark.needs_dev_no_org,
-    pytest.mark.error_path,
-    pytest.mark.s1_backend,
+    pytest.mark.happy_path,
+    pytest.mark.cdo_s1,
 ]
 
 
@@ -41,8 +43,11 @@ def test_org_absent_from_db_routes_to_onboarding(
         "is short-circuiting (DEV_NO_ORG not in effect)"
     )
 
-    # When: they begin their session.
-    doc = driver.session_begin(bearer=bearer, force_restart=True).json()
+    # When: they begin their session and report that they have no organisation.
+    driver.session_begin(bearer=bearer, force_restart=True)
+    reported = driver.probe_and_report_org(bearer=bearer)
+    assert reported.status == 200, reported.body
+    doc = reported.json()
 
     # Then: they are guided to onboarding to set up an organisation.
     assert driver.phase(doc) == "onboarding"

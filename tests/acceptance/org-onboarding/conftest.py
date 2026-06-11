@@ -63,14 +63,23 @@ def requires_compose_stack(reverse_proxy_url: str, auth_proxy_url: str) -> None:
         )
 
 
-# ── in-suite fake WorkOS (01-05) ─────────────────────────────────────────────
-# The onboarding machine's `verifying` actor (ui-state getWorkOSUserInfo)
+# ── in-suite fake WorkOS (TRANSITIONAL — retires with the re-verify at DELIVER) ─
+# The shipped onboarding machine's `verifying` actor (ui-state getWorkOSUserInfo)
 # re-verifies the Bearer against ${FAKE_WORKOS_URL}/oauth/userinfo
 # unconditionally — non-200/unreachable → session_rejected. The compose
 # dashboard-ui-state container defaults FAKE_WORKOS_URL to
 # host.docker.internal:14299 (extra_hosts host-gateway already wired), so the
 # suite self-provisions a loopback-fake on the host, mirroring the sibling TS
 # suite's fake-workos.ts. Stdlib only (http.server + threading + json).
+#
+# client-driven-onboarding NOTE: ui-state loses ALL egress (ADR-048 §4) and the
+# re-verify invoke RETIRES (ADR-049 D3) — the relocated fake-WorkOS seam moves to
+# auth-proxy's WORKOS_BASE (R4), and AUTH_MODE=dev exercises no WorkOS at all. This
+# fixture is kept for the DISTILL RED window so the CURRENT (pre-feature) stack's
+# session_begin still settles instead of session_rejecting on an unreachable
+# userinfo — keeping the reworked tests RED for the RIGHT reason (the new contract),
+# not BROKEN by infrastructure. It already no-ops when the port is taken; once
+# DELIVER removes the re-verify it becomes a harmless no-op and can be deleted.
 _FAKE_WORKOS_BIND = ("0.0.0.0", 14299)
 _FAKE_WORKOS_PROFILE = {"email": "dev@localhost", "name": "Dev User"}
 
