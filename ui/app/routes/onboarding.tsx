@@ -43,6 +43,7 @@ import { Navigate, useNavigate } from "react-router";
 
 import { hasSession } from "../auth/tokenStorage";
 import { apiGet, apiPost } from "../catalog/dataSources/backendClient";
+import { LoadingSurface } from "../components/LoadingSurface/LoadingSurface";
 import { refreshOrgGlobal } from "../components/useCatalog";
 import { createLogger } from "../lib/log";
 import {
@@ -51,6 +52,7 @@ import {
   type OnboardingDriver,
 } from "../lib/onboarding-driver";
 import { useStateProxy } from "../lib/StateProxyProvider";
+import styles from "./onboarding.module.css";
 
 const log = createLogger("onboarding");
 
@@ -154,7 +156,7 @@ export default function OnboardingRoute({
       return <RetrySurface onRetry={() => driver.probeAndReportOrg()} />;
     default:
       // verifying / awaiting_org_report (and any transient) — wait honestly.
-      return <Surface title="Checking your session…" />;
+      return <LoadingSurface message="Checking your session…" />;
   }
 }
 
@@ -168,13 +170,13 @@ function ProjectPhaseSurface({
   switch (region.state) {
     case "project_selected":
       // The navigation effect is taking us into the app.
-      return <Surface title="Entering the app…" />;
+      return <LoadingSurface message="Entering the app…" />;
     case "error_recoverable":
       return <RetrySurface onRetry={() => driver.retryProject()} />;
     default:
       // awaiting_scope_report (Phase D auto-creating), creating_project,
       // resolving_initial_scope and other transients — a single progress view.
-      return <Surface title="Setting up your workspace…" />;
+      return <LoadingSurface message="Setting up your workspace…" />;
   }
 }
 
@@ -203,27 +205,38 @@ function OrgNameForm({
   };
 
   return (
-    <main style={surfaceStyle}>
-      <h1>Create your organization</h1>
-      <p>
-        Signed in as {user.display_name ?? user.email}
-        {user.display_name && user.email ? ` (${user.email})` : null}
-      </p>
-      <form onSubmit={onSubmit}>
-        <label htmlFor="org-name">Organization name</label>{" "}
-        <input
-          id="org-name"
-          name="org-name"
-          value={orgName}
-          onChange={(e) => setOrgName(e.target.value)}
-        />{" "}
-        <button type="submit" disabled={busy}>
-          {busy ? "Creating…" : "Create organization"}
-        </button>
-        {/* DISPLAY RULE: friendly, server-owned inline copy for the re-edit
-            causes (org_name_taken / org_name_invalid) — never a raw cause tag. */}
-        <FriendlyValidation error={validationError} />
-      </form>
+    <main className={styles.surface}>
+      <div className={styles.card}>
+        <h1 className={styles.title}>Create your organization</h1>
+        <p className={styles.signedIn}>
+          Signed in as <b>{user.display_name ?? user.email}</b>
+          {user.display_name && user.email ? ` (${user.email})` : null}
+        </p>
+        <form className={styles.form} onSubmit={onSubmit}>
+          <label className={styles.label} htmlFor="org-name">
+            Organization name
+          </label>
+          <input
+            id="org-name"
+            name="org-name"
+            className={styles.input}
+            placeholder="Acme Inc."
+            autoFocus
+            value={orgName}
+            onChange={(e) => setOrgName(e.target.value)}
+          />
+          {/* DISPLAY RULE: friendly, server-owned inline copy for the re-edit
+              causes (org_name_taken / org_name_invalid) — never a raw cause tag. */}
+          <FriendlyValidation error={validationError} />
+          <button
+            type="submit"
+            className={`btn primary ${styles.submit}`}
+            disabled={busy}
+          >
+            {busy ? "Creating…" : "Create organization"}
+          </button>
+        </form>
+      </div>
     </main>
   );
 }
@@ -232,14 +245,10 @@ function OrgNameForm({
  *  Never a raw machine tag — the message text is the client-owned copy. */
 function FriendlyValidation({ error }: { error: ValidationError }) {
   if (!error) return null;
-  return <p role="alert">{error.message}</p>;
-}
-
-function Surface({ title }: { title: string }) {
   return (
-    <main style={surfaceStyle}>
-      <p>{title}</p>
-    </main>
+    <p className={styles.error} role="alert">
+      {error.message}
+    </p>
   );
 }
 
@@ -253,22 +262,21 @@ function RetrySurface({ onRetry }: { onRetry: () => void }) {
     void Promise.resolve(onRetry()).finally(() => setBusy(false));
   };
   return (
-    <main style={surfaceStyle}>
-      <h1>Something went wrong on our end</h1>
-      <p>We couldn’t finish setting things up. Please try again.</p>
-      <button type="button" onClick={retry} disabled={busy}>
-        {busy ? "Retrying…" : "Try again"}
-      </button>
+    <main className={styles.surface}>
+      <div className={styles.card}>
+        <h1 className={styles.title}>Something went wrong on our end</h1>
+        <p className={styles.body}>
+          We couldn’t finish setting things up. Please try again.
+        </p>
+        <button
+          type="button"
+          className={`btn primary ${styles.submit}`}
+          onClick={retry}
+          disabled={busy}
+        >
+          {busy ? "Retrying…" : "Try again"}
+        </button>
+      </div>
     </main>
   );
 }
-
-const surfaceStyle = {
-  minHeight: "100vh",
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "center",
-  justifyContent: "center",
-  gap: 12,
-  font: "16px/1.5 system-ui,sans-serif",
-} as const;

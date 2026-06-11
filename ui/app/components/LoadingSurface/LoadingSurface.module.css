@@ -1,0 +1,69 @@
+/* Full-screen indeterminate loading surface. The bar mirrors the upload flow's
+   per-leg progress bar (Upload.module.css .legTrack/.legFill): a bordered track
+   with a primary fill carrying the same 45° hatch — here marching (indeterminate)
+   rather than width-driven, since these waits have no known duration. */
+.surface {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--surface-2);
+}
+
+.card {
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 22px 24px;
+  background: var(--surface);
+  border: 2.5px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+}
+
+.status {
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--text-700);
+  margin: 0;
+}
+
+.track {
+  height: 18px;
+  border: 2px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.fill {
+  height: 100%;
+  width: 100%;
+  background: var(--primary);
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(0, 0, 0, 0.16) 0 7px,
+    transparent 7px 14px
+  );
+  /* One 45° hatch period projects to 14·√2 ≈ 19.8px horizontally, so a 19.8px
+     x-shift loops seamlessly — the stripes "march" to read as in-progress. */
+  animation: barMarch 0.55s linear infinite;
+}
+
+@keyframes barMarch {
+  to {
+    background-position: 19.8px 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fill {
+    animation: none;
+  }
+}

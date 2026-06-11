@@ -1,0 +1,111 @@
+/* /onboarding surfaces — neobrutalist card styling to match the rest of the UI
+   (theme.css / theme.neobrutalist.css tokens: #111 borders, hard offset shadows,
+   Archivo serif headings, the upload-form input treatment). Buttons reuse the
+   global .btn / .btn.primary primitives. */
+.surface {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--surface-2);
+}
+
+.card {
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 28px 28px 30px;
+  background: var(--surface);
+  border: 2.5px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-weight: 800;
+  font-size: 26px;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--text-900);
+}
+
+.signedIn {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-500);
+}
+.signedIn b {
+  color: var(--text-900);
+  font-weight: 700;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.label {
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.input {
+  width: 100%;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  padding: 11px 13px;
+  font-family: var(--font-serif);
+  font-weight: 700;
+  font-size: 17px;
+  color: var(--text-900);
+  background: var(--surface-2);
+  outline: none;
+  letter-spacing: -0.01em;
+}
+.input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-light);
+  background: var(--surface);
+}
+.input::placeholder {
+  color: var(--text-400);
+  font-weight: 400;
+}
+
+.submit {
+  margin-top: 8px;
+  justify-content: center;
+  font-weight: 700;
+}
+
+/* Friendly inline validation (org_name_taken / org_name_invalid). No raw cause
+   tag — a neobrutalist "attention" chip on the yellow sheet colour. */
+.error {
+  margin: 4px 0 0;
+  padding: 9px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-900);
+  background: var(--sheet-bg);
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-sm);
+}
+
+.body {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-500);
+}

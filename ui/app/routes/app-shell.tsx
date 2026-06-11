@@ -23,6 +23,7 @@ import { Topbar } from "../components/AppShell/Topbar";
 import { useColdStorage } from "../components/ColdStorage";
 import { useExport } from "../components/Export";
 import { useFlashedNode } from "../components/FlashedNodeProvider";
+import { LoadingSurface } from "../components/LoadingSurface/LoadingSurface";
 import { useUpload } from "../components/Upload";
 import { catalog, refreshOrgGlobal, useCatalog } from "../components/useCatalog";
 import { ChatProvider } from "../lib/chatContext";
@@ -169,11 +170,7 @@ function OnboardingGate({ client }: { client: OnboardingClient }) {
   }, [awaitingOrgReport, driver]);
 
   if (onboardingState === "verifying" || awaitingOrgReport) {
-    return (
-      <main className="shell-waiting">
-        <p>Checking your session…</p>
-      </main>
-    );
+    return <LoadingSurface message="Checking your session…" />;
   }
   if (phase === "onboarding" && ONBOARDING_ACTIVE_STATES.has(onboardingState)) {
     return <Navigate to="/onboarding" replace />;
