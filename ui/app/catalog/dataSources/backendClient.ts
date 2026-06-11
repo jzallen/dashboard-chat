@@ -22,6 +22,8 @@
  * callers (the onboarding driver) read `.status`/`.body` to map a definitive
  * HTTP answer to a closed-union outcome cause.
  */
+import { handleUnauthorized } from "../../auth/unauthorized";
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -74,6 +76,7 @@ export async function apiGet<T>(
     credentials: "include",
   });
   if (!response.ok) {
+    if (response.status === 401) handleUnauthorized();
     throw new ApiError(
       response.status,
       await parseErrorBody(response),
@@ -115,6 +118,7 @@ export async function apiPatch(
     body: JSON.stringify(body),
   });
   if (!response.ok) {
+    if (response.status === 401) handleUnauthorized();
     throw new ApiError(
       response.status,
       await parseErrorBody(response),
@@ -146,6 +150,7 @@ export async function apiPost<T>(
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!response.ok) {
+    if (response.status === 401) handleUnauthorized();
     throw new ApiError(
       response.status,
       await parseErrorBody(response),
@@ -174,6 +179,7 @@ export async function apiUpload<T>(
     body: form,
   });
   if (!response.ok) {
+    if (response.status === 401) handleUnauthorized();
     throw new ApiError(
       response.status,
       await parseErrorBody(response),

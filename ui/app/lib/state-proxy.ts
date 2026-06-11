@@ -32,6 +32,8 @@ import {
   type ChatAppWireEvent,
 } from "@dashboard-chat/ui-state-wire";
 
+import { handleUnauthorized } from "../auth/unauthorized";
+
 /** The `/ui-state/*` prefix the auth-proxy routes to the ui-state container —
  *  relative, so requests ride the same origin the SPA is served from. */
 const UI_STATE_PREFIX = "/ui-state";
@@ -102,6 +104,9 @@ async function fetchDocument(
   try {
     const res = await fetchImpl(url, { ...init, signal: controller.signal });
     if (!res.ok) {
+      // A 401 means the session lapsed — recover globally (clear flag + /login)
+      // rather than letting the gate spin on the unadvanced anonymous document.
+      if (res.status === 401) handleUnauthorized();
       throw new Response(`ui-state ${res.status}`, { status: res.status });
     }
     return (await res.json()) as ChatAppStateDocument;

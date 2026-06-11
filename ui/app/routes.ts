@@ -15,6 +15,7 @@ import { index, layout, route } from "@react-router/dev/routes";
 
 export default [
   route("/login", "routes/login.tsx"),
+  route("/logout", "routes/logout.tsx"),
   route("/auth/callback", "routes/auth-callback.tsx"),
   // Top-level, OUTSIDE the app-shell layout (D6): onboarding renders with no
   // Topbar/overlays — the principal has no org yet, so no shell to scope.
