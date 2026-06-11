@@ -2,6 +2,18 @@
    per-leg progress bar (Upload.module.css .legTrack/.legFill): a bordered track
    with a primary fill carrying the same 45° hatch — here marching (indeterminate)
    rather than width-driven, since these waits have no known duration. */
+/* LoadingSurface carries the shared `app theme-neobrutalist` rootClassName so it
+   themes identically at every mount point (the onboarding gate + /onboarding
+   waits live outside the app-shell). `.app` also brings the shell's viewport
+   layout (display:flex; height:100vh; overflow:hidden) which would collapse the
+   centered surface — neutralise just that. Compounding with :global(.app) beats
+   `.app`'s specificity deterministically, regardless of CSS load order. */
+:global(.app).themeFrame {
+  display: block;
+  height: auto;
+  overflow: visible;
+}
+
 .surface {
   min-height: 100vh;
   display: flex;

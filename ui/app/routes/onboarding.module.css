@@ -2,6 +2,20 @@
    (theme.css / theme.neobrutalist.css tokens: #111 borders, hard offset shadows,
    Archivo serif headings, the upload-form input treatment). Buttons reuse the
    global .btn / .btn.primary primitives. */
+
+/* The route lives OUTSIDE the app-shell, so onboarding.tsx wraps its surfaces in
+   the shared `app theme-neobrutalist` rootClassName to inherit the design tokens
+   (ThemeProvider is the single source of truth). But `.app` also carries the
+   shell's viewport layout (display:flex; height:100vh; overflow:hidden) — which
+   would shrink the centered surface to its card width and clip it. Neutralise
+   just that layout here; compounding with :global(.app) beats `.app`'s
+   specificity so the override is deterministic regardless of CSS load order. */
+:global(.app).themeFrame {
+  display: block;
+  height: auto;
+  overflow: visible;
+}
+
 .surface {
   min-height: 100vh;
   display: flex;

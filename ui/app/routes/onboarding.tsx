@@ -43,6 +43,7 @@ import { Navigate, useNavigate } from "react-router";
 
 import { hasSession } from "../auth/tokenStorage";
 import { apiGet, apiPost } from "../catalog/dataSources/backendClient";
+import { useTheme } from "../components/AppShell";
 import { LoadingSurface } from "../components/LoadingSurface/LoadingSurface";
 import { refreshOrgGlobal } from "../components/useCatalog";
 import { createLogger } from "../lib/log";
@@ -75,6 +76,7 @@ export default function OnboardingRoute({
 }) {
   const authenticated = hasSession();
   const navigate = useNavigate();
+  const { rootClassName } = useTheme();
   const { proxy, ensureBootstrap } = useStateProxy();
   const phase = useSelector(proxy, (doc) => doc.phase);
   const onboarding = useSelector(proxy, (doc) => doc.regions.onboarding);
@@ -137,26 +139,35 @@ export default function OnboardingRoute({
 
   if (!authenticated) return <Navigate to="/login" replace />;
 
-  // Phase advanced past onboarding — the default-project step (auto).
-  if (phase === "project_context" || phase === "chat") {
-    return (
-      <ProjectPhaseSurface driver={driver} region={projectContext} />
-    );
-  }
+  return (
+    <div className={`${rootClassName} ${styles.themeFrame}`}>
+      {renderSurface()}
+    </div>
+  );
 
-  switch (onboarding.state) {
-    case "needs_org":
-      return (
-        <OrgNameForm
-          driver={driver}
-          context={onboarding.context}
-        />
-      );
-    case "error_recoverable":
-      return <RetrySurface onRetry={() => driver.probeAndReportOrg()} />;
-    default:
-      // verifying / awaiting_org_report (and any transient) — wait honestly.
-      return <LoadingSurface message="Checking your session…" />;
+  // This route renders OUTSIDE the app-shell layout, so the neobrutalist theme
+  // class (which scopes every design token under `.app.theme-neobrutalist`) has
+  // no ancestor here. Wrap the surface in the SAME `rootClassName` app-shell
+  // applies (ThemeProvider is the shared source of truth — same dark state) so
+  // the onboarding cards inherit the ink borders, hard offset shadows, Archivo
+  // headings and dark-mode overrides instead of the soft base-theme fallback.
+  function renderSurface() {
+    // Phase advanced past onboarding — the default-project step (auto).
+    if (phase === "project_context" || phase === "chat") {
+      return <ProjectPhaseSurface driver={driver} region={projectContext} />;
+    }
+
+    switch (onboarding.state) {
+      case "needs_org":
+        return (
+          <OrgNameForm driver={driver} context={onboarding.context} />
+        );
+      case "error_recoverable":
+        return <RetrySurface onRetry={() => driver.probeAndReportOrg()} />;
+      default:
+        // verifying / awaiting_org_report (and any transient) — wait honestly.
+        return <LoadingSurface message="Checking your session…" />;
+    }
   }
 }
 

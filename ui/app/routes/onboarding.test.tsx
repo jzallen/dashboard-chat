@@ -26,13 +26,14 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "../catalog/dataSources/backendClient";
-import type { OnboardingClient } from "../lib/onboarding-driver";
+import { ThemeProvider } from "../components/AppShell";
 import { refreshOrgGlobal } from "../components/useCatalog";
 import {
   dropSessionFlag,
   giveSessionFlag,
   scriptedStateProxy as scriptedProxy,
 } from "../lib/_stateProxyTestKit";
+import type { OnboardingClient } from "../lib/onboarding-driver";
 import { type StateProxy } from "../lib/state-proxy";
 import { StateProxyProvider } from "../lib/StateProxyProvider";
 import OnboardingRoute from "./onboarding";
@@ -126,9 +127,11 @@ function renderOnboarding(proxy: StateProxy, client: OnboardingClient) {
     { initialEntries: ["/onboarding"] },
   );
   const utils = render(
-    <StateProxyProvider proxy={proxy}>
-      <RouterProvider router={router} />
-    </StateProxyProvider>,
+    <ThemeProvider>
+      <StateProxyProvider proxy={proxy}>
+        <RouterProvider router={router} />
+      </StateProxyProvider>
+    </ThemeProvider>,
   );
   return { router, ...utils };
 }
