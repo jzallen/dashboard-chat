@@ -53,7 +53,7 @@ class TestPostOrganizationCharacterization:
     async def test_forwards_name_and_user(self, mock_uc):
         mock_uc.create_organization = AsyncMock(return_value=Success({"org_id": "org-1", "org_name": "X"}))
         await HTTPController.post_organization("X", user="USER_SENTINEL")
-        mock_uc.create_organization.assert_awaited_once_with(name="X", user="USER_SENTINEL")
+        mock_uc.create_organization.assert_awaited_once_with(name="X", user="USER_SENTINEL", provisioned_org_id=None)
 
     @patch("app.controllers.http_controller.organization_use_cases")
     async def test_failure_returns_mapped_status(self, mock_uc):

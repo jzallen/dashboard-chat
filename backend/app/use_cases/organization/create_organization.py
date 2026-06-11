@@ -18,6 +18,7 @@ async def create_organization(
     name: str,
     user: AuthUser,
     *,
+    provisioned_org_id: str | None = None,
     repositories: "RepositoryContainer",
 ) -> dict:
     """Create a new organization, stamping the creating user as owner.
@@ -39,7 +40,7 @@ async def create_organization(
     if await metadata_repo.get_organization_by_name(name) is not None:
         raise OrganizationNameTakenError(f"Organization name '{name}' is already in use")
 
-    org = await _create_org_record(name, user.id, metadata_repo)
+    org = await _create_org_record(name, user.id, metadata_repo, provisioned_org_id)
 
     return {"org_id": org["id"], "org_name": org["name"]}
 
@@ -49,6 +50,11 @@ def _ensure_user_has_no_org(user) -> None:
         raise AuthorizationError("User already belongs to an organization")
 
 
-async def _create_org_record(name, user_id, metadata_repo):
-    """Create the local org record, stamping the creating user as owner."""
-    return await metadata_repo.create_organization(name=name, created_by=user_id)
+async def _create_org_record(name, user_id, metadata_repo, provisioned_org_id=None):
+    """Create the local org record, stamping the creating user as owner.
+
+    When ``provisioned_org_id`` is supplied (the trust-gated WorkOS org id), it
+    is used verbatim as the row ``id`` — preserving the rule that the WorkOS org
+    id IS the local org id (ADR-050 §b). Absent → backend-generated id.
+    """
+    return await metadata_repo.create_organization(name=name, id=provisioned_org_id, created_by=user_id)

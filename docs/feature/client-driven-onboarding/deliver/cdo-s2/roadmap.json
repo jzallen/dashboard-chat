@@ -1,0 +1,112 @@
+{
+  "roadmap": {
+    "project_id": "client-driven-onboarding",
+    "slice": "CDO-S2",
+    "created_at": "2026-06-11",
+    "total_steps": 5,
+    "phases": 1
+  },
+  "feature": "client-driven-onboarding",
+  "slice": "CDO-S2",
+  "wave": "DELIVER",
+  "source_of_truth": "docs/feature/client-driven-onboarding/distill/roadmap.json (CDO-S2 entry) + ADR-048 (§2/§3/§4) + ADR-050 (§b/§c)",
+  "paradigm": "object-oriented (FastAPI + SQLAlchemy async; type hints throughout; Black)",
+  "scope_boundary": "backend/ ONLY (+ docker-compose env deltas). The acceptance suite tests/acceptance/org-onboarding/ (cdo_s2 marker) is the outer loop: test_invalid_org_name_stays_needs_org (422 arm — its needs_org/org_validation_error machine arms depend on CDO-S3 failure members; ONLY the backend 422 assertion is in CDO-S2 scope) + test_post_orgs_no_longer_auto_creates_project (regression lock, must stay GREEN). NON-GOALS: auth-proxy interception/mode-discovery/reissue (CDO-S4/S5); ui/ surfaces (CDO-S5); ui-state/auth-proxy env deltas (CDO-S5). The execution-log.json lives at the deliver root (shared with CDO-S1); CDO-S2 appends step ids 02-01..02-05.",
+  "des_project_id": "client-driven-onboarding",
+  "des_project_dir": "docs/feature/client-driven-onboarding/deliver",
+  "gate_command": "cd backend && uv run ruff check . && uv run ruff format --check . && uv run --extra test pytest -x --tb=short --ignore=tests/integration",
+  "acceptance_command": "cd tests/acceptance/org-onboarding && uv run --no-project pytest -m cdo_s2",
+  "stack_note": "No compose stack running; host ports free. Bring up THIS worktree's stack (project name 'quartermaster'): docker compose -f docker-compose.yml -f docker-compose.dev-no-org.yml up -d api auth-proxy ui-state redis (+deps). Rebuild api after backend changes: ... up -d --build api. Acceptance README + conftest define env (AUTH_MODE=dev + DEV_NO_ORG=true; AUTH_PROXY_URL=http://localhost:1042, REVERSE_PROXY_URL routes /api + /ui-state).",
+  "upstream_3_finding": "RESOLVED (web-verified 2026-06-11): WorkOS Create Organization API docs state the org name 'does not need to be unique' (no uniqueness constraint on name; only domains/external_id semantics differ). ADR-048 R1 ASSUMPTION HOLDS — A+B layered compensation stays best-effort, NOT mandatory-blocking. No CDO-S5 redesign required. Source: https://workos.com/docs/reference/organization/create.",
+  "phases": [
+    {
+      "id": "02",
+      "name": "CDO-S2 backend pure-resource contracts",
+      "default_agent": "nw-software-crafter",
+      "default_deps_strategy": "sequential",
+      "steps": [
+        {
+          "id": "02-01",
+          "name": "OrgCreate name validation (422)",
+          "agent": "nw-software-crafter",
+          "deps": [],
+          "test_file": "backend/tests/routers/test_organizations_router.py | backend/tests/use_cases/organization/test_create_organization.py",
+          "criteria": "The backend OrgCreate request schema rejects a blank/whitespace-only name with HTTP 422 (the relocated machine-side isOrgNameValid guard's new SSOT home — ADR-050 §c). name is stripped of surrounding whitespace and must be non-empty (min length 1 after strip). A valid name still creates 201; a duplicate name still 409 (unchanged); created_by unchanged.",
+          "files_to_modify": [
+            "backend/app/routers/organizations.py — OrgCreate Pydantic schema gains a field validator: strip whitespace + min length 1 → pydantic ValidationError → FastAPI 422.",
+            "backend/tests/ — a unit test asserting OrgCreate(name='   ') raises ValidationError and OrgCreate(name='  Acme  ').name == 'Acme'; (optional) a router/TestClient test posting a blank name → 422."
+          ],
+          "implementation_notes": "Validation lives at the inbound schema boundary (Zod-equivalent: Pydantic at the adapter). 422 is FastAPI's automatic mapping of a request-body ValidationError. Do NOT add the check inside the use case (the SSOT is the schema). Acceptance test_invalid_org_name_stays_needs_org asserts the backend 422 (CDO-S2 scope); its needs_org/org_validation_error report arms ride CDO-S3 wire members and may stay RED awaiting S3 — do NOT weaken them."
+        },
+        {
+          "id": "02-02",
+          "name": "WorkOS shrink + config/exception/requires_reauth cleanup",
+          "agent": "nw-software-crafter",
+          "deps": ["02-01"],
+          "test_file": "backend/tests/use_cases/organization/test_create_organization.py | backend/tests/controllers/test_organization_controller_char.py | backend/tests/controllers/test_result_mapper_char.py",
+          "criteria": "The backend is a pure resource store: DELETE _create_workos_org, the settings.auth_mode dispatch in create_organization.py, the httpx import/usage there, the requires_reauth result field + its controller mapping, and ExternalServiceError (grep-confirmed sole consumer is the deleted workos path). DELETE config.py fields auth_mode, workos_api_key, workos_api_url, workos_client_id, workos_redirect_uri. Backend is grep-clean of AUTH_MODE and WORKOS_* (production + tests). Name-uniqueness 409 + created_by behaviour unchanged; dev path (local record only) unchanged.",
+          "files_to_modify": [
+            "backend/app/use_cases/organization/create_organization.py — remove the workos branch, _create_workos_org, httpx import, requires_reauth plumbing; _create_org_record collapses to the local-record create. Keep _ensure_user_has_no_org + name-uniqueness pre-check + created_by.",
+            "backend/app/use_cases/organization/exceptions.py — DELETE ExternalServiceError (keep OrganizationNameTakenError).",
+            "backend/app/controllers/organization_controller.py — drop the requires_reauth envelope branch.",
+            "backend/app/config.py — DELETE auth_mode, workos_api_key, workos_api_url, workos_client_id, workos_redirect_uri (keep auto_provision_org, trust_proxy_headers, dev_no_org).",
+            "backend/tests/use_cases/organization/test_create_organization.py — DELETE class TestCreateOrganizationWorkosErrors (sanctioned contract-change rework: these WorkOS-mode dispatch tests die with the code they assert) + remove the httpx + ExternalServiceError imports.",
+            "backend/tests/controllers/test_organization_controller_char.py — DELETE test_workos_requires_reauth_surfaces_as_attribute; rework test_failure_returns_mapped_status + test_failure_routes_through_error_response to use a SURVIVING DomainException (e.g. OrganizationNameTakenError → 409) instead of ExternalServiceError; remove the ExternalServiceError import.",
+            "backend/tests/controllers/test_result_mapper_char.py — remove the ExternalServiceError parametrize row + its import (QueryEngineUnreachable still covers the 502 family)."
+          ],
+          "implementation_notes": "Pure deletion/shrink — Iron Rule applies to the SURVIVING assertions: do not weaken uniqueness/created_by/dev-path tests. After GREEN, run `grep -rn -i 'auth_mode\\|AUTH_MODE\\|workos' backend/app backend/tests` and confirm ZERO matches (the only acceptable residue would be unrelated comments — there should be none in org code). Full backend suite (gate command) must pass."
+        },
+        {
+          "id": "02-03",
+          "name": "X-Provisioned-Org-Id carry (trust-gated)",
+          "agent": "nw-software-crafter",
+          "deps": ["02-02"],
+          "test_file": "backend/tests/use_cases/organization/test_create_organization.py | backend/tests/routers/test_organizations_router.py",
+          "criteria": "POST /api/orgs honours the X-Provisioned-Org-Id request header (the WorkOS-minted id auth-proxy will inject in CDO-S5) as the repository row id, GATED on settings.trust_proxy_headers (the existing trust gate). Header present + trust on → org row id == header value. Header absent (dev, all non-intercepted traffic) → backend-generated id (unchanged). Header present but trust OFF → ignored (backend-generated).",
+          "files_to_modify": [
+            "backend/app/routers/organizations.py — post_organization reads X-Provisioned-Org-Id from the Request only when settings.trust_proxy_headers; passes provisioned_org_id through HTTPController.post_organization.",
+            "backend/app/controllers/organization_controller.py — post_organization threads provisioned_org_id to create_organization.",
+            "backend/app/use_cases/organization/create_organization.py — create_organization gains provisioned_org_id: str | None = None; passes id=provisioned_org_id to repositories.metadata.create_organization (which already accepts id=). The WorkOS-org-id-IS-local-id rule preserved.",
+            "backend/tests/ — use-case test: provisioned id is used as the row id when supplied; absent → generated. Router test (TestClient with trust_proxy_headers + identity headers): X-Provisioned-Org-Id flows to the persisted id; trust OFF → ignored."
+          ],
+          "implementation_notes": "Mirror the existing trust_proxy_headers gate used by get_current_user (deps.py). The repo create_organization(name, id=None, created_by) already supports id=. Do not trust the header without the gate (headers-not-bodies posture, ADR-016/ADR-050 §b)."
+        },
+        {
+          "id": "02-04",
+          "name": "GET /api/orgs/availability",
+          "agent": "nw-software-crafter",
+          "deps": ["02-03"],
+          "test_file": "backend/tests/use_cases/organization/test_check_org_availability.py | backend/tests/routers/test_organizations_router.py",
+          "criteria": "NEW GET /api/orgs/availability?name=<n> → 200 {\"available\": true} for a free name, {\"available\": false} for a taken one — one route over the existing metadata.get_organization_by_name lookup (ADR-048 layer A). Same identity-header auth as the other org routes (get_current_user + use_db_context).",
+          "files_to_modify": [
+            "backend/app/use_cases/organization/check_org_availability.py — NEW use case (or add to an existing org use-case module): check_org_name_availability(name) → {'available': bool} via repositories.metadata.get_organization_by_name(name) is None. Decorator stack @handle_returns/@with_repositories per project convention.",
+            "backend/app/use_cases/organization/__init__.py — export the new use case.",
+            "backend/app/controllers/organization_controller.py — NEW availability handler returning ({'available': bool}, 200) (late-bound via _uc()).",
+            "backend/app/controllers/http_controller.py — staticmethod re-export if other routes use the HTTPController facade pattern (match post_organization wiring).",
+            "backend/app/routers/organizations.py — NEW @router.get('/availability') reading ?name= query param; same Depends(get_current_user)+Depends(use_db_context) as the other routes; registered so it does not shadow POST '' or GET '/me'.",
+            "backend/tests/ — use-case test (free → available true; taken → false) + router test (200 envelope, both arms; auth required)."
+          ],
+          "implementation_notes": "Route path /api/orgs/availability does not collide with POST '' or GET '/me'. Keep the response a plain {'available': bool} (NOT JSON:API) — the driver/interception read .available directly. Decide name handling for blank query defensively (treat as available=... per lookup; do not 500)."
+        },
+        {
+          "id": "02-05",
+          "name": "Compose env deltas (ADR-048 §4)",
+          "agent": "nw-software-crafter",
+          "deps": ["02-04"],
+          "test_file": "tests/acceptance/org-onboarding/ (real-stack outer loop; no backend unit test — config-only)",
+          "criteria": "Remove AUTH_MODE + WORKOS_* from the api AND api-full service blocks in docker-compose.yml. DELETE the api AUTH_MODE pin (the environment: AUTH_MODE: dev block) in docker-compose.override.yml — its comment names this feature as the sunset. Do NOT touch auth-proxy, ui-state, or agent env (AUTH_MODE/WORKOS_* there belong to later slices / ADR-048 R3 agent caveat). Keep AUTO_PROVISION_ORG and TRUST_PROXY_HEADERS on api.",
+          "files_to_modify": [
+            "docker-compose.yml — api block: delete AUTH_MODE, WORKOS_API_KEY, WORKOS_CLIENT_ID, WORKOS_REDIRECT_URI. api-full block: delete the same four. Leave agent/auth-proxy/ui-state blocks untouched.",
+            "docker-compose.override.yml — delete the `api:` service's `environment: AUTH_MODE: dev` block (keep build/image/pull_policy/volumes for api; keep the auth-proxy AUTH_MODE: dev pin and the agent block)."
+          ],
+          "implementation_notes": "Config-only step (TDD test phases are NOT_APPLICABLE — the verifying test is the real-stack acceptance suite, run by the orchestrator in the post-merge integration gate). The split-brain class becomes unrepresentable in compose config. After this lands the orchestrator brings up the worktree stack and runs the cdo_s2 acceptance marker."
+        }
+      ]
+    }
+  ],
+  "validation": {
+    "status": "approved",
+    "approved_by": "orchestrator (nw-deliver) — single-cut backend carpaccio; 5 atomic-commit steps mapped to CDO-S2 acceptance_criteria + files_to_touch + DELETE inventory; standard rigor (no project rigor profile)",
+    "date": "2026-06-11"
+  }
+}

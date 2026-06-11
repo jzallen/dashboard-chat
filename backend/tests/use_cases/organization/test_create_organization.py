@@ -78,6 +78,24 @@ class TestCreateOrganization:
             case Success(_):
                 pytest.fail("Expected failure when org name is already taken")
 
+    async def test_create_org_honours_provisioned_org_id_as_row_id(self, db_session: AsyncSession):
+        """ADR-050 §b: a caller-supplied provisioned_org_id becomes the persisted
+        org row id verbatim (the WorkOS org id IS the local org id). Absent →
+        a backend-generated id, as today."""
+        set_session(db_session)
+
+        provisioned = "org_workos_provisioned_42"
+        with_id = await create_organization(name="Provisioned Org", user=TEST_USER, provisioned_org_id=provisioned)
+        without_id = await create_organization(name="Generated Org", user=TEST_USER, provisioned_org_id=None)
+
+        match (with_id, without_id):
+            case (Success(provided), Success(generated)):
+                assert provided["org_id"] == provisioned
+                assert generated["org_id"] != provisioned
+                assert len(generated["org_id"]) > 0
+            case _:
+                pytest.fail(f"Expected two successes, got: {with_id}, {without_id}")
+
     async def test_create_org_when_successful_persists_org_in_db(self, db_session: AsyncSession):
         set_session(db_session)
 
