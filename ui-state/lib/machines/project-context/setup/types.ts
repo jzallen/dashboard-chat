@@ -30,12 +30,18 @@ export interface ProjectSummary {
   name: string;
 }
 
+/** The wire cause carried on a `project_create_failed` report. The default
+ *  Phase-D POST is retryable; the single cause literal keeps the report shape
+ *  uniform (ADR-049 §3.3 — error states accept outcome reports directly). */
+export type ProjectCreateFailureCause = "project_create_failed";
+
 export type ProjectContextCauseTag =
   | "no_projects"
   | "transient"
   | "project_not_found"
   | "cross_tenant"
-  | "access_revoked";
+  | "access_revoked"
+  | "project_create_failed";
 
 export interface ProjectContextMachineContext {
   request_id: string;
@@ -102,7 +108,12 @@ export type ProjectContextEvent =
   | { type: "project_created"; project: ProjectSummary }
   | { type: "no_projects_found" }
   | { type: "back_to_projects_clicked" }
-  | { type: "retry_clicked" }
+  // Phase-D project-creation failure report (ADR-049 §3.3 / Spec 7b). The POST
+  // failed (or its response was lost); the client reports it, the machine lands
+  // in the report-accepting `error_recoverable` state. The client then re-POSTs
+  // / re-probes and reports `project_created` / `scope_resolved` to converge —
+  // there is no `retry_clicked` re-invoke (retired this slice).
+  | { type: "project_create_failed"; cause: ProjectCreateFailureCause }
   // The `open_deep_link` event payload keys use the `intent_*` prefix — that's
   // the wire surface (FE + orchestrator). The values land in `deeplink_*`
   // context fields here.

@@ -49,7 +49,6 @@ import {
   assignSwitchedProject,
   captureDeepLinkWish,
   captureSwitchTarget,
-  clearErrorAndBumpRetries,
   clearScopeMismatch,
   tagCause,
 } from "./setup/actions.ts";
@@ -78,7 +77,6 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
       captureSwitchTarget: assign(captureSwitchTarget),
       assignSwitchedProject: assign(assignSwitchedProject),
       clearScopeMismatch: assign(clearScopeMismatch),
-      clearErrorAndBumpRetries: assign(clearErrorAndBumpRetries),
       tagCause: assign(tagCause),
     },
   }).createMachine({
@@ -147,6 +145,15 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
           no_projects_found: {
             target: "no_projects",
           },
+          // Phase D failure (Spec 7b): the default-project POST failed (or its
+          // response was lost) → land in the report-accepting error state.
+          project_create_failed: {
+            target: "error_recoverable",
+            actions: {
+              type: "tagCause",
+              params: { tag: "project_create_failed" },
+            },
+          },
           // Note: open_deep_link is handled at the machine root level so it
           // can arrive from any live state (no_projects, project_selected, …).
         },
@@ -160,6 +167,14 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
           project_created: {
             target: "project_selected",
             actions: "assignCreatedProject",
+          },
+          // Phase D failure from the no_projects shell (Spec 7b).
+          project_create_failed: {
+            target: "error_recoverable",
+            actions: {
+              type: "tagCause",
+              params: { tag: "project_create_failed" },
+            },
           },
         },
       },
@@ -225,13 +240,28 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
         },
       },
       error_recoverable: {
+        // Report-accepting recovery (ADR-049 §3.3 / Spec 7b). Retry is the
+        // client re-POSTing + re-reporting — the error state accepts outcome
+        // reports DIRECTLY rather than re-invoking (the retired `retry_clicked`
+        // re-invoke). After a lost-response project_create_failed the client
+        // re-probes and reports scope_resolved (the project the POST actually
+        // made) → project_selected, with no duplicate (probe-first convergence).
         on: {
-          // Recoverable failures (e.g. a transient switch) return to the
-          // report-waiting neutral so the client can re-probe + re-report.
-          // CDO-S3 reworks the full report-accepting error_recoverable.
-          retry_clicked: {
-            target: "awaiting_scope_report",
-            actions: "clearErrorAndBumpRetries",
+          project_created: {
+            target: "project_selected",
+            actions: "assignCreatedProject",
+          },
+          scope_resolved: {
+            target: "project_selected",
+            actions: "assignResolvedScope",
+          },
+          // A re-failed retry refreshes the cause without leaving the state.
+          project_create_failed: {
+            target: "error_recoverable",
+            actions: {
+              type: "tagCause",
+              params: { tag: "project_create_failed" },
+            },
           },
         },
       },

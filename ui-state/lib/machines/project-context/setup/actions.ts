@@ -87,13 +87,6 @@ export const clearScopeMismatch = () => ({
   underlying_cause_tag: null,
 });
 
-/** error_recoverable → creating_project: clear the transient cause and bump the
- *  retry counter (pending_project_name is preserved untouched). */
-export const clearErrorAndBumpRetries = ({ context }: ActionArgs) => ({
-  underlying_cause_tag: null,
-  retries_count: context.retries_count + 1,
-});
-
 /** Parameterized: ONE "set the cause tag" action, configured per transition via
  *  `params` (XState's recommended way to keep an action event-agnostic). The 2nd
  *  `params` arg carries the per-transition tag — `assign(tagCause)` at the

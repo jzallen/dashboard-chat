@@ -237,3 +237,113 @@ describe("ProjectContextMachine — US-207 switching_project (MR-4)", () => {
     expect(actor.getSnapshot().context.underlying_cause_tag).toBe("transient");
   });
 });
+
+// ─────────── CDO-S3 (03-02): project-creation failure is RECOVERABLE ──────────
+//
+// Spec 7b — Phase D project-creation failure is retryable (domain-model.md §5.1
+// / §5.3). A lost-response project_create_failed lands the machine in
+// error_recoverable; error_recoverable then ACCEPTS outcome reports directly —
+// the client re-POSTs / re-probes and reports project_created or scope_resolved,
+// converging on project_selected with NO dead-end, NO retry_clicked re-invoke.
+
+describe("ProjectContextMachine — project_create_failed recovery (CDO-S3)", () => {
+  it("project_create_failed from awaiting_scope_report → error_recoverable (cause carried)", async () => {
+    const actor = startAwaiting(createProjectContextMachine({}));
+    await waitFor(actor, (s) => s.value === "awaiting_scope_report");
+    actor.send({
+      type: "project_create_failed",
+      cause: "project_create_failed",
+    });
+    await waitFor(actor, (s) => s.value === "error_recoverable");
+    expect(actor.getSnapshot().context.underlying_cause_tag).toBe(
+      "project_create_failed",
+    );
+  });
+
+  it("project_create_failed from no_projects → error_recoverable (cause carried)", async () => {
+    const actor = startAwaiting(createProjectContextMachine({}));
+    await waitFor(actor, (s) => s.value === "awaiting_scope_report");
+    actor.send({ type: "no_projects_found" });
+    await waitFor(actor, (s) => s.value === "no_projects");
+    actor.send({
+      type: "project_create_failed",
+      cause: "project_create_failed",
+    });
+    await waitFor(actor, (s) => s.value === "error_recoverable");
+    expect(actor.getSnapshot().context.underlying_cause_tag).toBe(
+      "project_create_failed",
+    );
+  });
+
+  it("scope_resolved from error_recoverable → project_selected (Spec 7b probe-first convergence)", async () => {
+    // Spec 7b: a lost-response create failed → error_recoverable; the client
+    // re-probes GET /api/projects, finds the project the POST actually made, and
+    // reports scope_resolved → project_selected (no duplicate).
+    const actor = startAwaiting(createProjectContextMachine({}));
+    await waitFor(actor, (s) => s.value === "awaiting_scope_report");
+    actor.send({
+      type: "project_create_failed",
+      cause: "project_create_failed",
+    });
+    await waitFor(actor, (s) => s.value === "error_recoverable");
+    actor.send({
+      type: "scope_resolved",
+      project: { id: "proj-1", name: "My First Project" },
+    });
+    await waitFor(actor, (s) => s.value === "project_selected");
+    const ctx = actor.getSnapshot().context;
+    expect(ctx.project.id).toBe("proj-1");
+    expect(ctx.project.name).toBe("My First Project");
+  });
+
+  it("project_created from error_recoverable → project_selected", async () => {
+    const actor = startAwaiting(createProjectContextMachine({}));
+    await waitFor(actor, (s) => s.value === "awaiting_scope_report");
+    actor.send({
+      type: "project_create_failed",
+      cause: "project_create_failed",
+    });
+    await waitFor(actor, (s) => s.value === "error_recoverable");
+    actor.send({
+      type: "project_created",
+      project: { id: "proj-retry", name: "My First Project" },
+    });
+    await waitFor(actor, (s) => s.value === "project_selected");
+    const ctx = actor.getSnapshot().context;
+    expect(ctx.project.id).toBe("proj-retry");
+    expect(ctx.project.name).toBe("My First Project");
+  });
+
+  it("project_create_failed self-loops error_recoverable (cause refresh)", async () => {
+    const actor = startAwaiting(createProjectContextMachine({}));
+    await waitFor(actor, (s) => s.value === "awaiting_scope_report");
+    actor.send({
+      type: "project_create_failed",
+      cause: "project_create_failed",
+    });
+    await waitFor(actor, (s) => s.value === "error_recoverable");
+    actor.send({
+      type: "project_create_failed",
+      cause: "project_create_failed",
+    });
+    // Stays put — a re-failed retry refreshes the cause without leaving the state.
+    await waitFor(actor, (s) => s.value === "error_recoverable");
+    expect(actor.getSnapshot().value).toBe("error_recoverable");
+    expect(actor.getSnapshot().context.underlying_cause_tag).toBe(
+      "project_create_failed",
+    );
+  });
+
+  it("retry_clicked no longer transitions out of error_recoverable (ADR-049 §3.3 retired)", async () => {
+    const actor = startAwaiting(createProjectContextMachine({}));
+    await waitFor(actor, (s) => s.value === "awaiting_scope_report");
+    actor.send({
+      type: "project_create_failed",
+      cause: "project_create_failed",
+    });
+    await waitFor(actor, (s) => s.value === "error_recoverable");
+    // retry_clicked is retired — sending it is a no-op (stays error_recoverable).
+    actor.send({ type: "retry_clicked" } as never);
+    expect(actor.getSnapshot().value).toBe("error_recoverable");
+  });
+});
