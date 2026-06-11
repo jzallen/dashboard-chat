@@ -282,6 +282,40 @@ describe("SessionChatMachine — resume report", () => {
   });
 });
 
+describe("SessionChatMachine — error_recoverable self-heal convergence (D2)", () => {
+  async function reachErrorRecoverable(): Promise<
+    ReturnType<typeof createActor_>
+  > {
+    const machine = createSessionChatMachine({});
+    const actor = createActor_(machine);
+    sendProjectReady(actor);
+    actor.send({ type: "session_list_failed", cause: "list_sessions_degraded" });
+    await waitFor(() => actor.getSnapshot().value === "error_recoverable");
+    return actor;
+  }
+
+  it("SH1: error_recoverable + fresh session_list_loaded report → converges to session_list_loaded with the reported sessions", async () => {
+    const actor = await reachErrorRecoverable();
+    actor.send({
+      type: "session_list_loaded",
+      sessions: SESSIONS_DESC,
+      next_cursor: null,
+      has_more: false,
+    });
+    await waitFor(() => actor.getSnapshot().value === "session_list_loaded");
+    const ctx = actor.getSnapshot().context;
+    expect(ctx.session_list).toEqual(SESSIONS_DESC);
+    expect(ctx.session_list_next_cursor).toBeNull();
+    expect(ctx.session_list_has_more).toBe(false);
+  });
+
+  it("SH2: error_recoverable + refresh_session_list → re-enters awaiting_session_list_report", async () => {
+    const actor = await reachErrorRecoverable();
+    actor.send({ type: "refresh_session_list" });
+    expect(actor.getSnapshot().value).toBe("awaiting_session_list_report");
+  });
+});
+
 describe("SessionChatMachine — new-session lifecycle (US-206)", () => {
   const SEED_SESSIONS: SessionSummary[] = [
     {

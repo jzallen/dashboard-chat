@@ -189,6 +189,42 @@ describe("AppShell onboarding gate (D6 redirect matrix)", () => {
     expect(screen.queryByText("LOGIN")).toBeNull();
   });
 
+  it("D5: the Phase-B probe fires EXACTLY ONCE and does NOT re-fire after the document leaves awaiting_org_report", async () => {
+    // The scripted server STARTS in awaiting_org_report; on the org_not_found
+    // report it advances the onboarding region to needs_org (leaving the
+    // awaiting state). The probe is de-bounced on the awaiting_org_report
+    // condition, so it must not re-fire after the state moves on.
+    const awaiting = stateDocument(
+      "onboarding",
+      "awaiting_org_report",
+      "awaiting_scope_report",
+    );
+    const advanced = stateDocument(
+      "onboarding",
+      "needs_org",
+      "awaiting_scope_report",
+    );
+    const get = vi.fn(async () => {
+      throw apiError(404);
+    });
+    const client = makeClient({ get });
+    // First the org_not_found report leaves awaiting; thereafter the document
+    // stays in needs_org no matter what.
+    const { proxy } = scriptedStateProxy(awaiting, (event) =>
+      event.type === "org_not_found" ? advanced : advanced,
+    );
+
+    renderShell(proxy, client);
+
+    // The probe fired against GET /api/orgs/me…
+    await waitFor(() => expect(get).toHaveBeenCalledWith("/api/orgs/me"));
+    // …and after the document transitions to /onboarding (needs_org), give the
+    // effect time to (not) re-fire. The de-bounce dep array means exactly one.
+    await screen.findByText("ONBOARDING");
+    await new Promise((r) => setTimeout(r, 20));
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
   it.each(["needs_org", "error_recoverable"])(
     "phase onboarding + %s: redirects to /onboarding",
     async (onboardingState) => {

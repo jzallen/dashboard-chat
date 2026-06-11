@@ -203,6 +203,7 @@ describe("OnboardingRoute", () => {
 
   it.each([
     [409, "org_name_taken"],
+    [400, "org_name_invalid"],
     [422, "org_name_invalid"],
   ])(
     "a %s org-create reports org_create_failed{cause} — no raw cause tag rendered",

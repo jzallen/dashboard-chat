@@ -11,18 +11,47 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "../catalog/dataSources/backendClient";
-import type { ChatAppWireEvent } from "@dashboard-chat/ui-state-wire";
+import {
+  anonymousStateDocument,
+  type ChatAppStateDocument,
+  type ChatAppWireEvent,
+} from "@dashboard-chat/ui-state-wire";
 
 import { createOnboardingDriver, type OnboardingClient } from "./onboarding-driver";
 
 // ───────────────────────────── test doubles ─────────────────────────────
 
-/** A spy report sink with the StateProxy.postEvent signature. */
-function makeReport() {
+/** A document whose onboarding + projectContext region states are scripted, so
+ *  the driver can read the RESULTING region state off report()'s return value
+ *  (ratification amendment 3). */
+function documentWithRegionStates(
+  onboardingState: string,
+  projectContextState: string,
+): ChatAppStateDocument {
+  const doc = anonymousStateDocument();
+  return {
+    ...doc,
+    regions: {
+      ...doc.regions,
+      onboarding: { ...doc.regions.onboarding, state: onboardingState },
+      projectContext: {
+        ...doc.regions.projectContext,
+        state: projectContextState,
+      },
+    },
+  };
+}
+
+/** A spy report sink with the StateProxy.postEvent signature. The returned
+ *  document carries the resulting region states the driver logs (amendment 3);
+ *  override per test to script the post-report region state. */
+function makeReport(
+  resulting: ChatAppStateDocument = documentWithRegionStates("ready", "awaiting_scope_report"),
+) {
   const events: ChatAppWireEvent[] = [];
   const report = vi.fn(async (event: ChatAppWireEvent) => {
     events.push(event);
-    return { phase: "onboarding" } as never;
+    return resulting;
   });
   return { report, events };
 }
@@ -90,14 +119,17 @@ describe("reportOrgCreateResult — status → cause mapping", () => {
     ]);
   });
 
-  it("500 → org_create_failed {cause:'org_create_failed'}", async () => {
+  it("500 → org_create_failed {cause:'org_create_failed', org_name} — carried uniformly (D3)", async () => {
     const { events } = await runOrgCreate(500);
     expect(events).toEqual([
-      { type: "org_create_failed", payload: { cause: "org_create_failed" } },
+      {
+        type: "org_create_failed",
+        payload: { cause: "org_create_failed", org_name: "Acme" },
+      },
     ]);
   });
 
-  it("network/timeout (non-ApiError throw) → org_create_failed {cause:'org_create_failed'}", async () => {
+  it("network/timeout (non-ApiError throw) → org_create_failed {cause:'org_create_failed', org_name} (D3)", async () => {
     const { report, events } = makeReport();
     const log = makeLog();
     const client = makeClient({
@@ -110,7 +142,10 @@ describe("reportOrgCreateResult — status → cause mapping", () => {
     await driver.reportOrgCreateResult("Acme");
 
     expect(events).toEqual([
-      { type: "org_create_failed", payload: { cause: "org_create_failed" } },
+      {
+        type: "org_create_failed",
+        payload: { cause: "org_create_failed", org_name: "Acme" },
+      },
     ]);
   });
 
@@ -377,8 +412,11 @@ describe("resolveInitialScope — ported resolveInitialScopeFn", () => {
 // ───────────────────────────── audit trail (amendment 3) ─────────────────────────────
 
 describe("console-log audit trail — one log entry per posted event", () => {
-  it("logs the posted event + the resulting region state via createLogger", async () => {
-    const { report } = makeReport();
+  it("logs the posted event + the RESULTING onboarding region state from report()'s document", async () => {
+    // The server settles the onboarding region to `ready` after org_created.
+    const { report } = makeReport(
+      documentWithRegionStates("ready", "awaiting_scope_report"),
+    );
     const log = makeLog();
     const client = makeClient({
       post: vi.fn(async () => ({ id: "org-7", name: "Acme" })),
@@ -387,13 +425,37 @@ describe("console-log audit trail — one log entry per posted event", () => {
 
     await driver.reportOrgCreateResult("Acme");
 
-    // The audit carries the posted event type + the region state observed.
+    // The audit carries the posted event type + the RESULTING region state
+    // (read from report()'s returned document), AND the region name.
     expect(log.info).toHaveBeenCalledTimes(1);
     const [action, attributes] = log.info.mock.calls[0];
     expect(action).toContain("org_created");
     expect(attributes).toMatchObject({
       event: "org_created",
-      region_state: "onboarding",
+      region: "onboarding",
+      region_state: "ready",
+    });
+  });
+
+  it("logs the RESULTING projectContext region state for a projectContext-region event", async () => {
+    // A project_created event settles the projectContext region to project_selected.
+    const { report } = makeReport(
+      documentWithRegionStates("ready", "project_selected"),
+    );
+    const log = makeLog();
+    const client = makeClient({
+      post: vi.fn(async () => ({ id: "proj-1", name: "My First Project" })),
+    });
+    const driver = createOnboardingDriver({ client, report, log });
+
+    await driver.createDefaultProjectAndReport();
+
+    const [action, attributes] = log.info.mock.calls[0];
+    expect(action).toContain("project_created");
+    expect(attributes).toMatchObject({
+      event: "project_created",
+      region: "projectContext",
+      region_state: "project_selected",
     });
   });
 });

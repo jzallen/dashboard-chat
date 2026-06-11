@@ -2,7 +2,7 @@
   "roadmap": {
     "project_id": "client-driven-onboarding",
     "created_at": "2026-06-11",
-    "total_steps": 6,
+    "total_steps": 7,
     "phases": 1
   },
   "feature": "client-driven-onboarding",
@@ -166,6 +166,23 @@
             "docker-compose.override.yml — confirm the api block has NO AUTH_MODE (already true); leave auth-proxy AUTH_MODE: dev (sole reader). No change expected unless a stray WORKOS_* lingers on api."
           ],
           "implementation_notes": "This is a config-only step (compose env deltas) — the 'test' is the integration regression: bring up the stack from THIS worktree (stack_note recipe) with ui-state + auth-proxy rebuilt, then run the FULL org-onboarding acceptance suite. RED_ACCEPTANCE here = confirm the suite still collects + the walking skeleton is the live target; GREEN = the suite passes (minus the documented UPSTREAM-S3-1 RED). DES phases: PREPARE (read compose), GREEN (apply deltas + rebuild + run suite), COMMIT. Verify the ui-state container BOOTS with the env removed (config.ts is Redis-only from 05-02 — if it still requires backendUrl/workosUrl the container crashes → that is a 05-02 regression, fix there, not by re-adding env). The auth-proxy WORKOS_BASE default is the api.workos.com production value; a fake-WorkOS workos-mode acceptance arm is OPTIONAL (auth-proxy units already cover interception) — leave any compose-gated workos arm skipped as designed. Append the suite result table (pass/skip/the one carried RED) to cdo-s5/deliver-summary.md. python3 tools/check_workspace_consistency.py is NOT needed (no package.json change) — but run it if any package.json changed across the slice."
+        },
+        {
+          "id": "05-07",
+          "name": "Review-driven polish: audit-trail fidelity + self-heal coverage + uniform failure contract",
+          "agent": "nw-software-crafter",
+          "deps": ["05-04", "05-05", "05-01"],
+          "test_file": "ui/app/lib/onboarding-driver.test.ts",
+          "scenario_name": "adversarial-review fixes D1-D5 (APPROVE-WITH-NITS revision pass)",
+          "criteria": "Address the nw-software-crafter-reviewer findings (verdict APPROVE-WITH-NITS; no BLOCKER/HIGH) on the CDO-S5 slice: (D4, raises binding amendment-3 fidelity) the onboarding-driver's createLogger audit trail logs the ACTUAL resulting region STATE (read from the ChatAppStateDocument that report() returns — doc.regions.<region>.state) plus the region name, not just the static region name; (D3) the generic org_create_failed payload (non-ApiError network/timeout AND the 5xx ApiError else-branch) carries org_name uniformly like the 409/400/422 arms (the wire contract allows org_name?, so this is additive); (D2) ADD a session-chat machine test for the self-heal convergence: reach error_recoverable via session_list_failed, then a fresh session_list_loaded report converges to session_list_loaded with the reported sessions, AND refresh_session_list from error_recoverable re-enters awaiting_session_list_report; (D1) add 400 to the onboarding route it.each (400→org_name_invalid) so all three org_name_invalid triggers are route-covered; (D5, optional) add an app-shell test that the Phase-B probe fires exactly once and does NOT re-fire after the document leaves awaiting_org_report. All unit suites stay green + ui typecheck clean.",
+          "files_to_modify": [
+            "ui/app/lib/onboarding-driver.ts — D4: postAndLog logs the resulting region state from the returned document (doc.regions.<region>.state) + the region; D3: the generic org_create_failed else-branch carries org_name.",
+            "ui/app/lib/onboarding-driver.test.ts — assert the audit entry carries the resulting region state (D4) + org_name on the network/5xx failure path (D3).",
+            "ui-state/lib/machines/session-chat/machine.test.ts — D2: add the error_recoverable self-heal convergence tests (session_list_loaded → session_list_loaded; refresh_session_list → awaiting_session_list_report).",
+            "ui/app/routes/onboarding.test.tsx — D1: add 400→org_name_invalid to the it.each.",
+            "ui/app/routes/app-shell.test.tsx — D5 (optional): probe fires exactly once + no re-fire after leaving awaiting_org_report."
+          ],
+          "implementation_notes": "Outside-In, small revision pass. OUTER loops: ui vitest (driver/onboarding/app-shell) + ui-state vitest (session-chat). RED_UNIT: write the new assertions first (they go RED — the driver currently logs the region name not the resulting state; the generic failure omits org_name; the self-heal convergence is untested). GREEN: the minimal driver tweak (use report()'s returned document for the audit state; add org_name to the else-branch) — D2/D1/D5 are pure test additions (the machine code already supports the self-heal). Run `cd ui && npx vitest run` + `cd ui && npm run typecheck` + `cd ui-state && npx vitest run` — all green. Append a '05-07 review-fix' note to cdo-s5/wave-notes.md. Keep the BINDING display rule + zero-egress + legacy members intact (do not regress 05-01..05-06)."
         }
       ]
     }

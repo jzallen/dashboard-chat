@@ -358,3 +358,38 @@ is now unrepresentable in compose config.
 ### Integration result
 
 13 passed / 1 expected RED (the carried-forward UPSTREAM-S3-1) — see deliver-summary.md.
+
+## 05-07 — review-fix (APPROVE-WITH-NITS → resolved)
+
+The adversarial review (nw-software-crafter-reviewer) returned APPROVE-WITH-NITS:
+all 6 binding requirements PASS, no BLOCKER/HIGH, no testing theater. This small
+revision pass addresses the five findings without regressing 05-01..05-06.
+
+- **D4 (raises fidelity to BINDING amendment 3)** — `onboarding-driver.ts` `postAndLog`
+  now logs the RESULTING region state read off `report()`'s returned
+  `ChatAppStateDocument` (`doc.regions[region].state`) instead of the region NAME.
+  The audit entry carries the posted `event`, the `region` name, AND the
+  `region_state`. Driver tests assert the resulting state for both an onboarding-region
+  event (org_created → `ready`) and a projectContext-region event
+  (project_created → `project_selected`). Litmus: reverting the postAndLog change
+  turns the D4 audit test RED.
+- **D3** — the generic `org_create_failed` payload on BOTH the non-ApiError
+  (network/timeout) path and the 5xx ApiError else-branch now carries `org_name`
+  uniformly, matching the 409/400/422 arms. Additive per the wire contract
+  (`org_name?: string`). Driver tests assert org_name on the 500 + network paths.
+- **D2** — added `error_recoverable` self-heal convergence coverage to the
+  session-chat machine test (the machine already supported these transitions; only
+  the tests were missing). SH1: error_recoverable + a fresh `session_list_loaded`
+  report → converges to `session_list_loaded` with the reported sessions. SH2:
+  error_recoverable + `refresh_session_list` → re-enters `awaiting_session_list_report`.
+- **D1** — added `400 → org_name_invalid` to the route `it.each` in
+  `onboarding.test.tsx`, closing the route-level gap so all three org_name_invalid
+  triggers (400/422 + the 409 sibling) are route-covered.
+- **D5** — added a probe de-bounce test to `app-shell.test.tsx`: the Phase-B probe
+  (`driver.probeAndReportOrg`) fires EXACTLY ONCE and does NOT re-fire after the
+  document transitions away from `awaiting_org_report` (the useEffect dep array
+  de-bounce).
+
+**Result:** ui 250 passed, ui-state 189 passed, ui typecheck clean. No regression of
+the BINDING display rule (no raw cause tag), ui-state zero-egress, or the three legacy
+wire members.

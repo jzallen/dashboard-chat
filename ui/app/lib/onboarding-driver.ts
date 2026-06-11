@@ -89,7 +89,9 @@ const ONBOARDING_EVENTS = new Set([
   "org_create_failed",
 ]);
 
-function regionFor(eventType: string): string {
+type RegionName = "onboarding" | "projectContext";
+
+function regionFor(eventType: string): RegionName {
   return ONBOARDING_EVENTS.has(eventType) ? "onboarding" : "projectContext";
 }
 
@@ -116,12 +118,16 @@ export function createOnboardingDriver(
 ): OnboardingDriver {
   const { client, report, log } = deps;
 
-  /** Post the outcome event, then log the audit entry (event + region state). */
+  /** Post the outcome event, then log the audit entry: the posted event, the
+   *  region it settles, AND the RESULTING region state read off the document
+   *  report() returns (ratification amendment 3). */
   const postAndLog = async (event: ChatAppWireEvent): Promise<void> => {
-    await report(event);
+    const doc = await report(event);
+    const region = regionFor(event.type);
     log.info(`onboarding-driver.${event.type}.reported`, {
       event: event.type,
-      region_state: regionFor(event.type),
+      region,
+      region_state: doc.regions[region].state,
     });
   };
 
@@ -248,8 +254,11 @@ function orgCreateFailure(err: unknown, orgName: string): ChatAppWireEvent {
       };
     }
   }
+  // The generic retry class (5xx ApiError / network / timeout) carries org_name
+  // uniformly with the 409/400/422 arms — additive per the wire contract
+  // (org_name?: string), for re-population/audit (D3).
   return {
     type: "org_create_failed",
-    payload: { cause: "org_create_failed" },
+    payload: { cause: "org_create_failed", org_name: orgName },
   };
 }
