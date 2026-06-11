@@ -271,11 +271,7 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000,https://*.gitpod.io}
       DEBUG: ${DEBUG:-true}
       MINIO_ENDPOINT: minio:9000
-      AUTH_MODE: ${AUTH_MODE:-dev}
       AUTO_PROVISION_ORG: "true"
-      WORKOS_API_KEY: ${WORKOS_API_KEY:-}
-      WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
-      WORKOS_REDIRECT_URI: ${WORKOS_REDIRECT_URI:-http://localhost:5173/auth/callback}
       TRUST_PROXY_HEADERS: "true"
       # SessionEventReader dispatch (ADR-017). Hardcoded so a host-side
       # .env (used by pytest) cannot override container-internal values
@@ -320,10 +316,6 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-dashboard}:${POSTGRES_PASSWORD:-dashboard_secret}@db:5432/${POSTGRES_DB:-dashboard_chat}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000}
       DEBUG: ${DEBUG:-true}
-      AUTH_MODE: ${AUTH_MODE:-dev}
-      WORKOS_API_KEY: ${WORKOS_API_KEY:-}
-      WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
-      WORKOS_REDIRECT_URI: ${WORKOS_REDIRECT_URI:-http://localhost:5173/auth/callback}
       TRUST_PROXY_HEADERS: "true"
       PG_DUCKDB_ADMIN_USER: ${PG_DUCKDB_USER:-duckdb_admin}
       PG_DUCKDB_ADMIN_PASSWORD: ${PG_DUCKDB_PASSWORD:-duckdb_secret}
