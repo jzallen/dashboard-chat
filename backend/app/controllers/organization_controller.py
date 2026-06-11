@@ -52,6 +52,20 @@ class OrganizationController:
                 return error_response(error)
 
     @staticmethod
+    async def check_org_availability(name: str) -> tuple[dict, int]:
+        """Return a bare ``{"available": bool}`` body (NOT a JSON:API envelope).
+
+        The CDO-S5 interception reads ``.available`` directly, so this route
+        deliberately does not wrap the result in a JSON:API single resource.
+        """
+        result = await _uc().check_org_name_availability(name=name)
+        match result:
+            case Success(data):
+                return data, 200
+            case Failure(error):
+                return error_response(error)
+
+    @staticmethod
     async def get_my_organization(user: "AuthUser") -> tuple[dict, int]:
         result = await _uc().get_organization(user=user)
         match result:

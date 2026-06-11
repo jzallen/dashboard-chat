@@ -98,6 +98,7 @@ class HTTPController:
     # Identity / Organization (Seam 4)
     post_organization = staticmethod(OrganizationController.post_organization)
     get_my_organization = staticmethod(OrganizationController.get_my_organization)
+    check_org_availability = staticmethod(OrganizationController.check_org_availability)
 
     # Assistant audit — read (rich-catalog §2.11) + create (§2.7) + toggle (§2.6)
     list_audit_entries = staticmethod(AssistantAuditController.list_audit_entries)

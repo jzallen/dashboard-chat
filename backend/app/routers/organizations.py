@@ -1,6 +1,6 @@
 """API routes for organization management."""
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -48,6 +48,22 @@ async def post_organization(
         name=body.name, user=user, provisioned_org_id=provisioned_org_id
     )
     return JSONResponse(content=response_body, status_code=status_code)
+
+
+@router.get("/availability")
+async def get_org_availability(
+    name: str = Query(...),
+    user: AuthUser = Depends(get_current_user),
+    _: AsyncSession = Depends(use_db_context),
+):
+    """Report whether an organization name is free to claim (ADR-050 §b).
+
+    Returns a bare ``{"available": bool}`` body — the CDO-S5 auth-proxy
+    interception reads ``.available`` directly, so this is intentionally NOT a
+    JSON:API envelope. Same identity-header auth as the sibling org routes.
+    """
+    body, status_code = await HTTPController.check_org_availability(name=name)
+    return JSONResponse(content=body, status_code=status_code)
 
 
 @router.get("/me")
