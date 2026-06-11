@@ -1,16 +1,10 @@
 {
-  "project_id": "",
-  "total_steps": 6,
-  "completed_steps": 6,
-  "completed_step_ids": [
-    "05-01",
-    "05-02",
-    "05-03",
-    "05-04",
-    "05-05",
-    "05-06"
-  ],
+  "project_id": "client-driven-onboarding",
+  "slice": "CDO-S5",
+  "total_steps": 7,
+  "completed_steps": 7,
+  "completed_step_ids": ["05-01", "05-02", "05-03", "05-04", "05-05", "05-06", "05-07"],
   "pending_step_ids": [],
   "all_steps_done": true,
-  "phases_completed": {}
+  "phases_completed": {"05": true}
 }

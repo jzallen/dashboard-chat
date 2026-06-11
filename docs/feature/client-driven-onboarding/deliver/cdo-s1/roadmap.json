@@ -1,0 +1,104 @@
+{
+  "roadmap": {
+    "project_id": "client-driven-onboarding",
+    "created_at": "2026-06-11",
+    "total_steps": 2,
+    "phases": 1
+  },
+  "feature": "client-driven-onboarding",
+  "slice": "CDO-S1",
+  "wave": "DELIVER",
+  "source_of_truth": "docs/feature/client-driven-onboarding/distill/roadmap.json (CDO-S1 entry) + ADR-049 + ADR-050 §e/§f + design/domain-model.md §3-§5",
+  "paradigm": "object-oriented (XState v5 statecharts; TypeScript strict)",
+  "scope_boundary": "shared/ui-state-wire + ui-state/ ONLY. The acceptance suite tests/acceptance/org-onboarding/ (cdo_s1 marker) is the RED outer loop. NON-GOALS in S1: backend 422 / availability (CDO-S2); failure causes + crash-class closure + full closed-union catch-all removal (CDO-S3); auth-proxy mode discovery / reissue cookie (CDO-S4); ui/ surfaces + workos interception + session-chat egress retire (CDO-S5). frontend/ is a permanent non-goal.",
+  "ratification_amendments": [
+    "Outcome events are PLAIN PAST TENSE: org_found, org_not_found, org_created, scope_resolved, no_projects_found, project_created (NO *_reported suffix).",
+    "INV-PCO / D4: identity (user.email/display_name/first_name) is seeded ONLY from verified headers at cold-start; NO outcome event ever writes identity."
+  ],
+  "test_command": "cd tests/acceptance/org-onboarding && REVERSE_PROXY_URL=http://localhost:1042 AUTH_PROXY_URL=http://localhost:1042 uv run --no-project --with 'httpx>=0.27,<1' --with 'pytest>=7,<9' --with 'pytest-asyncio>=0.23,<1' pytest -m cdo_s1 -p no:cacheprovider --no-header -q",
+  "unit_test_command": "cd ui-state && npx vitest run (node_modules symlinked from main checkout — DO NOT npm install)",
+  "stack_note": "Compose stack is already UP (project 'framer'): auth-proxy:1042, ui-state:1043, api, redis, query-engine. Rebuild the ui-state image from source after each code change: docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.dev-no-org.yml up -d --build ui-state. Between acceptance reruns: fresh_dev_principal fixture self-cleans created_by=dev-user-001 orgs/projects; also redis-cli -n 1 flushdb + docker restart dashboard-ui-state if state is sticky.",
+  "design_context_shared": {
+    "transport_unchanged": "ADR-046 /state surface (GET /ui-state/state, POST /ui-state/state/events) is BYTE-untouched. Only the event vocabulary inside the published language changes. The router forwards a posted {type,payload} to the parent ChatApp actor as child_event; the parent's root on.child_event forwards it via sendTo(active_child_id, {type, ...payload}) — UNCHANGED in S1 (the crash-class elimination that deletes this total-forward is CDO-S3).",
+    "parent_advance_reused_verbatim": "chat-app parent coordinator machinery is REUSED. login->engaged advances on onSnapshot guard isUserReady (onboarding child value === 'ready'); engaged.project_context->engaged.chat advances on isInitialProjectSelected (project-context child value === 'project_selected' && last_forwarded_project_id === null). Only the PRODUCER of the child state changes (a client report instead of an invoke onDone). DO NOT change the guards or the onSnapshot transitions.",
+    "settle_timing": "router.ts settle() polls isSettledForSnapshot until the actor quiesces, THEN derives the document. Renaming the invoke states to plain WAITING states (no invoke) makes them settle IMMEDIATELY, so the SAME POST response document already reflects the cascaded parent advance. CRITICAL RISK (roadmap): org_created -> onboarding ready -> parent advances login->engaged -> project-context enters awaiting_scope_report (a STABLE no-invoke state) must all complete in one settle so the org_created response document already shows phase=project_context + projectContext=awaiting_scope_report. Update ui-state/lib/machines/chat-app/snapshot.ts so the retired invoke states (verifying, creating_org, resolving_initial_scope, creating_project) are no longer in the 'transient/not-settled' set and the new awaiting_* states settle.",
+    "identity_seed": "auth-proxy injects ONLY X-User-Id, X-Org-Id, X-User-Email (verified). The onboarding child currently gets identity from the retired loadSession WorkOS re-verify. Thread the email header into the cold-start seed: router.ts coldStart reads c.req.header('X-User-Email') -> OnboardingInput.user.email (display_name/first_name = null; no header carries them). OnboardingInput gains optional user:{email,display_name,first_name}; chat-app ChatAppContext seeds user from input and the onboarding invoke input mapper (chat-app/machine.ts:82) passes user: context.user; onboarding machine context init seeds context.user from input.user. The acceptance assertion is context.user.email === 'dev@localhost' in awaiting_org_report.",
+    "wire_union_additive_in_s1": "ADD the happy outcome members + OrgSnapshot/ProjectSnapshot to ChatAppWireEvent. DO NOT remove the {type:string} catch-all NOR the legacy members org_form_submitted / create_project_submitted / switching_project_intent in S1 — removing them cascades into out-of-S1-scope consumers (frontend/app/lib/state-proxy.test.tsx; ui/app/routes/onboarding.tsx [CDO-S5]; tests/acceptance/user-flow-state-machines/harness; ui-state/lib/domain/projection.ts). The closed-union single-cut is explicitly deferred to CDO-S3/CDO-S5 per ADR-050 §e cost note. The acceptance GREEN depends on ADDING members + machine realignment + router-ACL acceptance, NOT on removals. Document this reconciliation in deliver/cdo-s1/wave-notes.md."
+  },
+  "phases": [
+    {
+      "id": "01",
+      "name": "CDO-S1 walking skeleton: report-driven onboarding + project-context",
+      "default_agent": "nw-software-crafter",
+      "default_deps_strategy": "sequential",
+      "steps": [
+        {
+          "id": "01-01",
+          "name": "Onboarding report-driven realignment + identity seed",
+          "agent": "nw-software-crafter",
+          "deps": [],
+          "test_file": "tests/acceptance/org-onboarding/test_orgless_principal_routes_to_onboarding.py",
+          "scenario_name": "test_session_begin_awaits_report_then_needs_org_with_identity",
+          "criteria": "session_begin settles onboarding awaiting_org_report with header-seeded user.email (no invoke); org_not_found settles needs_org; org_found settles ready (fast path and needs_org convergence); org_created from needs_org settles ready and the same response advances to phase project_context with projectContext awaiting_scope_report; the onboarding-phase ACL accepts org_found/org_not_found/org_created and no event writes identity",
+          "acceptance_checkpoints_green_after_step": [
+            "tests/acceptance/org-onboarding/test_orgless_principal_routes_to_onboarding.py::test_session_begin_awaits_report_then_needs_org_with_identity",
+            "tests/acceptance/org-onboarding/test_org_absent_from_db_routes_to_onboarding.py::test_org_absent_from_db_routes_to_onboarding",
+            "tests/acceptance/org-onboarding/test_org_creation_persists_created_by.py::test_org_creation_links_owner_so_principal_resolves_it"
+          ],
+          "files_to_modify": [
+            "shared/ui-state-wire/wire-event.ts — ADD happy members org_found/org_not_found/org_created (OrgSnapshot {id,name}) and project members scope_resolved/no_projects_found/project_created (ProjectSnapshot {id,name}); define OrgSnapshot/ProjectSnapshot. Keep session_begin/__force_failure__/open_deep_link/catch-all + legacy members (ADDITIVE only — see wire_union_additive_in_s1).",
+            "shared/ui-state-wire/state-document.ts — anonymousStateDocument zero states: onboarding verifying->awaiting_org_report, projectContext verifying->awaiting_scope_report (sessionChat zero unchanged). Keep ChatAppPhase 'rejected' (retires CDO-S3).",
+            "ui-state/lib/machines/onboarding/machine.ts — initial awaiting_org_report (no invoke); seed context.user from input; awaiting_org_report on org_found->ready (assignResolvedOrg) and org_not_found->needs_org; needs_org on org_created->ready (assignCreatedOrg) and org_found->ready (convergence) + keep __force_failure__->error_recoverable; REMOVE verifying/creating_org/session_rejected + loadSession/createOrg invokes + org_form_submitted handler + tagSessionRejected. Keep error_recoverable (empty in S1) + ready.",
+            "ui-state/lib/machines/onboarding/setup/types.ts — OnboardingInput gains optional user:{email,display_name,first_name}; OnboardingEvent gains org_found/org_not_found/org_created (payload {org:{id,name}}); drop org_form_submitted from the machine event union.",
+            "ui-state/lib/machines/onboarding/setup/actions.ts — context.user seeded from input at init (not from any event); assignResolvedOrg/assignCreatedOrg read event.org ({id,name}); remove tagSessionRejected. Keep recordOrgNameTaken/recordOrgValidationError/clearOrgValidationError/cause vocabulary for CDO-S3.",
+            "ui-state/lib/machines/onboarding/setup/guards.ts — remove only guards that become dead AND removable without breaking the file (hasOrg's loadSession arm is gone); keep isOrgNameValid if still referenced.",
+            "ui-state/lib/machines/chat-app/machine.ts — thread identity: ChatAppContext.user seeded from input; onboarding invoke input mapper adds user: context.user. ONLY identity threading here (necessary S1 deviation; rest of this file is CDO-S3).",
+            "ui-state/lib/machines/chat-app/setup/types.ts — ChatAppContext gains user:{email,display_name,first_name} (seeded from OnboardingInput.user).",
+            "ui-state/lib/machines/chat-app/router.ts — coldStart reads X-User-Email -> OnboardingInput.user; extend onboardingEventSchema (phase=onboarding ACL) to accept org_found/org_not_found/org_created (well-formedness only).",
+            "ui-state/lib/machines/chat-app/projection/derive-state-document.ts — ONBOARDING_STATE_MAP add awaiting_org_report, drop dead verifying/creating_org/session_rejected; deriveOnboarding fallback -> awaiting_org_report; PROJECT_CONTEXT_STATE_MAP fallback -> awaiting_scope_report. derivePhase unchanged.",
+            "ui-state/lib/machines/chat-app/snapshot.ts — drop verifying/creating_org from the onboarding transient set so awaiting_org_report settles; keep persistence guard consistent.",
+            "ui-state/lib/machines/onboarding/machine.test.ts — REPLACE invoke-onDone/onError tests with report-driven transition tests (sanctioned rework): cold-start seeds user.email from input -> awaiting_org_report; org_found->ready; org_not_found->needs_org; org_created (from needs_org)->ready; org_found convergence (from needs_org)->ready; __force_failure__->error_recoverable."
+          ],
+          "implementation_notes": "Outside-In: RED_ACCEPTANCE run the cdo_s1 subset (test_orgless_principal_routes_to_onboarding is primary; currently RED: session_begin settles needs_org not awaiting_org_report). RED_UNIT drive onboarding/machine.test.ts report-driven cases. GREEN minimal machine+wire+router+projection+identity. After GREEN rebuild ui-state image (stack_note) and re-run the 3 onboarding-only checkpoints — they must pass; walking skeleton + default_project stay RED until 01-02 (expected). Run cd ui-state && npx vitest run — full ui-state unit suite green; chat-app parent tests asserting session_rejected/user_rejected are CDO-S3 retirements — leave the parent states present-but-unreached so those tests stay green. DO NOT remove catch-all/legacy wire members. Identity: email is the only required header field. Append wave-notes.md documenting the chat-app/machine.ts identity-threading deviation + the additive-wire reconciliation."
+        },
+        {
+          "id": "01-02",
+          "name": "Project-context report-driven realignment (Phase D)",
+          "agent": "nw-software-crafter",
+          "deps": ["01-01"],
+          "test_file": "tests/acceptance/org-onboarding/test_walking_skeleton_org_then_default_project.py",
+          "scenario_name": "test_orgless_principal_completes_org_and_default_project",
+          "criteria": "project-context initial awaiting_scope_report (no invoke), entered on auth_ready; project_created from awaiting_scope_report settles project_selected with active_scope.project_id non-null and phase==chat atomically on that response (the f triple); scope_resolved settles project_selected; no_projects_found settles no_projects then project_created settles project_selected; the isInitialProjectSelected guard is unchanged and the switch/PROJECT_SWITCH path stays intact",
+          "acceptance_checkpoints_green_after_step": [
+            "tests/acceptance/org-onboarding/test_default_project_completes_onboarding.py::test_default_project_is_created_automatically_and_completes",
+            "tests/acceptance/org-onboarding/test_walking_skeleton_org_then_default_project.py::test_orgless_principal_completes_org_and_default_project"
+          ],
+          "files_to_modify": [
+            "ui-state/lib/machines/project-context/machine.ts — initial awaiting_scope_report (no invoke; rename from resolving_initial_scope; update auth_ready re-enter target + open_deep_link root target to .awaiting_scope_report). awaiting_scope_report on scope_resolved->project_selected (assignResolvedScope) | project_created->project_selected (assignCreatedProject) | no_projects_found->no_projects | scope_mismatch->scope_mismatch_terminal. no_projects on project_created->project_selected. REMOVE resolveInitialScope/createProject invokes + create_project_clicked/create_project_submitted handlers. KEEP switching_project + switchProject invoke + scope_mismatch_terminal + error_recoverable + retry_clicked UNTOUCHED (CDO-S3 reworks them; the chat-app PROJECT_SWITCH forward must keep working).",
+            "ui-state/lib/machines/project-context/setup/types.ts — ProjectContextEvent gains scope_resolved/no_projects_found/project_created (payload {project:{id,name}} for project-bearing, {} for no_projects_found). Keep auth_ready/open_deep_link/switching_project_intent/back_to_projects_clicked/retry_clicked.",
+            "ui-state/lib/machines/project-context/setup/actions.ts — assignResolvedScope/assignCreatedProject read event.project ({id,name}); the extra observability fields default harmlessly (pruning is CDO-S3); assignResolvedScope sets context.project from the report.",
+            "ui-state/lib/machines/project-context/setup/guards.ts — initial-scope-arm guards (isCrossTenant/isProjectNotFound/isNoProjects) become unused for the initial path; leave them (switch path / CDO-S3 reference them) unless removal is clean.",
+            "ui-state/lib/machines/chat-app/projection/derive-state-document.ts — PROJECT_CONTEXT_STATE_MAP add awaiting_scope_report; drop dead resolving_initial_scope/creating_project (keep switching_project if the switch path retains it); deriveProjectContext fallback -> awaiting_scope_report.",
+            "ui-state/lib/machines/chat-app/snapshot.ts — drop resolving_initial_scope/creating_project from the project-context transient set so awaiting_scope_report settles; keep switching_project transient if the switch invoke is retained.",
+            "ui-state/lib/machines/project-context/machine.test.ts — REPLACE resolveInitialScope/createProject invoke tests (B1-B5) with report-driven transition tests (awaiting_scope_report on scope_resolved->project_selected; on no_projects_found->no_projects; on project_created->project_selected; no_projects on project_created->project_selected). KEEP the switching_project (US-207) + scope_mismatch deep-link tests green (untouched in S1)."
+          ],
+          "implementation_notes": "Outside-In: RED_ACCEPTANCE the walking skeleton + default_project tests are RED. RED_UNIT drive project-context/machine.test.ts report-driven cases. GREEN minimal machine+projection+settle. The atomic (f) triple is the key risk: after project_created, project-context reaches project_selected (stable) -> parent isInitialProjectSelected advances to engaged.chat -> session-chat invoked -> its loading_session_list I/O (UNCHANGED in S1; real backend GET sessions returns empty -> settles) -> settle returns -> document shows phase=chat. Do NOT touch session-chat (egress retire is CDO-S5). After GREEN rebuild ui-state image and run the FULL cdo_s1 acceptance subset — all 5 GREEN. Run cd ui-state && npx vitest run — full suite green incl. chat-app integration + switch/deep-link paths. Verify active_scope.project_id non-null via deriveActiveScope reading project-context context.project.id."
+        }
+      ]
+    }
+  ],
+  "distill_scenario_coverage": {
+    "test_orgless_principal_routes_to_onboarding.py": "01-01",
+    "test_org_absent_from_db_routes_to_onboarding.py": "01-01",
+    "test_org_creation_persists_created_by.py": "01-01",
+    "test_default_project_completes_onboarding.py": "01-02",
+    "test_walking_skeleton_org_then_default_project.py": "01-02",
+    "note": "All 5 CDO-S1 driving_tests mapped; no orphan scenarios."
+  },
+  "out_of_s1_red_expected": "Assertions requiring CDO-S2+ contracts stay RED and MUST NOT be weakened: backend 422 blank-name (test_invalid_org_name_stays_needs_org — CDO-S2); mode discovery GET /api/auth/config (test_mode_discovery — CDO-S4); Set-Cookie reissue (test_reissue_sets_cookie — CDO-S4); failure/convergence/liveness/closed-union-edge (test_org_create_failure_retryable, test_org_name_taken_reedit, test_default_project_retry_convergence, test_late_event_converges_process_alive, test_unknown_event_type_rejected — CDO-S3); no-auto-create regression lock (test_post_orgs_no_longer_auto_creates_project — CDO-S2).",
+  "validation": {
+    "status": "approved",
+    "approved_by": "orchestrator (nw-deliver) — automated quality gate + integrity verify + DISTILL-scenario coverage map; 2-step cohesive single-cut slice with full design context",
+    "date": "2026-06-11"
+  }
+}
