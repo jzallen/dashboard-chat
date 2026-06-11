@@ -29,21 +29,16 @@ const isProjectNotFound = ({ event }: GuardArgs) =>
 const isNoProjects = ({ event }: GuardArgs) =>
   (event as { output?: { no_projects?: true } }).output?.no_projects === true;
 
-// switchProject onDone branch predicates.
-const isAccessRevoked = ({ event }: GuardArgs) =>
-  (event as { output?: { access_revoked?: true } }).output?.access_revoked === true;
-
-const isSwitchProjectNotFound = ({ event }: GuardArgs) =>
-  (event as { output?: { project_not_found?: true } }).output?.project_not_found ===
-  true;
-
 // name → guard predicate index (keys referenced by string in ../machine.ts).
-// isCrossTenant/isProjectNotFound/isNoProjects are retained (CDO-S3 scope_mismatch
-// rework) but no longer referenced by the report-driven machine's transitions.
+// The whole bundle is now UNREFERENCED by the report-driven machine's
+// transitions: scope is client-reported (no resolveInitialScope onDone) and the
+// project switch is REPORT-ONLY (CDO-S3 — the switchProject invoke + its
+// access_revoked / project_not_found onDone branches retire; the mismatch cause
+// arrives as a client `scope_mismatch` report, tagged from event.cause). These
+// output-readers are retained as the historical verdict-shape documentation; the
+// machine names none of them.
 export const guards = {
   isCrossTenant,
   isProjectNotFound,
   isNoProjects,
-  isAccessRevoked,
-  isSwitchProjectNotFound,
 };

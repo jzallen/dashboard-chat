@@ -18,15 +18,8 @@ import {
 } from "./snapshot-readers.ts";
 import type {
   ActionArgs,
-  ChatAppEvent,
-  ChatUserIntent,
   ForwardArgs,
 } from "./types.ts";
-
-/** A user_intent's payload, read off the live `user_intent` event. */
-function intentOf(event: ChatAppEvent): ChatUserIntent {
-  return (event as { type: "user_intent"; intent: ChatUserIntent }).intent;
-}
 
 // ── hand-off capture (read the child snapshot, stage the payload) ──
 /** onboarding → project_context: stage org + identity for `auth_ready` AND
@@ -56,32 +49,6 @@ export const captureAuthHandoff = ({ event }: ActionArgs) => {
       },
       underlying_cause_tag: null,
       org_validation_error: null,
-    },
-  };
-};
-/** onboarding → user_rejected: retain the rejected outcome (cause + any
- *  validation error) so the derived `login-and-org-setup` projection
- *  reproduces `session_rejected` after the child is stopped. Mirrors
- *  buildProjection's session_rejected fold (user/org stay null; only the
- *  cause carries). The action name reflects the domain outcome (user
- *  rejected); the inner `state` value stays `session_rejected` because
- *  it is the FE/auth-proxy wire-contract string for this projection. */
-export const captureUserRejected = ({ event }: ActionArgs) => {
-  const snapshot = onboardingSnapshot(event);
-  return {
-    onboarding_result: {
-      state: "session_rejected" as const,
-      user: {
-        email: snapshot.context.user.email ?? null,
-        display_name: snapshot.context.user.display_name ?? null,
-        first_name: snapshot.context.user.first_name ?? null,
-      },
-      org: {
-        id: snapshot.context.org.id ?? null,
-        name: snapshot.context.org.name ?? null,
-      },
-      underlying_cause_tag: snapshot.context.underlying_cause_tag ?? null,
-      org_validation_error: snapshot.context.org_validation_error ?? null,
     },
   };
 };
@@ -127,42 +94,27 @@ export const forwardProjectReady = ({ context, enqueue }: ForwardArgs) => {
     });
   }
 };
-/** PROJECT_SWITCH: drive project-context's switch by forwarding its intent. */
-export const forwardSwitchToProjectContext = ({ event, enqueue }: ForwardArgs) => {
-  const switchEvent = event as {
-    type: "PROJECT_SWITCH";
-    new_project_id: string;
-  };
-  enqueue.sendTo("project-context", {
-    type: "switching_project_intent",
-    new_project_id: switchEvent.new_project_id,
-  });
+// ── phase-gated raw-vocabulary forwarders (CDO-S3 / ADR-049 §4) ──
+// Each is wired ONLY on the lifecycle state whose child is alive (login /
+// engaged / engaged.chat), so it sends to a FIXED invoke-id that is guaranteed
+// live in that state. The event is forwarded VERBATIM — the parent's
+// ChatAppEvent member shapes already match what each child reads at top level,
+// so there is no envelope (no child_event) to unwrap. An out-of-phase event has
+// no handler on the current state → XState drops it (no sendTo, no throw into a
+// stopped child — the settled-child crash class is unrepresentable).
+
+/** login.on: forward the onboarding vocabulary to the live onboarding child. */
+export const forwardToOnboarding = ({ event, enqueue }: ForwardArgs) => {
+  enqueue.sendTo("onboarding", event);
 };
-/** live user_intent: route to whichever child owns the current phase. */
-export const forwardIntentToActiveChild = ({
-  context,
-  event,
-  enqueue,
-}: ForwardArgs) => {
-  enqueue.sendTo(context.active_child_id, intentOf(event));
+/** engaged.on: forward the project-context vocabulary to the live
+ *  project-context child (reachable from engaged.chat too — a switch/scope
+ *  report). */
+export const forwardToProjectContext = ({ event, enqueue }: ForwardArgs) => {
+  enqueue.sendTo("project-context", event);
 };
-/** live child_event: forward a raw domain event (the HTTP `/event` transport)
- *  verbatim to whichever child owns the current phase. The child's own event
- *  union decides whether to handle or ignore it (XState v5 ignores unknown
- *  events), so this stays a total forward. */
-export const forwardChildEventToActiveChild = ({
-  context,
-  event,
-  enqueue,
-}: ForwardArgs) => {
-  const raw = (
-    event as {
-      type: "child_event";
-      child_event: { type: string; payload?: Record<string, unknown> };
-    }
-  ).child_event;
-  enqueue.sendTo(context.active_child_id, {
-    type: raw.type,
-    ...(raw.payload ?? {}),
-  });
+/** engaged.chat.on: forward the session vocabulary to the live session-chat
+ *  child. */
+export const forwardToSessionChat = ({ event, enqueue }: ForwardArgs) => {
+  enqueue.sendTo("session-chat", event);
 };

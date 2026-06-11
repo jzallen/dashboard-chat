@@ -15,7 +15,6 @@
 import type {
   ActionArgs,
   ProjectContextCauseTag,
-  ProjectSummary,
 } from "./types.ts";
 
 /** open_deep_link (root handler): capture the URL wish into the `deeplink_*`
@@ -57,26 +56,30 @@ export const assignCreatedProject = ({ event }: ActionArgs) => {
   return { project: { id: event.project.id, name: event.project.name } };
 };
 
-/** project_selected → switching_project: capture the switch target as the
- *  deep-link wish the switchProject invoke reads. */
-export const captureSwitchTarget = ({ event }: ActionArgs) => ({
-  deeplink_project_id:
-    event.type === "switching_project_intent" ? event.new_project_id : null,
-});
-
-/** switchProject onDone (settle): land the new project, clear the settled
- *  deep-link wish + cause, and bump the scope-reconciled counter. */
+/** project_switched report (REPORT-ONLY switch settle — CDO-S3): re-land the
+ *  new project the client reported, clear any prior deep-link wish + cause, and
+ *  bump the scope-reconciled counter. The parent's shouldSwitchProject onSnapshot
+ *  observes the changed project.id and re-forwards project_ready in place. */
 export const assignSwitchedProject = ({ event, context }: ActionArgs) => {
-  const out = (event as unknown as { output: { project: ProjectSummary } })
-    .output;
+  if (event.type !== "project_switched") return {};
   return {
-    project: { id: out.project.id, name: out.project.name },
-    // Clear the deeplink wish — settled.
+    project: { id: event.project.id, name: event.project.name },
+    // Clear any deeplink wish — settled.
     deeplink_project_id: null,
     deeplink_session_id: null,
     underlying_cause_tag: null,
     scope_reconciled_count: context.scope_reconciled_count + 1,
   };
+};
+
+/** scope_mismatch report (REPORT-ONLY switch reject — CDO-S3): land the
+ *  scope-mismatch terminal with the client-reported cause (cross_tenant /
+ *  project_not_found / access_revoked). Reads the cause off the event (unlike
+ *  the parameterized constant-tag `tagCause`, the mismatch cause is client
+ *  data). */
+export const tagScopeMismatchCause = ({ event }: ActionArgs) => {
+  if (event.type !== "scope_mismatch") return {};
+  return { underlying_cause_tag: event.cause };
 };
 
 /** scope_mismatch_terminal → resolving_initial_scope: clear the deep-link wish

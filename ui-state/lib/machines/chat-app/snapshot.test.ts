@@ -151,19 +151,14 @@ async function arriveAtChat(
   const actor = createActor(createChatApp(makeDeps(rec, sessions, held)), {
     input: makeInput(),
   }).start();
-  // Client-reported model: report the returning user's org through the parent so
-  // onboarding advances awaiting_org_report → ready → engaged.project_context.
-  actor.send({
-    type: "child_event",
-    child_event: { type: "org_found", payload: { org: ORG } },
-  });
-  // Then report the resolved project scope so project-context advances
-  // awaiting_scope_report → project_selected → engaged.chat.
+  // Client-reported model + phase-gated routing (CDO-S3): report the returning
+  // user's org RAW through the parent so login.on forwards org_found to the live
+  // onboarding child → ready → engaged.project_context.
+  actor.send({ type: "org_found", org: ORG });
+  // Then report the resolved project scope so engaged.on forwards scope_resolved
+  // to project-context → project_selected → engaged.chat.
   await waitFor(actor, () => childState(actor, "project-context") === "awaiting_scope_report");
-  actor.send({
-    type: "child_event",
-    child_event: { type: "scope_resolved", payload: { project: PROJECT_A } },
-  });
+  actor.send({ type: "scope_resolved", project: PROJECT_A });
   await waitFor(actor, () => childState(actor, "session-chat") === "session_list_loaded");
   return { actor, rec };
 }
@@ -210,7 +205,7 @@ describe("ChatApp snapshot — R3 self-heal of an in-flight child invoke", () =>
   it("skips a mid-transient save (settled-state guard)", async () => {
     const heldP = heldResume();
     const { actor } = await arriveAtChat([session("s1")], heldP);
-    actor.send({ type: "user_intent", intent: { type: "session_clicked", session_id: "s1" } });
+    actor.send({ type: "session_clicked", session_id: "s1" });
     await waitFor(actor, () => childState(actor, "session-chat") === "resuming_session");
 
     expect(isSettledForSnapshot(actor.getSnapshot())).toBe(false);
@@ -225,7 +220,7 @@ describe("ChatApp snapshot — R3 self-heal of an in-flight child invoke", () =>
   it("rehydrates a snapshot taken mid-resuming_session and SELF-HEALS to session_active", async () => {
     const heldP = heldResume();
     const { actor, rec } = await arriveAtChat([session("s1")], heldP);
-    actor.send({ type: "user_intent", intent: { type: "session_clicked", session_id: "s1" } });
+    actor.send({ type: "session_clicked", session_id: "s1" });
     await waitFor(actor, () => childState(actor, "session-chat") === "resuming_session");
     expect(rec.resumeCalls).toEqual(["s1"]); // live invoke fired once
 

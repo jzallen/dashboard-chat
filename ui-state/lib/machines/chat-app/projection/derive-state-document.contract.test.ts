@@ -229,22 +229,16 @@ async function arriveAtChat(
       input: makeInput(),
     },
   ).start();
-  // Client-reported model: report the returning user's org through the parent so
-  // onboarding advances awaiting_org_report → ready → engaged.project_context.
-  actor.send({
-    type: "child_event",
-    child_event: { type: "org_found", payload: { org: ORG } },
-  });
-  // Then report the resolved project scope through the parent so project-context
-  // advances awaiting_scope_report → project_selected → engaged.chat.
+  // Client-reported model + phase-gated routing (CDO-S3): report the returning
+  // user's org RAW so login.on forwards org_found → ready → engaged.project_context.
+  actor.send({ type: "org_found", org: ORG });
+  // Then report the resolved project scope so engaged.on forwards scope_resolved
+  // → project_selected → engaged.chat.
   await waitFor(
     actor,
     (a) => childState(a, "project-context") === "awaiting_scope_report",
   );
-  actor.send({
-    type: "child_event",
-    child_event: { type: "scope_resolved", payload: { project: PROJECT_A } },
-  });
+  actor.send({ type: "scope_resolved", project: PROJECT_A });
   await waitFor(
     actor,
     (a) => childState(a, "session-chat") === "session_list_loaded",
@@ -416,12 +410,9 @@ describe("ADR-046 gate — onboarding=needs_org (new user, child live)", () => {
     const actor = createActor(createChatApp(makeDeps(rec, [session("s1")])), {
       input: makeInput({ newUser: true }),
     }).start();
-    // Client-reported model: report org_not_found through the parent to drive
-    // onboarding awaiting_org_report → needs_org.
-    actor.send({
-      type: "child_event",
-      child_event: { type: "org_not_found", payload: {} },
-    });
+    // Client-reported model + phase-gated routing: report org_not_found RAW to
+    // drive onboarding awaiting_org_report → needs_org.
+    actor.send({ type: "org_not_found" });
     await waitFor(actor, (a) => childState(a, "onboarding") === "needs_org");
 
     // The golden log fold still reaches needs_org via session_started{org:null}
@@ -467,42 +458,59 @@ describe("ADR-046 gate — onboarding=needs_org (new user, child live)", () => {
   });
 });
 
-// ═════════════════════════ Scenario 4 — switching_project (transient) ═════════════════════════
+// ═════════════════════════ Scenario 4 — report-only switch (project_switched) ═════════════════════════
+// CDO-S3 / ADR-049 §4: the project switch is REPORT-ONLY — the client reports
+// `project_switched` carrying the new {id,name}; project-context re-enters
+// `project_selected` on the new project (no `switching_project` transient state,
+// no server-side switchProject invoke). The region projects the re-landed
+// project_selected, byte-equivalent to its log fold.
 
-describe("ADR-046 gate — projectContext=switching_project", () => {
-  it("project-context region equivalent (project preserved, deeplink staged)", async () => {
-    const slow = deferredSwitch("proj-B");
-    const { actor } = await arriveAtChat([session("s1")], slow);
+describe("ADR-046 gate — projectContext re-lands project_selected on a report-only switch", () => {
+  it("project-context region equivalent (re-landed on the reported project)", async () => {
+    const { actor } = await arriveAtChat([session("s1")]);
 
-    actor.send({ type: "PROJECT_SWITCH", new_project_id: "proj-B" });
+    // engaged.on forwards project_switched verbatim to project-context (alive
+    // even while session-chat is the active sub-child).
+    actor.send({
+      type: "project_switched",
+      project: { id: "proj-B", name: "Project B" },
+    });
     await waitFor(
       actor,
-      (a) => childState(a, "project-context") === "switching_project",
+      (a) =>
+        (childRef(a, "project-context")?.getSnapshot() as {
+          context?: { project?: { id?: string } };
+        })?.context?.project?.id === "proj-B",
     );
 
+    // The equivalent log fold: the re-landed project_selected carries proj-B.
+    // (A report-only switch re-forwards project_ready, so session-chat ALSO
+    // reloads for proj-B; this scenario pins the PROJECT-CONTEXT region — the one
+    // under test — byte-equivalent to its log fold, the same single-region
+    // discipline Scenario 2 uses for un-invoked regions.)
     const pcLog = [
       ...pcSelectedEvents(),
-      ev(PC_LOG, "switching_project_started", {
+      ev(PC_LOG, "project_selected", {
         org_id: ORG.id,
-        deeplink_project_id: "proj-B",
+        project: { id: "proj-B", name: "Project B" },
       }),
     ];
-    const doc = assertEquivalence(actor, {
-      onboarding: loginReadyEvents(),
-      projectContext: pcLog,
-      sessionChat: scListLoadedEvents([session("s1")]),
-    });
-
-    expect(doc.regions.projectContext.state).toBe("switching_project");
-    expect(doc.regions.projectContext.context.project).toEqual({
-      id: "proj-A",
-      name: "Project A",
-    });
-    expect(doc.regions.projectContext.context.deeplink_project_id).toBe(
-      "proj-B",
+    const pcBk = bookkeepingFromLog(pcLog);
+    const doc = deriveStateDocument(
+      view(actor),
+      aggregateBookkeeping([pcBk]),
     );
+    const goldenPc = buildProjection(PC_LOG, pcLog);
+    expect(doc.regions.projectContext).toEqual({
+      state: goldenPc.state,
+      context: goldenPc.context,
+    });
 
-    slow.resolve(); // settle the held invoke so the actor can stop cleanly
+    expect(doc.regions.projectContext.state).toBe("project_selected");
+    expect(doc.regions.projectContext.context.project).toEqual({
+      id: "proj-B",
+      name: "Project B",
+    });
   });
 });
 
@@ -514,12 +522,9 @@ describe("ADR-046 gate — sessionChat=session_active (resumed)", () => {
     const { actor } = await arriveAtChat(sessions);
 
     actor.send({
-      type: "user_intent",
-      intent: {
-        type: "session_clicked",
-        session_id: "s1",
-      } satisfies ChatUserIntent,
-    });
+      type: "session_clicked",
+      session_id: "s1",
+    } satisfies ChatUserIntent);
     await waitFor(
       actor,
       (a) => childState(a, "session-chat") === "session_active",

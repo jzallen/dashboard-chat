@@ -21,7 +21,6 @@ export type ProjectContextState =
   | "awaiting_scope_report"
   | "no_projects"
   | "project_selected"
-  | "switching_project"
   | "scope_mismatch_terminal"
   | "error_recoverable";
 
@@ -34,6 +33,17 @@ export interface ProjectSummary {
  *  Phase-D POST is retryable; the single cause literal keeps the report shape
  *  uniform (ADR-049 §3.3 — error states accept outcome reports directly). */
 export type ProjectCreateFailureCause = "project_create_failed";
+
+/** Why a client-reported scope resolution mismatched the requesting tenant
+ *  (ADR-050 §c). Mirrors the shared wire `ScopeMismatchCause` (string-literal
+ *  unions with equal members are assignable); kept local so this machine's event
+ *  union is self-contained (shared cannot import ui-state, and vice-versa for the
+ *  machine internals). The client probes the backend, classifies the mismatch,
+ *  and REPORTS it (report-only switch — CDO-S3 / ADR-049 §4). */
+export type ScopeMismatchCause =
+  | "cross_tenant"
+  | "project_not_found"
+  | "access_revoked";
 
 export type ProjectContextCauseTag =
   | "no_projects"
@@ -124,14 +134,16 @@ export type ProjectContextEvent =
       intent_resource_id?: string;
       intent_resource_type?: ResourceType;
     }
-  // Atomic project switching. Fired by a loader (mid-session
-  // deep-link to a different project) OR by the chat-view's
-  // project-picker. The machine invokes `switchProject` which validates
-  // the target via the backend's `GET /api/projects/:id`; the IC-J002-4
-  // invalidation contract (session_id + resource_* cleared BEFORE the
-  // new project's loading_session_list fires) is enforced at the
-  // projection layer via the `switching_project_started` event handler.
-  | { type: "switching_project_intent"; new_project_id: string };
+  // REPORT-ONLY project switching (CDO-S3 / ADR-049 §4 / ADR-050 §f). The
+  // client probes the backend (`GET /api/projects/:id`), classifies the
+  // outcome, and REPORTS it — the machine never invokes a server-side switch.
+  //   - project_switched — the target was reachable; re-land its {id,name} on
+  //     context.project (the parent's shouldSwitchProject onSnapshot re-forwards
+  //     project_ready on the changed id).
+  //   - scope_mismatch    — the target was cross-tenant / not-found /
+  //     access-revoked; land scope_mismatch_terminal with the reported cause.
+  | { type: "project_switched"; project: ProjectSummary }
+  | { type: "scope_mismatch"; cause: ScopeMismatchCause };
 
 /** The raw machine input (the begin envelope the context factory normalizes into
  *  context). Mirrors `setup({ types: { input } })`. */

@@ -26,11 +26,6 @@ import type { GuardArgs } from "./types.ts";
 const isUserReady = ({ event }: GuardArgs) =>
   onboardingSnapshot(event).value === "ready";
 
-/** Onboarding re-verify failed (token/user invalid) → the user is rejected
- *  and cannot proceed. */
-const isUserRejected = ({ event }: GuardArgs) =>
-  onboardingSnapshot(event).value === "session_rejected";
-
 /** True when project-context has selected its FIRST project (none forwarded
  *  yet) — gates the project_context → chat advance. */
 const isInitialProjectSelected = ({ context, event }: GuardArgs) =>
@@ -52,7 +47,6 @@ const shouldSwitchProject = ({ context, event }: GuardArgs) => {
 // name → guard predicate index (keys referenced by string in ../machine.ts).
 export const guards = {
   isUserReady,
-  isUserRejected,
   isInitialProjectSelected,
   shouldSwitchProject,
 };

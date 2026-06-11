@@ -1,9 +1,19 @@
 // ChatApp coordinator — the XState v5 parent machine cycling login → project_context → chat.
 //
-//     login ─(isUserReady)─► project_context ─(isInitialProjectSelected)─► chat
-//           └(isUserRejected)─► user_rejected
+//     login ─(isUserReady)─► engaged{ project_context ─(isInitialProjectSelected)─► chat }
+//
+// PHASE-GATED VOCABULARY ROUTING (CDO-S3 / ADR-049 §4 — Option 1). The parent
+// declares the finite vocabulary it routes on the lifecycle state whose child is
+// ALIVE: onboarding vocab on `login`, project-context vocab on `engaged`
+// (reachable from chat too), session vocab on `engaged.chat`. There is NO
+// root-level total forward and NO `active_child_id` indirection — an out-of-phase
+// KNOWN event has no handler on the current state, so XState DROPS it (no sendTo
+// into a stopped phase-scoped child → the 2026-06-10 settled-child process death
+// is unrepresentable; domain-model §6 Option 1). The terminal `user_rejected`
+// state retired with the client-reported onboarding model (no server re-verify).
 //
 // References:
+//   docs/decisions/adr-049-*.md  — §4 phase-gated vocabulary routing (Option 1)
 //   docs/decisions/adr-044-*.md  — root orchestrator statechart
 //   docs/decisions/adr-028-*.md  — one root actor mediating parent-ignorant children
 //   docs/decisions/adr-043-*.md  — token-lifecycle modeling retired from ui-state
@@ -15,12 +25,11 @@ import { assign, enqueueActions, setup } from "xstate";
 import {
   captureAuthHandoff,
   captureProjectHandoff,
-  captureUserRejected,
   forwardAuthReady,
-  forwardChildEventToActiveChild,
-  forwardIntentToActiveChild,
   forwardProjectReady,
-  forwardSwitchToProjectContext,
+  forwardToOnboarding,
+  forwardToProjectContext,
+  forwardToSessionChat,
 } from "./setup/actions.ts";
 import { actors } from "./setup/actors.ts";
 import { guards } from "./setup/guards.ts";
@@ -40,19 +49,14 @@ export function createChatAppMachine() {
     actors,
     guards,
     actions: {
-      markLoginActive: assign({ active_child_id: "onboarding" }),
-      markProjectContextActive: assign({ active_child_id: "project-context" }),
-      markChatActive: assign({ active_child_id: "session-chat" }),
-
       captureAuthHandoff: assign(captureAuthHandoff),
-      captureUserRejected: assign(captureUserRejected),
       captureProjectHandoff: assign(captureProjectHandoff),
 
       forwardAuthReady: enqueueActions(forwardAuthReady),
       forwardProjectReady: enqueueActions(forwardProjectReady),
-      forwardSwitchToProjectContext: enqueueActions(forwardSwitchToProjectContext),
-      forwardIntentToActiveChild: enqueueActions(forwardIntentToActiveChild),
-      forwardChildEventToActiveChild: enqueueActions(forwardChildEventToActiveChild),
+      forwardToOnboarding: enqueueActions(forwardToOnboarding),
+      forwardToProjectContext: enqueueActions(forwardToProjectContext),
+      forwardToSessionChat: enqueueActions(forwardToSessionChat),
     },
   }).createMachine({
     id: "chat-app",
@@ -66,19 +70,22 @@ export function createChatAppMachine() {
       // Identity seeded once from the cold-start input (the verified header);
       // threaded into the onboarding child's invoke input below.
       user: input.user ?? { email: null, display_name: null, first_name: null },
-      active_child_id: "onboarding",
       auth_handoff: null,
       project_handoff: null,
       last_forwarded_project_id: null,
       onboarding_result: null,
     }),
-    on: {
-      user_intent: { actions: "forwardIntentToActiveChild" },
-      child_event: { actions: "forwardChildEventToActiveChild" },
-    },
     states: {
       login: {
-        entry: "markLoginActive",
+        // Onboarding vocabulary is routed ONLY here — the onboarding child is
+        // alive only on `login`. The fixed invoke id is the sendTo target.
+        on: {
+          org_found: { actions: "forwardToOnboarding" },
+          org_not_found: { actions: "forwardToOnboarding" },
+          org_created: { actions: "forwardToOnboarding" },
+          org_create_failed: { actions: "forwardToOnboarding" },
+          __force_failure__: { actions: "forwardToOnboarding" },
+        },
         invoke: {
           id: "onboarding",
           src: "onboarding",
@@ -92,24 +99,30 @@ export function createChatAppMachine() {
             // writer of context.user).
             user: context.user,
           }),
-          onSnapshot: [
-            {
-              guard: "isUserReady",
-              target: "engaged",
-              actions: "captureAuthHandoff",
-            },
-            {
-              guard: "isUserRejected",
-              target: "user_rejected",
-              actions: "captureUserRejected",
-            },
-          ],
+          onSnapshot: {
+            guard: "isUserReady",
+            target: "engaged",
+            actions: "captureAuthHandoff",
+          },
         },
       },
 
       engaged: {
         initial: "project_context",
         entry: "forwardAuthReady",
+        // Project-context vocabulary is routed on `engaged` (NOT
+        // engaged.project_context) so a switch/scope report reaches the
+        // project-context child even while session-chat is the active sub-child.
+        on: {
+          scope_resolved: { actions: "forwardToProjectContext" },
+          no_projects_found: { actions: "forwardToProjectContext" },
+          project_created: { actions: "forwardToProjectContext" },
+          project_create_failed: { actions: "forwardToProjectContext" },
+          scope_mismatch: { actions: "forwardToProjectContext" },
+          project_switched: { actions: "forwardToProjectContext" },
+          open_deep_link: { actions: "forwardToProjectContext" },
+          back_to_projects_clicked: { actions: "forwardToProjectContext" },
+        },
         invoke: {
           id: "project-context",
           src: "projectContext",
@@ -129,15 +142,24 @@ export function createChatAppMachine() {
             },
           ],
         },
-        on: {
-          PROJECT_SWITCH: { actions: "forwardSwitchToProjectContext" },
-        },
         states: {
-          project_context: {
-            entry: "markProjectContextActive",
-          },
+          project_context: {},
           chat: {
-            entry: ["markChatActive", "forwardProjectReady"],
+            entry: "forwardProjectReady",
+            // Session vocabulary is routed ONLY here — the session-chat child is
+            // alive only on engaged.chat.
+            on: {
+              session_clicked: { actions: "forwardToSessionChat" },
+              new_session_clicked: { actions: "forwardToSessionChat" },
+              first_message_sent: { actions: "forwardToSessionChat" },
+              refresh_session_list: { actions: "forwardToSessionChat" },
+              dataset_resolved_by_agent: { actions: "forwardToSessionChat" },
+              dataset_picked_directly: { actions: "forwardToSessionChat" },
+              suggestion_chip_clicked_upload: { actions: "forwardToSessionChat" },
+              suggestion_chip_clicked_browse_projects: {
+                actions: "forwardToSessionChat",
+              },
+            },
             invoke: {
               id: "session-chat",
               src: "sessionChat",
@@ -149,8 +171,6 @@ export function createChatAppMachine() {
           },
         },
       },
-
-      user_rejected: {},
     },
   });
 }

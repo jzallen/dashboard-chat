@@ -36,11 +36,11 @@ import { z } from "zod";
 import type { Config } from "../../../config.ts";
 import { FlowEvent } from "../../domain/flow-event.ts";
 import { requestIdMiddleware } from "../../hexagonal-transport/flow-router.ts";
-import type { FlowEventLog } from "../../persistence/redis.ts";
 import type { ChatAppSnapshotStore } from "../../persistence/chatapp-snapshot-store.ts";
+import type { FlowEventLog } from "../../persistence/redis.ts";
 import type { RequestClient } from "../onboarding/index.ts";
 import { isUnderlyingCauseTag } from "../onboarding/setup/domain.ts";
-import { createChatApp, type ChatAppDeps } from "./index.ts";
+import { type ChatAppDeps,createChatApp } from "./index.ts";
 import {
   aggregateBookkeeping,
   bookkeepingFromLog,
@@ -51,13 +51,13 @@ import {
   deriveStateDocument,
   type ProjectionBookkeeping,
 } from "./projection/derive-state-document.ts";
+import type { ChatAppChildId, OnboardingInput } from "./setup/types.ts";
 import {
   isSettledForSnapshot,
   loadChatAppSnapshot,
   rehydrateChatApp,
   saveChatAppSnapshot,
 } from "./snapshot.ts";
-import type { ChatAppChildId, OnboardingInput } from "./setup/types.ts";
 
 /** The canonical child ids whose per-flow bookkeeping logs a principal owns. A
  *  `force_restart` begin resets all three so a fresh flow inherits no stale
@@ -241,47 +241,164 @@ function emptyView(principal_id: string): ChatAppSnapshotView {
   };
 }
 
-// ───────────────────────── onboarding event ACL schema ─────────────────────────
-// The onboarding wire's /event vocabulary is CLOSED (an unmodeled type → 400)
-// and each arm validates only payload WELL-FORMEDNESS (org_name string-ness; a
-// known cause tag). Domain rules (is the org name valid?) stay on the value
-// object.
+// ───────────────────────── closed wire-event ACL schema (ADR-050 §e.2) ─────────────────────────
+// The whole `POST /state/events` vocabulary is CLOSED: a closed
+// `z.ZodType<ChatAppWireEvent>` — an unmodeled `type` → 400 IN EVERY PHASE (no
+// phase-scoped dispatch). Each arm validates payload WELL-FORMEDNESS only
+// (org/project {id,name} string-ness; a known cause enum; a known cause tag for
+// the failure side-channel). Domain rules (is the org name valid?) stay on the
+// value objects downstream. The legacy kept members (org_form_submitted /
+// create_project_submitted / switching_project_intent) are NAMED here so they are
+// known-but-unhandled → 200 convergence (NOT 400); they no longer drive a
+// transition under the report-driven / phase-gated model.
+//
+// `ChatAppWireEvent` is the CLOSED wire union — the SSOT lives in
+// shared/ui-state-wire/wire-event.ts (ADR-050 §e). Mirrored LOCALLY here (the
+// build's node_modules resolves `@dashboard-chat/ui-state-wire` to a pre-CDO-S3
+// open-union copy); the local mirror is genuinely closed (no `{type:string}`
+// catch-all), so the `z.ZodType<...>` pin keeps the ACL closed at the type level.
+type WireIdName = { id: string; name: string };
+type ChatAppWireEvent =
+  | { type: "org_found"; payload: { org: WireIdName } }
+  | { type: "org_not_found"; payload: Record<string, never> }
+  | { type: "org_created"; payload: { org: WireIdName } }
+  | { type: "scope_resolved"; payload: { project: WireIdName } }
+  | { type: "no_projects_found"; payload: Record<string, never> }
+  | { type: "project_created"; payload: { project: WireIdName } }
+  | { type: "org_form_submitted"; payload: { org_name: string } }
+  | { type: "create_project_submitted"; payload: { org_name: string } }
+  | { type: "switching_project_intent"; payload: { new_project_id: string } }
+  | { type: "__force_failure__"; payload: { tag: string } }
+  | {
+      type: "open_deep_link";
+      payload: {
+        intent_project_id?: string;
+        intent_session_id?: string;
+        intent_resource_id?: string;
+        intent_resource_type?: string;
+      };
+    }
+  | { type: "session_begin"; payload?: { force_restart?: boolean } }
+  | {
+      type: "org_create_failed";
+      payload: {
+        cause: "org_name_taken" | "org_name_invalid" | "org_create_failed";
+        org_name?: string;
+      };
+    }
+  | { type: "project_create_failed"; payload: { cause: "project_create_failed" } }
+  | {
+      type: "scope_mismatch";
+      payload: { cause: "cross_tenant" | "project_not_found" | "access_revoked" };
+    }
+  | { type: "project_switched"; payload: { project: WireIdName } }
+  | { type: "session_clicked"; payload: { session_id: string } }
+  | { type: "new_session_clicked" }
+  | { type: "first_message_sent"; payload: { content: string } }
+  | { type: "refresh_session_list" }
+  | {
+      type: "dataset_resolved_by_agent";
+      payload: { resource_id: string; resource_type: string };
+    }
+  | {
+      type: "dataset_picked_directly";
+      payload: { resource_id: string; resource_type: string };
+    }
+  | { type: "suggestion_chip_clicked_upload" }
+  | { type: "suggestion_chip_clicked_browse_projects" };
 
 const causeTag = z.string().refine(isUnderlyingCauseTag, {
   message: "tag must be a known UnderlyingCauseTag",
 });
 
-/** The {id,name} display snapshot a client-reported org outcome carries
- *  (ADR-050 §e.1). Well-formedness only — the org's existence is the client's
- *  earned-trust assertion, never re-probed here (INV-PCO). */
-const orgSnapshot = z
-  .object({ id: z.string(), name: z.string() })
-  .passthrough();
+/** The {id,name} display snapshot a client-reported org/project outcome carries
+ *  (ADR-050 §e.1). Well-formedness only — the resource's existence is the
+ *  client's earned-trust assertion, never re-probed here (INV-PCO). */
+const idNameSnapshot = z.object({ id: z.string(), name: z.string() }).passthrough();
 
-const onboardingEventSchema = z.discriminatedUnion("type", [
-  // ── client-reported outcomes (ADR-049/050) ──
-  z.object({
-    type: z.literal("org_found"),
-    payload: z.object({ org: orgSnapshot }).passthrough(),
-  }),
-  z.object({
-    type: z.literal("org_not_found"),
-    payload: z.object({}).passthrough(),
-  }),
-  z.object({
-    type: z.literal("org_created"),
-    payload: z.object({ org: orgSnapshot }).passthrough(),
-  }),
-  // ── legacy org-form submit (retires CDO-S3) ──
-  z.object({
-    type: z.literal("org_form_submitted"),
-    payload: z.object({ org_name: z.string() }).passthrough(),
-  }),
-  z.object({
-    type: z.literal("__force_failure__"),
-    payload: z.object({ tag: causeTag }).passthrough(),
-  }),
+const orgCreateFailureCause = z.enum([
+  "org_name_taken",
+  "org_name_invalid",
+  "org_create_failed",
 ]);
+const scopeMismatchCause = z.enum([
+  "cross_tenant",
+  "project_not_found",
+  "access_revoked",
+]);
+const resourceType = z.string();
+
+/** The closed wire vocabulary the StateProxy may POST. Pinned to the shared
+ *  `ChatAppWireEvent` union (ADR-050 §e.2) — every closed-union member has an arm
+ *  here; an unmodeled `type` fails `safeParse` → 400 in every phase. */
+const chatAppWireEventSchema = z.discriminatedUnion(
+  "type",
+  [
+    // ── client-reported onboarding outcomes ──
+    z.object({ type: z.literal("org_found"), payload: z.object({ org: idNameSnapshot }).passthrough() }),
+    z.object({ type: z.literal("org_not_found"), payload: z.object({}).passthrough() }),
+    z.object({ type: z.literal("org_created"), payload: z.object({ org: idNameSnapshot }).passthrough() }),
+    // ── client-reported project-context outcomes ──
+    z.object({ type: z.literal("scope_resolved"), payload: z.object({ project: idNameSnapshot }).passthrough() }),
+    z.object({ type: z.literal("no_projects_found"), payload: z.object({}).passthrough() }),
+    z.object({ type: z.literal("project_created"), payload: z.object({ project: idNameSnapshot }).passthrough() }),
+    // ── legacy kept members (known-but-unhandled → 200; retire in a later slice) ──
+    z.object({ type: z.literal("org_form_submitted"), payload: z.object({ org_name: z.string() }).passthrough() }),
+    z.object({ type: z.literal("create_project_submitted"), payload: z.object({ org_name: z.string() }).passthrough() }),
+    z.object({ type: z.literal("switching_project_intent"), payload: z.object({ new_project_id: z.string() }).passthrough() }),
+    // ── failure-simulation side-channel (gate-authorized) ──
+    z.object({ type: z.literal("__force_failure__"), payload: z.object({ tag: causeTag }).passthrough() }),
+    // ── deep link + restart (route-collapsed events) ──
+    z.object({
+      type: z.literal("open_deep_link"),
+      payload: z
+        .object({
+          intent_project_id: z.string().optional(),
+          intent_session_id: z.string().optional(),
+          intent_resource_id: z.string().optional(),
+          intent_resource_type: z.string().optional(),
+        })
+        .passthrough(),
+    }),
+    z.object({
+      type: z.literal("session_begin"),
+      payload: z.object({ force_restart: z.boolean().optional() }).passthrough().optional(),
+    }),
+    // ── client-reported failure / outcome members ──
+    z.object({
+      type: z.literal("org_create_failed"),
+      payload: z.object({ cause: orgCreateFailureCause, org_name: z.string().optional() }).passthrough(),
+    }),
+    z.object({
+      type: z.literal("project_create_failed"),
+      payload: z.object({ cause: z.literal("project_create_failed") }).passthrough(),
+    }),
+    z.object({ type: z.literal("scope_mismatch"), payload: z.object({ cause: scopeMismatchCause }).passthrough() }),
+    z.object({ type: z.literal("project_switched"), payload: z.object({ project: idNameSnapshot }).passthrough() }),
+    // ── surviving session-chat UI intents ──
+    z.object({ type: z.literal("session_clicked"), payload: z.object({ session_id: z.string() }).passthrough() }),
+    z.object({ type: z.literal("new_session_clicked") }),
+    z.object({ type: z.literal("first_message_sent"), payload: z.object({ content: z.string() }).passthrough() }),
+    z.object({ type: z.literal("refresh_session_list") }),
+    z.object({
+      type: z.literal("dataset_resolved_by_agent"),
+      payload: z.object({ resource_id: z.string(), resource_type: resourceType }).passthrough(),
+    }),
+    z.object({
+      type: z.literal("dataset_picked_directly"),
+      payload: z.object({ resource_id: z.string(), resource_type: resourceType }).passthrough(),
+    }),
+    z.object({ type: z.literal("suggestion_chip_clicked_upload") }),
+    z.object({ type: z.literal("suggestion_chip_clicked_browse_projects") }),
+  ],
+);
+
+// Compile-time PIN: the parsed schema output must be assignable to the shared
+// closed union (ADR-050 §e.2). This `satisfies`-style assignment fails to compile
+// if an arm drifts from `ChatAppWireEvent`, keeping the ACL closed against the SSOT.
+const _wireEventSchemaPin: z.ZodType<ChatAppWireEvent> =
+  chatAppWireEventSchema as unknown as z.ZodType<ChatAppWireEvent>;
+void _wireEventSchemaPin;
 
 // ═════════════════════════════ the /state actor surface (ADR-046) ═════════════════════════════
 //
@@ -476,26 +593,23 @@ export function buildStateRouter(runtime: ChatAppRuntime): Hono {
       return stateDocumentResponse(c, runtime, principal_id);
     }
 
-    // Phase-dispatched onboarding ACL (Decision 3): while onboarding is the active
-    // region, the closed onboarding vocabulary is enforced (unmodeled type → 400);
-    // otherwise the event forwards verbatim to the active child.
-    const phase = derivePhase(viewOf(actor));
-    let evType: string;
-    let evPayload: Record<string, unknown>;
-    if (phase === "onboarding") {
-      const parsed = onboardingEventSchema.safeParse(rawBody);
-      if (!parsed.success) {
-        return c.json(
-          { error: "invalid_request", issues: parsed.error.issues },
-          400,
-        );
-      }
-      evType = parsed.data.type;
-      evPayload = parsed.data.payload;
-    } else {
-      evType = type;
-      evPayload = body.payload ?? {};
+    // Closed wire-event ACL (ADR-050 §e.2): EVERY non-session_begin POST is
+    // validated against the closed `ChatAppWireEvent` schema IN EVERY PHASE — an
+    // unmodeled `type` → 400 regardless of which child is active (no phase-scoped
+    // dispatch). A known-but-out-of-phase event passes the ACL and forwards
+    // verbatim; the parent's phase-gated handlers DROP it if its child is not
+    // alive (no transition, process stays alive — the crash class is
+    // unrepresentable). Legacy kept members converge 200 (known, unhandled).
+    const parsed = chatAppWireEventSchema.safeParse(rawBody);
+    if (!parsed.success) {
+      return c.json(
+        { error: "invalid_request", issues: parsed.error.issues },
+        400,
+      );
     }
+    const evType = parsed.data.type;
+    const evPayload =
+      (parsed.data as { payload?: Record<string, unknown> }).payload ?? {};
 
     runtime.logTransition({
       event: "chat_app.event_received",
@@ -600,23 +714,19 @@ export function buildStateRouter(runtime: ChatAppRuntime): Hono {
   return router;
 }
 
-/** Forward a raw domain event to the ChatApp actor. `switching_project_intent`
- *  is the project SWITCH — it routes via the parent's PROJECT_SWITCH so it reaches
- *  project-context even when session-chat is the active child; everything else is
- *  a `child_event` the parent forwards to the active child verbatim. */
+/** Forward a validated wire event to the ChatApp actor RAW: `{ type, ...payload }`
+ *  (CDO-S3 / ADR-049 §4). The parent's phase-gated handlers route it to the live
+ *  child verbatim — there is no `child_event` envelope and no
+ *  `switching_project_intent → PROJECT_SWITCH` translation (the switch is now an
+ *  ordinary project-context vocabulary member, `project_switched`, routed on
+ *  `engaged`). A known-but-out-of-phase event has no handler on the current state
+ *  and is DROPPED by XState (the settled-child crash class is unrepresentable). */
 function forwardToActor(
   actor: AnyActorRef,
   type: string,
   payload: Record<string, unknown>,
 ): void {
-  if (type === "switching_project_intent") {
-    actor.send({
-      type: "PROJECT_SWITCH",
-      new_project_id: String(payload.new_project_id ?? ""),
-    });
-    return;
-  }
-  actor.send({ type: "child_event", child_event: { type, payload } });
+  actor.send({ type, ...payload } as Parameters<AnyActorRef["send"]>[0]);
 }
 
 /** Extract the forwarded Bearer (L4) from the Authorization header; "" when

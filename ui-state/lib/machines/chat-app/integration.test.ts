@@ -36,7 +36,7 @@ import type {
   SessionSummary,
 } from "../session-chat/index.ts";
 import { createChatApp } from "./index.ts";
-import type { ChatUserIntent,OnboardingInput } from "./setup/types.ts";
+import type { ChatUserIntent, OnboardingInput } from "./setup/types.ts";
 
 // ───────────────────────────── fixtures ─────────────────────────────
 
@@ -145,8 +145,11 @@ function childContext<T>(actor: ChatActor, id: string): T | undefined {
   return snap?.context;
 }
 
+/** Drive a session-phase UI intent RAW (CDO-S3 / ADR-049 §4 phase-gated
+ *  routing): the parent forwards `{ type, ...fields }` verbatim to the live
+ *  session-chat child — no `user_intent` envelope. */
 function userIntent(actor: ChatActor, intent: ChatUserIntent) {
-  actor.send({ type: "user_intent", intent });
+  actor.send(intent);
 }
 
 /** Poll the actor until `pred` holds (the children settle on async microtasks). */
@@ -180,25 +183,19 @@ async function arriveAtChat(sessions: SessionSummary[] = [session("s1")]) {
   const actor = createActor(createChatApp(makeDeps(rec, sessions)), {
     input: makeInput(),
   }).start();
-  // Client-reported model: the onboarding child settles in awaiting_org_report
-  // on start. Report the returning user's org THROUGH THE PARENT exactly as the
-  // HTTP transport does — the parent's forwardChildEventToActiveChild spreads
-  // `payload` to the event top-level and sendTo's the active child, so onboarding
-  // receives { type:"org_found", org:{id,name} } → ready → parent advances to
+  // Client-reported model + phase-gated routing (CDO-S3 / ADR-049 §4): the
+  // onboarding child settles in awaiting_org_report on start. Report the
+  // returning user's org THROUGH THE PARENT exactly as the HTTP transport does —
+  // the parent's login.on forwards { type:"org_found", org:{id,name} } VERBATIM
+  // to the live onboarding child → ready → parent advances to
   // engaged.project_context.
-  actor.send({
-    type: "child_event",
-    child_event: { type: "org_found", payload: { org: ORG } },
-  });
+  actor.send({ type: "org_found", org: ORG });
   // The project-context child now waits in awaiting_scope_report (no server-side
-  // resolve). Report the resolved scope THROUGH THE PARENT — project-context
-  // receives { type:"scope_resolved", project:{id,name} } → project_selected →
+  // resolve). Report the resolved scope THROUGH THE PARENT — engaged.on forwards
+  // { type:"scope_resolved", project:{id,name} } verbatim → project_selected →
   // parent advances to engaged.chat → session-chat loads.
   await waitFor(actor, (a) => childState(a, "project-context") === "awaiting_scope_report");
-  actor.send({
-    type: "child_event",
-    child_event: { type: "scope_resolved", payload: { project: PROJECT_A } },
-  });
+  actor.send({ type: "scope_resolved", project: PROJECT_A });
   await waitFor(actor, (a) => childState(a, "session-chat") === "session_list_loaded");
   return { actor, rec };
 }
@@ -247,36 +244,53 @@ describe("ChatApp Phase 2 — happy forward cycle (login → project → chat)",
 
 // ─────────────────────────── scenario 2 ───────────────────────────
 
-describe("ChatApp Phase 2 — project switch while in chat", () => {
-  it("re-drives project-context and re-forwards project_ready in place for a NEW project", async () => {
+describe("ChatApp Phase 2 — report-only project switch while in chat", () => {
+  it("re-lands project-context and re-forwards project_ready in place for a NEW project", async () => {
     const { actor, rec } = await arriveAtChat();
     expect(rec.loadCalls).toEqual(["proj-A"]);
 
-    actor.send({ type: "PROJECT_SWITCH", new_project_id: "proj-B" });
+    // REPORT-ONLY switch (CDO-S3 / ADR-049 §4): the client reports the new
+    // project it probed. engaged.on forwards `project_switched` verbatim to
+    // project-context (alive even while session-chat is the active sub-child) →
+    // project_selected re-enters on proj-B → shouldSwitchProject re-forwards
+    // project_ready → session-chat reloads for proj-B.
+    actor.send({
+      type: "project_switched",
+      project: { id: "proj-B", name: "Project B" },
+    });
 
-    // project-context ran its switch path; session-chat reloaded for proj-B.
     await waitFor(actor, (a) => childContext<SessionChatMachineContext>(a, "session-chat")?.project.id === "proj-B");
     expect(lifecycle(actor)).toEqual({ engaged: "chat" }); // re-forward in place
-    expect(rec.switchCalls).toEqual(["proj-B"]);
     expect(childContext<ProjectContextMachineContext>(actor, "project-context")!.project.id).toBe("proj-B");
     expect(rec.loadCalls).toEqual(["proj-A", "proj-B"]);
     expect(lastForwardedProject(actor)).toBe("proj-B");
   });
 
-  it("is idempotent on a same-id switch (no re-forward, no session-chat reload)", async () => {
+  it("is idempotent on a same-id switch report (no re-forward, no session-chat reload)", async () => {
     const { actor, rec } = await arriveAtChat();
 
-    // First switch to proj-B reloads session-chat once.
-    actor.send({ type: "PROJECT_SWITCH", new_project_id: "proj-B" });
+    // First switch report to proj-B reloads session-chat once.
+    actor.send({
+      type: "project_switched",
+      project: { id: "proj-B", name: "Project B" },
+    });
     await waitFor(actor, (a) => childContext<SessionChatMachineContext>(a, "session-chat")?.project.id === "proj-B");
     expect(rec.loadCalls).toEqual(["proj-A", "proj-B"]);
 
-    // A redundant switch to the SAME project: project-context still runs its
-    // switch (settling on proj-B again), but the parent's guard blocks the
-    // re-forward, so session-chat does NOT reload.
-    actor.send({ type: "PROJECT_SWITCH", new_project_id: "proj-B" });
-    await waitFor(actor, () => rec.switchCalls.length === 2);
-    expect(rec.switchCalls).toEqual(["proj-B", "proj-B"]);
+    // A redundant switch report to the SAME project: project-context re-enters
+    // project_selected (settling on proj-B again), but the parent's
+    // shouldSwitchProject guard sees the unchanged id and blocks the re-forward,
+    // so session-chat does NOT reload.
+    actor.send({
+      type: "project_switched",
+      project: { id: "proj-B", name: "Project B" },
+    });
+    await waitFor(
+      actor,
+      (a) =>
+        (childContext<ProjectContextMachineContext>(a, "project-context")!
+          .scope_reconciled_count ?? 0) === 2,
+    );
     expect(rec.loadCalls).toEqual(["proj-A", "proj-B"]); // unchanged — no reload
     expect(lastForwardedProject(actor)).toBe("proj-B");
   });

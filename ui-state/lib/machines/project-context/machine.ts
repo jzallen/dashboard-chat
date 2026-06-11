@@ -48,9 +48,9 @@ import {
   assignResolvedScope,
   assignSwitchedProject,
   captureDeepLinkWish,
-  captureSwitchTarget,
   clearScopeMismatch,
   tagCause,
+  tagScopeMismatchCause,
 } from "./setup/actions.ts";
 import { buildActors, type ProjectContextMachineDeps } from "./setup/actors.ts";
 import { guards } from "./setup/guards.ts";
@@ -74,10 +74,10 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
       assignAuthReady: assign(assignAuthReady),
       assignResolvedScope: assign(assignResolvedScope),
       assignCreatedProject: assign(assignCreatedProject),
-      captureSwitchTarget: assign(captureSwitchTarget),
       assignSwitchedProject: assign(assignSwitchedProject),
       clearScopeMismatch: assign(clearScopeMismatch),
       tagCause: assign(tagCause),
+      tagScopeMismatchCause: assign(tagScopeMismatchCause),
     },
   }).createMachine({
     id: "project-context",
@@ -154,6 +154,14 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
               params: { tag: "project_create_failed" },
             },
           },
+          // A deep-link re-probe that the client classified as a tenant mismatch
+          // (cross_tenant / project_not_found / access_revoked) lands the terminal
+          // directly from the awaiting state (CDO-S3 / ADR-049 §4). The cause is
+          // the client-reported one.
+          scope_mismatch: {
+            target: "scope_mismatch_terminal",
+            actions: "tagScopeMismatchCause",
+          },
           // Note: open_deep_link is handled at the machine root level so it
           // can arrive from any live state (no_projects, project_selected, …).
         },
@@ -184,50 +192,23 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
         // session-chat (idempotent on same project_id; invalidates
         // session_id+resource_* on different project_id).
         //
-        // `switching_project_intent` moves the machine into
-        // `switching_project`. The IC-J002-4 invalidation contract
-        // (session_id + resource_* cleared BEFORE the new project's
-        // loading_session_list fires) is enforced via the
-        // `switching_project_started` event handler in projection.ts;
-        // session-chat reacts by zeroing its own context fields.
+        // REPORT-ONLY switch (CDO-S3 / ADR-049 §4 / ADR-050 §f): the client
+        // probes the backend for the target project and REPORTS the outcome —
+        // the machine no longer invokes a server-side switch.
         on: {
-          switching_project_intent: {
-            target: "switching_project",
-            actions: "captureSwitchTarget",
+          // The target was reachable: re-land its {id,name} (re-enter so the
+          // parent's shouldSwitchProject onSnapshot re-fires on the changed id
+          // and re-forwards project_ready in place).
+          project_switched: {
+            target: "project_selected",
+            reenter: true,
+            actions: "assignSwitchedProject",
           },
-        },
-      },
-      switching_project: {
-        // Entry — orchestrator-side emission of `switching_project_started`
-        // happens in orchestrator.ts (state-watcher branch). The event
-        // payload carries the target project_id so the projection layer
-        // can write the invalidation atomically.
-        invoke: {
-          src: "switchProject",
-          input: ({ context }) => ({
-            new_project_id: context.deeplink_project_id ?? "",
-            request_id: context.request_id,
-            principal_id: context.principal_id,
-          }),
-          onDone: [
-            {
-              guard: "isAccessRevoked",
-              target: "scope_mismatch_terminal",
-              actions: { type: "tagCause", params: { tag: "access_revoked" } },
-            },
-            {
-              guard: "isSwitchProjectNotFound",
-              target: "scope_mismatch_terminal",
-              actions: { type: "tagCause", params: { tag: "project_not_found" } },
-            },
-            {
-              target: "project_selected",
-              actions: "assignSwitchedProject",
-            },
-          ],
-          onError: {
-            target: "error_recoverable",
-            actions: { type: "tagCause", params: { tag: "transient" } },
+          // The target was cross-tenant / not-found / access-revoked: land the
+          // terminal with the client-reported cause.
+          scope_mismatch: {
+            target: "scope_mismatch_terminal",
+            actions: "tagScopeMismatchCause",
           },
         },
       },

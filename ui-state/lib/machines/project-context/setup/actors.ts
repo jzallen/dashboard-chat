@@ -72,9 +72,11 @@ export type SwitchProjectActor = ReturnType<
 >;
 
 export interface ProjectContextMachineDeps {
-  /** Atomic project switching (US-207). The ONLY invoke the report-driven
-   *  machine retains (CDO-S1). When omitted, the `switching_project_intent`
-   *  event drives a fallback actor that throws a named diagnostic. */
+  /** RETIRED in CDO-S3 (ADR-049 §4): the project switch is REPORT-ONLY — the
+   *  client probes the backend and reports `project_switched` / `scope_mismatch`,
+   *  so the machine no longer invokes a server-side switch. Kept OPTIONAL so the
+   *  production composition root + legacy harnesses may still pass it harmlessly
+   *  until their wiring is pruned; it is no longer read. */
   switchProject?: SwitchProjectActor;
   /** RETIRED in CDO-S1 (ADR-049 §3): the machine no longer invokes a
    *  server-side initial-scope resolver or a create-project actor — scope is
@@ -88,24 +90,16 @@ export interface ProjectContextMachineDeps {
 /**
  * Build the machine's actor map from the injected `deps`. machine.ts threads the
  * return straight into `setup({ actors })` so the statechart only names actors,
- * never wires them. After the CDO-S1 report-driven realignment the only invoked
- * actor is `switchProject` (US-207); a `fromPromise` fallback stands in when it
- * is absent so a never-wired switch surfaces a named diagnostic rather than
- * silently succeeding.
+ * never wires them. After the CDO-S3 report-only realignment (ADR-049 §4) the
+ * machine invokes NO actors at all: scope is client-reported (no
+ * resolveInitialScope) and the project switch is a client `project_switched` /
+ * `scope_mismatch` REPORT (no switchProject invoke). The deps fields are kept
+ * OPTIONAL on the contract so the production composition root + legacy harnesses
+ * may still pass them harmlessly until their wiring is pruned; they are no longer
+ * read here. The returned map is empty.
  */
-export function buildActors(deps: ProjectContextMachineDeps) {
-  return {
-    // fromPromise fallback when deps.switchProject is absent. The fallback
-    // throws so test setups that never wired it surface a named diagnostic
-    // rather than silently succeeding.
-    switchProject:
-      deps.switchProject ??
-      fromPromise<SwitchProjectOutput, SwitchProjectInput>(async () => {
-        throw new Error(
-          "switchProject actor not wired — MR-4 deps.switchProject is required",
-        );
-      }),
-  };
+export function buildActors(_deps: ProjectContextMachineDeps) {
+  return {} as Record<string, never>;
 }
 
 /**

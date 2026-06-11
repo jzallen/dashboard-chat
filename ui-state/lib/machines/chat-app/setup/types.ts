@@ -31,22 +31,37 @@
 //   docs/decisions/adr-016-*.md  — auth-proxy owns the token lifecycle
 
 import type { Config } from "../../../../config.ts";
+import type { ResourceType } from "../../../domain/active-scope.ts";
 import type {
   OnboardingDeps,
   OnboardingInput,
 } from "../../onboarding/index.ts";
+
+// Failure-class cause enums — the wire-contract SSOT lives in
+// shared/ui-state-wire/wire-event.ts (ADR-050 §c). Mirrored LOCALLY here as
+// string-literal unions with identical members (equal-member literal unions are
+// mutually assignable) because the build's node_modules resolves
+// `@dashboard-chat/ui-state-wire` to a pre-CDO-S3 copy that lacks these enums;
+// the local mirror keeps ui-state self-consistent without a cross-package import.
+export type OrgCreateFailureCause =
+  | "org_name_taken"
+  | "org_name_invalid"
+  | "org_create_failed";
+export type ProjectCreateFailureCause = "project_create_failed";
+export type ScopeMismatchCause =
+  | "cross_tenant"
+  | "project_not_found"
+  | "access_revoked";
 
 // Re-export so external callers of chat-app can name the parent's input by
 // importing from this directory; the canonical declaration lives in
 // onboarding.
 export type { OnboardingInput };
 
-/** The lifecycle phases observable to a consumer, plus the terminal. */
-export type ChatAppLifecycle =
-  | "login"
-  | "project_context"
-  | "chat"
-  | "user_rejected";
+/** The lifecycle phases observable to a consumer. The terminal `user_rejected`
+ *  state retired in CDO-S3 (ADR-049 §4): the client-reported onboarding model has
+ *  no server re-verify, so there is no parent-level rejection phase. */
+export type ChatAppLifecycle = "login" | "project_context" | "chat";
 
 /** Stable child identities. These are the parent's `invoke` ids — the parent's
  *  own observability + sendTo handles (resolved via `snapshot.children[id]`),
@@ -95,8 +110,11 @@ export interface ProjectHandoff {
  */
 export interface OnboardingResult {
   /** The onboarding child's terminal state at hand-off → the projection `state`
-   *  the login-and-org-setup view reports once the child is stopped. */
-  state: "ready" | "session_rejected";
+   *  the login-and-org-setup view reports once the child is stopped. The
+   *  `session_rejected` outcome retired in CDO-S3 (ADR-049 §4): under the
+   *  client-reported model the parent only retains the `ready` outcome (the sole
+   *  onboarding → engaged advance). */
+  state: "ready";
   user: {
     email: string | null;
     display_name: string | null;
@@ -109,8 +127,9 @@ export interface OnboardingResult {
 
 // ─────────────────────── Events the parent FORWARDS ───────────────────────
 
-/** A user intent the parent routes to whichever child is active for the current
- *  phase. */
+/** A session-chat UI intent the parent routes to the session-chat child while
+ *  `engaged.chat`. A structural subset of SessionChatEvent — the chat-phase
+ *  vocabulary surfaced for callers (tests) that drive the parent. */
 export type ChatUserIntent =
   | { type: "session_clicked"; session_id: string }
   | { type: "new_session_clicked" }
@@ -118,7 +137,12 @@ export type ChatUserIntent =
 
 /** The full set of events the parent ever `sendTo`s a child. The child
  *  placeholders (./actors.ts) and the test fakes both accept this union so the
- *  parent's static `sendTo` targets type-check. */
+ *  parent's static `sendTo` targets type-check. Carries the two parent-staged
+ *  hand-offs (auth_ready / project_ready) PLUS the session-phase UI intents the
+ *  parent forwards verbatim. The phase-gated raw vocabulary the parent now routes
+ *  (org_*, scope_*, project_*, session_*) is the ChatAppEvent union below — those
+ *  members ARE the events forwarded, so the children accept them through their own
+ *  event unions. */
 export type ChatAppChildEvent =
   | { type: "auth_ready"; org_id: string; user: { first_name: string } }
   | {
@@ -128,7 +152,6 @@ export type ChatAppChildEvent =
       project_name: string;
       request_id: string;
     }
-  | { type: "switching_project_intent"; new_project_id: string }
   | ChatUserIntent;
 
 // ──────────────────────────── Parent context ────────────────────────────
@@ -167,10 +190,6 @@ export interface ChatAppContext {
    *  Mirrors `config`'s nullable + fail-fast pattern. Null in stubbed tests. */
   deps: OnboardingDeps | null;
 
-  /** Which child currently receives forwarded user intents — re-pointed on each
-   *  lifecycle phase entry. The single intent router needs this because
-   *  forwarding is phase-scoped: onboarding while onboarding, etc. */
-  active_child_id: ChatAppChildId;
   /** Captured onboarding hand-off; forwarded as `auth_ready` on entry to the
    *  project-context-owning state. Null until onboarding reaches `ready`. */
   auth_handoff: AuthHandoff | null;
@@ -193,23 +212,49 @@ export interface ChatAppContext {
 
 // ───────────────────────────── Parent events ─────────────────────────────
 
+// PHASE-GATED RAW VOCABULARY (CDO-S3 / ADR-049 §4 — Option 1). The parent no
+// longer carries an open-ended `child_event` envelope nor a `user_intent` /
+// `PROJECT_SWITCH` indirection. Instead it declares the FINITE vocabulary it
+// routes, each member spelled as the child reads it (top-level fields), accepted
+// ONLY on the lifecycle state whose child is alive:
+//   - login.on        → forwardToOnboarding (onboarding vocabulary)
+//   - engaged.on      → forwardToProjectContext (project-context vocabulary;
+//                       reachable from engaged.chat too — a switch/scope report)
+//   - engaged.chat.on → forwardToSessionChat (session vocabulary)
+// An out-of-phase KNOWN event has no handler on the current state, so XState
+// DROPS it (no sendTo runs → the settled-child crash class is unrepresentable).
+// `ResourceType` types the dataset-pick session events exactly as the child reads.
 export type ChatAppEvent =
-  // A user intent to route to the active child.
-  | { type: "user_intent"; intent: ChatUserIntent }
-  // Atomic project switch (forwarded to project-context as
-  // switching_project_intent). Meaningful while engaged (project_context/chat).
-  | { type: "PROJECT_SWITCH"; new_project_id: string }
-  // A raw domain event to forward verbatim to whichever child owns the current
-  // phase. This is the HTTP `/event` transport seam: the live app validates the
-  // inbound wire event at its boundary, then hands the `{type, payload}` to the
-  // parent, which forwards it to `active_child_id` (onboarding while onboarding,
-  // project-context while project_context, session-chat while chat). The parent
-  // stays the sole router; the child's own event union decides whether the event
-  // is handled or ignored (XState v5 ignores unknowns).
+  // ── onboarding vocabulary (routed on `login`) ──
+  | { type: "org_found"; org: { id: string; name: string } }
+  | { type: "org_not_found" }
+  | { type: "org_created"; org: { id: string; name: string } }
+  | { type: "org_create_failed"; cause: OrgCreateFailureCause; org_name?: string }
+  | { type: "__force_failure__"; tag: string }
+  // ── project-context vocabulary (routed on `engaged`, incl. from chat) ──
+  | { type: "scope_resolved"; project: { id: string; name: string } }
+  | { type: "no_projects_found" }
+  | { type: "project_created"; project: { id: string; name: string } }
+  | { type: "project_create_failed"; cause: ProjectCreateFailureCause }
+  | { type: "scope_mismatch"; cause: ScopeMismatchCause }
+  | { type: "project_switched"; project: { id: string; name: string } }
   | {
-      type: "child_event";
-      child_event: { type: string; payload?: Record<string, unknown> };
-    };
+      type: "open_deep_link";
+      intent_project_id?: string;
+      intent_session_id?: string;
+      intent_resource_id?: string;
+      intent_resource_type?: ResourceType;
+    }
+  | { type: "back_to_projects_clicked" }
+  // ── session vocabulary (routed on `engaged.chat`) ──
+  | { type: "session_clicked"; session_id: string }
+  | { type: "new_session_clicked" }
+  | { type: "first_message_sent"; content: string }
+  | { type: "refresh_session_list" }
+  | { type: "dataset_resolved_by_agent"; resource_id: string; resource_type: ResourceType }
+  | { type: "dataset_picked_directly"; resource_id: string; resource_type: ResourceType }
+  | { type: "suggestion_chip_clicked_upload" }
+  | { type: "suggestion_chip_clicked_browse_projects" };
 
 // ─────────────────── Per-child machine-input contracts ───────────────────
 // Each child slot pins its OWN input shape — what the parent's `invoke.input`
