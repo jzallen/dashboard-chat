@@ -10,6 +10,19 @@ org-onboarding acceptance rework stands); they constrain DELIVER and adjacent SS
 
 ## UPSTREAM-2 — HIGH — AR-7 field pruning breaks the sibling J-002 acceptance suite
 
+> **RESOLVED (user ruling, 2026-06-11): remove the misaligned tests.** Fields exist
+> for the production application, not for tests; this is an under-development
+> system and tests asserting the superseded server-actor contract are deleted, not
+> preserved. Applied in this MR: `test_us202_returning_user_lands_in_last_used_project.py`
+> deleted (wholly about document-visible last-used resolution);
+> `test_transient_create_project_failure_lands_in_error_recoverable_with_composer_preserved`
+> removed from `test_us201_…` (asserted `pending_project_name` and drove the retired
+> `create_project_submitted`/`creating_project` path); the `mr_1` marker description
+> in the suite's `pyproject.toml` drops US-202. **The AR-7 gate now PASSES** — no
+> harness reads the four pruned fields — and the CDO-S3 pruning is unblocked.
+> If the last-used-resolution UX is wanted later, J-002 redesigns it on the
+> client-driven model (its policy lives client-side per ADR-049/050).
+
 **Severity:** HIGH (blocks the CDO-S3 `ReducedContext` pruning at DELIVER).
 
 **What.** AR-7 / ADR-050 §e.3 deletes four `ReducedContext` fields and retires

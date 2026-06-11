@@ -24,7 +24,7 @@ asyncio_mode = "auto"
 markers = [
     "real_io: scenario uses real adapters (the local compose stack + real HTTP + real backend + real ui-state + real Redis)",
     "walking_skeleton: the single end-to-end scenario gating MR-1 GREEN",
-    "mr_1: MR-1 — Slice 1 (substrate + walking skeleton; US-201, US-202, US-204)",
+    "mr_1: MR-1 — Slice 1 (substrate + walking skeleton; US-201, US-204)",
     "mr_2: MR-2 — Slice 2 (session list + resume; US-203, US-205)",
     "mr_3: MR-3 — Slice 3 (new-session lifecycle; US-206)",
     "mr_4: MR-4 — Slice 4 (project switching + agent contract; US-207, US-208)",

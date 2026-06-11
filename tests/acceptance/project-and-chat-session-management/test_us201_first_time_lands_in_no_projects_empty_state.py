@@ -290,50 +290,6 @@ def test_empty_project_name_keeps_machine_in_no_projects(
     assert validation_err.get("kind") == "empty"
 
 
-@pytest.mark.error_path
-def test_transient_create_project_failure_lands_in_error_recoverable_with_composer_preserved(
-    requires_compose_stack: None,
-    clean_projects_for_dev_user: None,
-    driver: J002Driver,
-) -> None:
-    """A transient create-project failure transitions to `error_recoverable`.
-
-    The retry path re-enters `creating_project` with the same correlation
-    reference; the composer text is preserved across the retry boundary
-    (context.pending_project_name).
-    """
-    # Arrange — spawn J-002 → resolves to no_projects.
-    _spawn_j002(driver)
-    _wait_for_j002_state(driver, target_state="no_projects")
-
-    # Act — force a transient failure via the header-gated knob.
-    # The machine carries a __force_failure__ event that lands
-    # error_recoverable with the supplied cause tag; this lets us assert
-    # the recoverable-error behaviour without injecting a real backend 5xx.
-    project_name = f"Q4 Analytics {uuid.uuid4().hex[:8]}"
-    # Set pending_project_name first by submitting the create-project event,
-    # then force-fail the invocation.
-    forced = driver.post_state_event(
-        event_type="create_project_submitted",
-        payload={"org_name": project_name},
-        base=driver.auth_proxy_url,
-        extra_headers={"X-Force-Create-Project-Failure": "transient"},
-    )
-    assert forced.status == 200, (
-        f"forced-failure event expected 200; got {forced.status} "
-        f"body={forced.body[:300]!r}"
-    )
-
-    # Wait for the failure to settle the projection in error_recoverable.
-    settled = _wait_for_j002_state(driver, target_state="error_recoverable")
-    body = json.loads(settled.body)
-    pc = body["regions"]["projectContext"]
-    assert pc["state"] == "error_recoverable"
-    assert pc["context"].get("underlying_cause_tag") == "transient"
-    # Composer text preserved.
-    assert pc["context"].get("pending_project_name") == project_name
-
-
 @pytest.mark.harness
 @pytest.mark.needs_ts_harness
 def test_ts_harness_drives_no_projects_path_end_to_end(
