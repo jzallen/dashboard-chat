@@ -17,5 +17,5 @@
 // lives under ./machine.ts + ./setup/. It is deliberately NOT re-exported here.
 
 export { createOnboardingMachine } from "./machine.ts";
+export type { OnboardingDeps,RequestClient } from "./setup/actors.ts";
 export type { OnboardingInput } from "./setup/types.ts";
-export type { RequestClient, OnboardingDeps } from "./setup/actors.ts";

@@ -6,8 +6,10 @@
 //   - GET  /state          → the whole-actor ChatAppStateDocument (.getSnapshot)
 //   - POST /state/events    → apply ONE event, return the new document (.send)
 //   - GET  /state/stream    → SSE; the document pushed on every change (.subscribe)
-// Mocks are ONLY at the child port boundaries (the onboarding child's `fetch`;
-// `fromPromise` fakes for project-context + session-chat resolvers).
+// Zero egress (CDO-S5): every child is report-driven and invokes NO server-side
+// actor, so there are NO port mocks left — the begin envelope carries no
+// `config`/`deps`, and both `ChatAppDeps` surfaces are empty. The cascade reaches
+// chat purely on client-reported outcome events posted over `/state/events`.
 //
 // Coverage: the /state surface shape + bootstrap (Decision 3a) + stream, PLUS the
 // onboarding-behavior, failure-simulation authorization gate, request-id minting,
@@ -16,12 +18,12 @@
 // the log fold is pinned separately in derive-state-document.contract.test.ts).
 //
 // References:
+//   docs/decisions/adr-048-*.md  — ui-state zero network egress
 //   docs/decisions/adr-046-*.md  — StateProxy actor surface; Decision 3/3a; §9 MR-7
 //   docs/decisions/adr-035-*.md  — failure-simulation authorization gate
 
 import { probe } from "@dashboard-chat/shared-failure-simulation";
 import { afterEach, describe, expect, it } from "vitest";
-import { fromPromise } from "xstate";
 
 import { buildChatAppApp } from "../../../index.ts";
 import { createNoopChatAppSnapshotStore } from "../../persistence/chatapp-snapshot-store.ts";
@@ -29,43 +31,17 @@ import {
   createNoopFlowEventLog,
   type FlowEventLog,
 } from "../../persistence/redis.ts";
-import { makeMockFetch, makeTestConfig } from "../../testing/test-config.ts";
-import type { RequestClient } from "../onboarding/index.ts";
 import type { ChatAppDeps } from "./index.ts";
 import type { ChatAppStateDocument } from "./projection/derive-state-document.ts";
 
-const MAYA_PROFILE = { email: "maya@acme", name: "Maya Chen" };
 const PROJECT_A = { id: "proj-A", name: "Project A" };
 
-/** Returning user — backend /api/orgs/me reports an org (cascade reaches chat). */
-function returningFetch(
-  org: { id: string; name: string } = { id: "org-1", name: "Acme Data" },
-): RequestClient {
-  return makeMockFetch({ profile: MAYA_PROFILE, existingOrg: org });
-}
-
-/** New user — re-verify OK, backend 404 (no org), create OK (org id "org-1"). */
-function okFetch(): RequestClient {
-  return makeMockFetch({ profile: MAYA_PROFILE, orgId: "org-1" });
-}
-
-// (rejectingFetch removed — the re-verify/session_rejected path it drove retired under the client-reported model; CDO-S3.)
-
+/** Both child deps surfaces are EMPTY under the zero-egress report-driven model. */
 function fakeChatAppDeps(): ChatAppDeps {
   return {
-    projectContext: {
-      resolveInitialScope: fromPromise(async () => ({ project: PROJECT_A })),
-      createProject: fromPromise(async () => PROJECT_A),
-      switchProject: fromPromise(async ({ input }) => ({
-        project: {
-          id: (input as { new_project_id: string }).new_project_id,
-          name: "Switched",
-        },
-      })),
-    },
-    // Report-driven session-chat (ADR-050 §e.5 / DR-8) invokes no actors.
+    projectContext: {},
     sessionChat: {},
-  } as unknown as ChatAppDeps;
+  };
 }
 
 interface Scenario {
@@ -73,14 +49,12 @@ interface Scenario {
   eventLog: FlowEventLog;
 }
 
-function buildScenario(opts: { requestClient: RequestClient }): Scenario {
+function buildScenario(): Scenario {
   const eventLog = createNoopFlowEventLog();
   const app = buildChatAppApp({
     eventLog,
     snapshotStore: createNoopChatAppSnapshotStore(),
     chatAppDeps: fakeChatAppDeps(),
-    config: makeTestConfig(),
-    requestClient: opts.requestClient,
     logTransition: () => undefined,
   });
   return { app, eventLog };
@@ -96,8 +70,6 @@ function buildSpyScenario(): {
     eventLog: createNoopFlowEventLog(),
     snapshotStore: createNoopChatAppSnapshotStore(),
     chatAppDeps: fakeChatAppDeps(),
-    config: makeTestConfig(),
-    requestClient: okFetch(),
     logTransition: (r) => records.push(r),
   });
   return { app, records };
@@ -200,7 +172,7 @@ function frameReader(res: Response) {
 
 describe("ADR-046: POST /state/events returns the whole-actor document", () => {
   it("a returning user cascades onboarding→project→chat; the document carries all three regions", async () => {
-    const { app } = buildScenario({ requestClient: returningFetch() });
+    const { app } = buildScenario();
 
     // begin: the reserved session_begin event cold-starts the actor. Under the
     // client-reported model the onboarding child settles in awaiting_org_report —
@@ -287,7 +259,7 @@ describe("ADR-046: POST /state/events returns the whole-actor document", () => {
   });
 
   it("a client org report drives onboarding awaiting_org_report → needs_org → ready", async () => {
-    const { app } = buildScenario({ requestClient: okFetch() });
+    const { app } = buildScenario();
 
     const bootstrap = await postStateEvent(
       app,
@@ -316,7 +288,7 @@ describe("ADR-046: POST /state/events returns the whole-actor document", () => {
   });
 
   it("a new user bootstraps to awaiting_org_report with identity seeded from X-User-Email, then reports needs_org", async () => {
-    const { app } = buildScenario({ requestClient: okFetch() });
+    const { app } = buildScenario();
     const { document } = await postStateEvent(
       app,
       { type: "session_begin" },
@@ -347,7 +319,7 @@ describe("ADR-046: POST /state/events returns the whole-actor document", () => {
 
 describe("ADR-046: the onboarding ACL is enforced on POST /state/events while onboarding is active", () => {
   it("refuses an unmodeled onboarding event (400, no-op)", async () => {
-    const { app } = buildScenario({ requestClient: okFetch() });
+    const { app } = buildScenario();
     await postStateEvent(app, { type: "session_begin" }, { userId: "u2", bearer: "tok-2" });
 
     const { status } = await postStateEvent(
@@ -363,7 +335,7 @@ describe("ADR-046: the onboarding ACL is enforced on POST /state/events while on
   });
 
   it("refuses an event that names no event type (400)", async () => {
-    const { app } = buildScenario({ requestClient: okFetch() });
+    const { app } = buildScenario();
     await postStateEvent(app, { type: "session_begin" }, { userId: "u2", bearer: "tok-2" });
 
     const { status, raw } = await postStateEvent(
@@ -376,7 +348,7 @@ describe("ADR-046: the onboarding ACL is enforced on POST /state/events while on
   });
 
   it("refuses an org submission carrying no organization name (400)", async () => {
-    const { app } = buildScenario({ requestClient: okFetch() });
+    const { app } = buildScenario();
     await postStateEvent(app, { type: "session_begin" }, { userId: "u2", bearer: "tok-2" });
 
     const { status, raw } = await postStateEvent(
@@ -395,7 +367,7 @@ describe("ADR-046: the onboarding ACL is enforced on POST /state/events while on
 
 describe("ADR-046: the forced-failure side-channel is gated on POST /state/events", () => {
   it("refuses a forced failure when the failure-simulation switch is off (403, no-op)", async () => {
-    const { app } = buildScenario({ requestClient: okFetch() });
+    const { app } = buildScenario();
     await postStateEvent(app, { type: "session_begin" }, { userId: "u2", bearer: "tok-2" });
     // __force_failure__ only transitions from needs_org — report org_not_found first.
     await postStateEvent(app, { type: "org_not_found", payload: {} }, { userId: "u2", bearer: "tok-2" });
@@ -414,7 +386,7 @@ describe("ADR-046: the forced-failure side-channel is gated on POST /state/event
 
   it("routes a forced failure into error_recoverable when the switch is on", async () => {
     enableFailureSimulation();
-    const { app } = buildScenario({ requestClient: okFetch() });
+    const { app } = buildScenario();
     await postStateEvent(app, { type: "session_begin" }, { userId: "u2", bearer: "tok-2" });
     // __force_failure__ only transitions from needs_org — report org_not_found first.
     const bootstrap = await postStateEvent(
@@ -436,7 +408,7 @@ describe("ADR-046: the forced-failure side-channel is gated on POST /state/event
 
   it("refuses a forced failure naming an unrecognized cause at the boundary (400)", async () => {
     enableFailureSimulation();
-    const { app } = buildScenario({ requestClient: okFetch() });
+    const { app } = buildScenario();
     await postStateEvent(app, { type: "session_begin" }, { userId: "u2", bearer: "tok-2" });
     // __force_failure__ only transitions from needs_org — report org_not_found first.
     await postStateEvent(app, { type: "org_not_found", payload: {} }, { userId: "u2", bearer: "tok-2" });
@@ -459,7 +431,7 @@ describe("ADR-046: the forced-failure side-channel is gated on POST /state/event
 
 describe("ADR-046: an event targets the verified principal's own actor", () => {
   it("ignores a stray flow_id in the body and targets the caller's own actor", async () => {
-    const { app } = buildScenario({ requestClient: okFetch() });
+    const { app } = buildScenario();
     await postStateEvent(app, { type: "session_begin" }, { userId: "u2", bearer: "tok-2" });
 
     const { status, document } = await postStateEvent(
@@ -485,7 +457,7 @@ describe("ADR-046: an event targets the verified principal's own actor", () => {
 
 describe("ADR-046: GET /state folds to the anonymous document pre-bootstrap", () => {
   it("returns the anonymous document and does NOT cold-start", async () => {
-    const { app } = buildScenario({ requestClient: returningFetch() });
+    const { app } = buildScenario();
 
     const anon = await getState(app, "u1");
     expect(anon.phase).toBe("onboarding");
@@ -499,7 +471,7 @@ describe("ADR-046: GET /state folds to the anonymous document pre-bootstrap", ()
   });
 
   it("returns the live document once the principal has bootstrapped", async () => {
-    const { app } = buildScenario({ requestClient: returningFetch() });
+    const { app } = buildScenario();
 
     // Cold-start, then drive to chat via the client's org + scope reports
     // (client-reported model: onboarding advances on org_found, project-context
@@ -530,7 +502,7 @@ describe("ADR-046: GET /state folds to the anonymous document pre-bootstrap", ()
 
 describe("ADR-046: GET /state/stream emits documents", () => {
   it("emits a first document frame, then a fresh document after a child-log event", async () => {
-    const { app } = buildScenario({ requestClient: okFetch() });
+    const { app } = buildScenario();
 
     // Bootstrap a new user → awaiting_org_report (client-reported model, no probe).
     await postStateEvent(app, { type: "session_begin" }, { userId: "u2", bearer: "tok-2" });

@@ -7,22 +7,15 @@
 //
 // Public surface (alphabetical-by-export):
 //   - createProjectContextMachine (machine.ts) + ProjectContextMachineDeps
-//   - createProjectActor, createProjectFn
-//   - resolveInitialScopeActor, resolveInitialScopeFn
-//   - switchProjectActor, switchProjectFn
 //   - validateProjectName + ProjectValidationError (from ./setup/domain.ts)
 //   - all context / event / state / actor I-O types
 //   - re-exported ActiveScope (for caller convenience)
+//
+// The egress actor FACTORIES (resolveInitialScope*/createProject*/switchProject*)
+// were deleted at CDO-S5 (zero egress); only their I/O-contract TYPES remain.
 
 export { createProjectContextMachine } from "./machine.ts";
-
 export {
-  createProjectActor,
-  createProjectFn,
-  resolveInitialScopeActor,
-  resolveInitialScopeFn,
-  switchProjectActor,
-  switchProjectFn,
   type ActiveScope,
   type CreateProjectActor,
   type CreateProjectInput,
@@ -34,7 +27,10 @@ export {
   type SwitchProjectInput,
   type SwitchProjectOutput,
 } from "./setup/actors.ts";
-
+export {
+  type ProjectValidationError,
+  validateProjectName,
+} from "./setup/domain.ts";
 export type {
   ProjectContextCauseTag,
   ProjectContextEvent,
@@ -42,8 +38,3 @@ export type {
   ProjectContextState,
   ProjectSummary,
 } from "./setup/types.ts";
-
-export {
-  validateProjectName,
-  type ProjectValidationError,
-} from "./setup/domain.ts";

@@ -71,3 +71,55 @@ reach the child and for the build to stay green. These files were NOT in the ste
 ui-state and shared/ui-state-wire. The org-onboarding python acceptance suite (full rebuilt
 compose stack) is the slice-level integration gate run later at step 05-06, not the crafter's
 outer loop.
+
+## Step 05-02 — ui-state zero-egress cleanup (dead egress actors deleted + Redis-only config)
+
+### What changed (production)
+- **onboarding/setup/actors.ts** — DELETED the dead egress resolver functions (`getWorkOSUserInfo`
+  / `getUserOrg` / `loadVerifiedSession` WorkOS-userinfo + `GET /api/orgs/me`; `createOrgFn` /
+  `getOrg` `POST /api/orgs`) plus the `loadSession`/`createOrg` `fromPromise` actors, the egress
+  `Config` (workosUrl/backendUrl) interface, and the `LoadSessionInput`/`CreateOrgInput` egress
+  fields. The machine was REPORT-DRIVEN since CDO-S1 (no `invoke`), so this was pure dead code.
+  The `actors` bundle is now empty (`{}`); the inert `RequestClient`/`OnboardingDeps` type aliases
+  remain (no live caller) so the begin-envelope shape stays nameable by the transport.
+- **onboarding/setup/types.ts** — dropped `OnboardingParams.config`; `OnboardingInput.config`
+  retyped to an inert opaque optional (nothing reads it); identity seed (`user`) preserved.
+- **onboarding/machine.ts** — context factory no longer copies `config` into `params`.
+- **project-context/setup/actors.ts** — DELETED `resolveInitialScopeFn/Actor`,
+  `createProjectFn/Actor`, `switchProjectFn/Actor` (already not invoked — `buildActors()` returns
+  `{}`). `ProjectContextMachineDeps` shrunk to the empty contract. I/O-contract TYPES retained.
+- **project-context/index.ts** — pruned the deleted-factory exports (types retained).
+- **config.ts** — Redis-only: DELETED `workosUrl` (FAKE_WORKOS_URL), `backendUrl` (BACKEND_URL),
+  `devUserHeadersFixture`. The Zod env schema now has only the optional `redisUrl`, so the
+  container boots WITHOUT BACKEND_URL/FAKE_WORKOS_URL set (unblocks step 05-06 compose env removal).
+- **index.ts** — `buildChatAppDeps()` returns `{ projectContext: {}, sessionChat: {} }`; the
+  backendUrl/headers locals + the retired `resolveInitialScopeActor`/`createProjectActor`/
+  `switchProjectActor` imports are gone.
+
+### Test rework (sanctioned)
+- **test-config.ts** — `makeMockFetch` + the egress `makeTestConfig` retired with the actors;
+  `makeTestConfig()` is now Redis-only.
+- **chat-app integration / contract / snapshot / state-router tests** — dropped the mock-`fetch`
+  `request_client` fixtures + the `config`/`deps` egress envelope + the `resolveInitialScope`/
+  `createProject`/`switchProject` `fromPromise` fakes (project-context invokes nothing). The
+  cascade is driven purely by client-reported outcome events. This retires the deleted-egress
+  test doubles WITH the actors (by design, not to dodge a failure).
+
+### Identity-seed path PRESERVED
+`router.ts coldStart` still reads `X-User-Email` → `OnboardingInput.user` → onboarding
+`context.user` (INV-PCO single writer). Untouched.
+
+### 05-02 zero-egress proof
+
+```
+$ grep -rnE 'backendUrl|workosUrl|fetch\(' ui-state/lib ui-state/config.ts ui-state/index.ts \
+    | grep -v node_modules | grep -v '\.test\.' | grep -vE '^[^:]+:[0-9]+:\s*(//|\*|/\*)'
+(no output — every remaining mention is a doc comment; ZERO live references)
+```
+
+The lone surviving mentions are doc-comment references describing the now-deleted egress
+(acceptable per the AC: a doc-comment mention is fine; a live reference is not).
+
+### Verification
+`cd ui-state && npx vitest run` → 17 files, 187 tests, all green. `npx tsc --noEmit` clean for
+ui-state/. eslint: 0 errors.

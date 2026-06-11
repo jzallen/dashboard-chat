@@ -17,23 +17,16 @@
 //       (session-chat > project-context > onboarding; "resolved" = org_id set);
 //     - sequence_id aggregates the three per-region logs (sum of lengths).
 //
-// The harness below drives a real composition root with fromPromise fakes at
-// every child port — mocks ONLY at the port boundary.
+// The harness below drives a real composition root. Under the zero-egress
+// report-driven model (CDO-S5) no child invokes a server-side actor, so the
+// child deps surfaces are empty and the cascade runs on client-reported events.
 
 import { describe, expect, it } from "vitest";
-import { type AnyActorRef, createActor, fromPromise } from "xstate";
+import { type AnyActorRef, createActor } from "xstate";
 
 import { FlowEvent } from "../../../domain/flow-event.ts";
 import { buildProjection } from "../../../domain/projection.ts";
-import { makeMockFetch, makeTestConfig } from "../../../testing/test-config.ts";
-import type {
-  CreateProjectInput,
-  ProjectSummary,
-  ResolveInitialScopeInput,
-  ResolveInitialScopeOutput,
-  SwitchProjectInput,
-  SwitchProjectOutput,
-} from "../../project-context/index.ts";
+import type { ProjectSummary } from "../../project-context/index.ts";
 import type { SessionSummary } from "../../session-chat/index.ts";
 import { createChatApp } from "../index.ts";
 import type { ChatUserIntent, OnboardingInput } from "../setup/types.ts";
@@ -62,74 +55,27 @@ function session(id: string): SessionSummary {
   };
 }
 
-interface Recorder {
-  switchCalls: string[];
-}
-
-function recorder(): Recorder {
-  return { switchCalls: [] };
-}
-
-type Deferred = { promise: Promise<SwitchProjectOutput>; resolve: () => void };
-function deferredSwitch(projectId: string): Deferred {
-  let resolve!: () => void;
-  const promise = new Promise<SwitchProjectOutput>((res) => {
-    resolve = () =>
-      res({ project: { id: projectId, name: `Project ${projectId}` } });
-  });
-  return { promise, resolve };
-}
-
-function makeDeps(
-  rec: Recorder,
-  _sessions: SessionSummary[],
-  slowSwitch?: Deferred,
-) {
+/** Both child deps surfaces are EMPTY under the zero-egress report-driven model
+ *  (CDO-S5) — the cascade runs on client-reported outcome events, not invokes. */
+function makeDeps(_sessions: SessionSummary[]) {
   return {
-    projectContext: {
-      resolveInitialScope: fromPromise<
-        ResolveInitialScopeOutput,
-        ResolveInitialScopeInput
-      >(async () => ({ project: PROJECT_A })),
-      createProject: fromPromise<ProjectSummary, CreateProjectInput>(
-        async () => PROJECT_A,
-      ),
-      switchProject: fromPromise<SwitchProjectOutput, SwitchProjectInput>(
-        async ({ input }) => {
-          rec.switchCalls.push(input.new_project_id);
-          if (slowSwitch) return slowSwitch.promise;
-          return {
-            project: {
-              id: input.new_project_id,
-              name: `Project ${input.new_project_id}`,
-            },
-          };
-        },
-      ),
-    },
-    // Report-driven session-chat (ADR-050 §e.5 / DR-8) invokes no actors.
+    projectContext: {},
     sessionChat: {},
   };
 }
 
-function makeInput(opts: { newUser?: boolean } = {}): OnboardingInput {
+function makeInput(_opts: { newUser?: boolean } = {}): OnboardingInput {
   return {
     request_id: REQ,
     principal_id: PRINCIPAL,
     bearer_token: "tok-maya",
-    config: makeTestConfig(),
-    // Identity now arrives via the seeded input (INV-PCO single writer), not a
-    // re-verify fetch round-trip. display_name/first_name mirror PROFILE.
+    // Identity arrives via the seeded input (INV-PCO single writer); the
+    // onboarding child makes no backend round-trip (zero egress, CDO-S5).
+    // display_name/first_name mirror PROFILE.
     user: {
       email: PROFILE.email,
       display_name: PROFILE.name,
       first_name: "Maya",
-    },
-    deps: {
-      request_client: makeMockFetch({
-        profile: PROFILE,
-        ...(opts.newUser ? {} : { existingOrg: ORG }),
-      }),
     },
   };
 }
@@ -191,11 +137,9 @@ async function waitFor(
 
 async function arriveAtChat(
   sessions: SessionSummary[] = [session("s1")],
-  slowSwitch?: Deferred,
 ) {
-  const rec = recorder();
   const actor = createActor(
-    createChatApp(makeDeps(rec, sessions, slowSwitch)),
+    createChatApp(makeDeps(sessions)),
     {
       input: makeInput(),
     },
@@ -226,7 +170,7 @@ async function arriveAtChat(
     actor,
     (a) => childState(a, "session-chat") === "session_list_loaded",
   );
-  return { actor, rec };
+  return { actor };
 }
 
 // Log keys are opaque to buildProjection (the fold dispatches on event.type, not
@@ -389,8 +333,7 @@ describe("ADR-046 gate — happy login → project → chat (all three regions e
 
 describe("ADR-046 gate — onboarding=needs_org (new user, child live)", () => {
   it("onboarding region equivalent; phase=onboarding; scope empty-org", async () => {
-    const rec = recorder();
-    const actor = createActor(createChatApp(makeDeps(rec, [session("s1")])), {
+    const actor = createActor(createChatApp(makeDeps([session("s1")])), {
       input: makeInput({ newUser: true }),
     }).start();
     // Client-reported model + phase-gated routing: report org_not_found RAW to

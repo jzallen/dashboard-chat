@@ -41,11 +41,6 @@ import {
   ChatAppActorRegistry,
   type ChatAppRuntime,
 } from "./lib/machines/chat-app/router.ts";
-import {
-  createProjectActor,
-  resolveInitialScopeActor,
-  switchProjectActor,
-} from "./lib/machines/project-context/index.ts";
 import type { RequestClient } from "./lib/machines/onboarding/index.ts";
 import {
   type ChatAppSnapshotStore,
@@ -55,22 +50,21 @@ import { type FlowEventLog, selectFlowEventLog } from "./lib/persistence/redis.t
 
 /**
  * Compose the live ChatApp-backed app onto a fresh Hono instance. This is the
- * composition seam: production calls it with the real stores + child resolver
- * actors built from config; the in-process tests inject a noop event-log + noop
- * snapshot store + `fromPromise` child fakes + a mock `fetch` (the onboarding
- * I/O port).
+ * composition seam: production calls it with the real stores + empty child deps
+ * (zero egress — every child is report-driven); the in-process tests inject a
+ * noop event-log + noop snapshot store + empty child deps.
  */
 export function buildChatAppApp(opts: {
   eventLog: FlowEventLog;
   snapshotStore: ChatAppSnapshotStore;
-  /** The project-context + session-chat resolver actors (construction-time DI).
-   *  Production builds these from config; tests pass `fromPromise` fakes. */
+  /** The child construction deps. Both surfaces are empty under the zero-egress
+   *  report-driven model (CDO-S5); retained for shape stability. */
   chatAppDeps: ChatAppDeps;
-  /** Env config threaded into the onboarding child's invoke input (its re-verify
-   *  + org-create resolvers read workosUrl/backendUrl from input). */
+  /** Redis-only env config (CDO-S5). Threaded into the runtime for shape
+   *  stability; the report-driven children read nothing from it. */
   config?: Config | null;
-  /** The fetch I/O port the onboarding child's resolvers call. Defaults to
-   *  globalThis.fetch so production needs no extra wiring; tests inject a mock. */
+  /** INERT I/O-port slot (zero egress, CDO-S5). Defaults to globalThis.fetch but
+   *  no resolver calls it — the report-driven children make no backend round-trips. */
   requestClient?: RequestClient;
   logTransition?: (record: Record<string, unknown>) => void;
 }): Hono {
@@ -101,25 +95,18 @@ export function buildChatAppApp(opts: {
 }
 
 /**
- * Build the project-context + session-chat resolver actors from env config. The
- * onboarding child needs NO construction deps — its WorkOS/backend URLs + fetch
- * port arrive per-instance on the begin envelope. These two children inject their
- * I/O ports as construction-time actors; ui-state acts on behalf of
- * a flow's principal via the identity headers below (dev user in AUTH_MODE=dev;
- * a service M2M token in production).
+ * Build the child construction-deps. ZERO EGRESS (CDO-S5 / ADR-048 §4): every
+ * child is now report-driven, so NONE inject a server-side resolver actor —
+ * project-context's egress resolvers (resolveInitialScope/createProject/
+ * switchProject) were deleted at step 05-02 and session-chat's at step 05-01.
+ * Both deps surfaces are empty; the machines transition on client-reported
+ * outcomes (no backend round-trips).
  */
-function buildChatAppDeps(config: Config): ChatAppDeps {
-  const backendUrl = config.backendUrl;
-  const headers = config.devUserHeadersFixture;
+function buildChatAppDeps(): ChatAppDeps {
   return {
-    projectContext: {
-      resolveInitialScope: resolveInitialScopeActor(backendUrl, headers),
-      createProject: createProjectActor(backendUrl, headers),
-      switchProject: switchProjectActor(backendUrl, headers),
-    },
-    // Report-driven session-chat (ADR-050 §e.5 / DR-8/AR-8) invokes NO actors —
-    // it transitions on client-reported outcomes, so no egress resolvers are
-    // wired here (the four `*Actor` factories were deleted at CDO-S5 step 05-01).
+    // Report-driven project-context (ADR-049 §4) + session-chat (ADR-050 §e.5)
+    // invoke NO actors — no egress resolvers are wired here.
+    projectContext: {},
     sessionChat: {},
   };
 }
@@ -141,7 +128,7 @@ function buildProductionApp(): {
   const app = buildChatAppApp({
     eventLog,
     snapshotStore,
-    chatAppDeps: buildChatAppDeps(config),
+    chatAppDeps: buildChatAppDeps(),
     config,
   });
   return { app, eventLog, snapshotStore };

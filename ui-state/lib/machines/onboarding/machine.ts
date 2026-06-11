@@ -82,7 +82,6 @@ export function createOnboardingMachine() {
         request_id: input.request_id,
         principal_id: input.principal_id as PrincipalId,
         bearer_token: input.bearer_token ?? "",
-        config: input.config ?? null,
         deps: input.deps ?? null,
       },
       // Identity has EXACTLY ONE writer: this cold-start seed from the verified

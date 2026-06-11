@@ -2,30 +2,22 @@
 //
 // These create + start a REAL wired ChatApp actor via the composition root
 // (createChatApp, ./index.ts) with the THREE REAL child machines provided over
-// the placeholder slots, and drive it end-to-end. The ONLY mocks are at the
-// children's PORT boundaries: the onboarding child's `fetch` (injected via the
-// begin envelope's `deps.request_client`, the same makeMockFetch the onboarding
-// unit tests use), and the project-context / session-chat resolver ACTORS
-// (injected as `fromPromise` fakes at construction, the same fixture style their
-// own machine.test.ts files use). No HTTP, no Redis, no persistence.
+// the placeholder slots, and drive it end-to-end. ZERO EGRESS (CDO-S5): every
+// child is report-driven and invokes NO server-side actor, so there are NO port
+// mocks — the begin envelope carries no `config`/`deps` and both `ChatAppDeps`
+// surfaces are empty. The cascade runs purely on client-reported outcome events.
+// No HTTP, no Redis, no persistence.
 //
-// The covered observable sequences: happy login→project→chat, project switch
-// (idempotent on same id), and session_rejected — asserted against the wired
-// ChatApp, read at the parent's lifecycle value + the invoked children's own
-// state/context + the recorded port calls.
+// The covered observable sequences: happy login→project→chat and the report-only
+// project switch (idempotent on same id) — asserted against the wired ChatApp,
+// read at the parent's lifecycle value + the children's own state/context.
 
 import { describe, expect, it } from "vitest";
-import { type AnyActorRef, createActor, fromPromise } from "xstate";
+import { type AnyActorRef, createActor } from "xstate";
 
-import { makeMockFetch, makeTestConfig } from "../../testing/test-config.ts";
 import type {
-  CreateProjectInput,
   ProjectContextMachineContext,
   ProjectSummary,
-  ResolveInitialScopeInput,
-  ResolveInitialScopeOutput,
-  SwitchProjectInput,
-  SwitchProjectOutput,
 } from "../project-context/index.ts";
 import type {
   SessionChatMachineContext,
@@ -45,60 +37,30 @@ function session(id: string): SessionSummary {
   return { id, title: id.toUpperCase(), last_active_at: `2026-05-01T0${id.length}:00:00Z`, active_dataset_id: null };
 }
 
-/** A recorder for what the (real) children's mocked ports actually received —
- *  the in-process analog of the orchestrator tests' projection assertions.
- *  Report-driven session-chat (ADR-050 §e.5 / DR-8) invokes NO actors, so its
- *  list/resume egress is no longer recorded — the test instead asserts the
- *  region's observable state after the client reports the outcome. Only the
- *  still-invoke project-context switch is recorded. */
-interface Recorder {
-  switchCalls: string[]; // new_project_id per switchProject invoke
-}
-
 /**
- * Build the ChatAppDeps with `fromPromise` fakes at the still-invoke child
- * ports. The project-context actors are construction-time deps; the onboarding
- * child's I/O is the begin envelope (see makeInput). Report-driven session-chat
- * invokes nothing, so its deps surface is empty.
+ * Build the ChatAppDeps — both child surfaces EMPTY under the zero-egress
+ * report-driven model (CDO-S5). The machines transition on client-reported
+ * outcome events, not invoked resolvers.
  */
-function makeDeps(rec: Recorder, _sessions: SessionSummary[]) {
+function makeDeps(_sessions: SessionSummary[]) {
   return {
-    projectContext: {
-      resolveInitialScope: fromPromise<ResolveInitialScopeOutput, ResolveInitialScopeInput>(
-        async () => ({ project: PROJECT_A }),
-      ),
-      createProject: fromPromise<ProjectSummary, CreateProjectInput>(
-        async () => PROJECT_A,
-      ),
-      switchProject: fromPromise<SwitchProjectOutput, SwitchProjectInput>(
-        async ({ input }) => {
-          rec.switchCalls.push(input.new_project_id);
-          return { project: { id: input.new_project_id, name: `Project ${input.new_project_id}` } };
-        },
-      ),
-    },
+    projectContext: {},
     sessionChat: {},
   };
 }
 
-/** Begin envelope for a RETURNING user. Under the client-reported model
- *  (ADR-049/050) the onboarding child no longer probes the server — it settles
- *  in awaiting_org_report and advances only when the CLIENT reports org_found /
- *  org_created (see arriveAtChat). Identity comes from the seeded `user` input
- *  (the single writer of context.user — INV-PCO), not a fetch round-trip. The
- *  `deps.request_client` is kept to preserve the OnboardingInput shape (the
- *  onboarding machine still declares loadSession/createOrg actor defaults); it is
- *  no longer load-bearing for these tests. */
+/** Begin envelope for a RETURNING user. Under the client-reported, zero-egress
+ *  model (ADR-049/050/048) the onboarding child makes NO backend round-trip — it
+ *  settles in awaiting_org_report and advances only when the CLIENT reports
+ *  org_found / org_created (see arriveAtChat). Identity comes from the seeded
+ *  `user` input (the single writer of context.user — INV-PCO). No `config`/`deps`
+ *  egress fixture is threaded (the resolvers were deleted at CDO-S5). */
 function makeInput(): OnboardingInput {
   return {
     request_id: "R-int-1",
     principal_id: PRINCIPAL,
     bearer_token: "tok-maya",
-    config: makeTestConfig(),
     user: { email: PROFILE.email, display_name: PROFILE.name, first_name: "Maya" },
-    deps: {
-      request_client: makeMockFetch({ profile: PROFILE, existingOrg: ORG }),
-    },
   };
 }
 
@@ -156,10 +118,9 @@ async function waitFor(
 }
 
 /** Drive the full forward cycle to a settled session-chat list (the common
- *  arrange step). Returns the started actor + its recorder. */
+ *  arrange step). Returns the started actor. */
 async function arriveAtChat(sessions: SessionSummary[] = [session("s1")]) {
-  const rec: Recorder = { switchCalls: [] };
-  const actor = createActor(createChatApp(makeDeps(rec, sessions)), {
+  const actor = createActor(createChatApp(makeDeps(sessions)), {
     input: makeInput(),
   }).start();
   // Client-reported model + phase-gated routing (CDO-S3 / ADR-049 §4): the
@@ -182,7 +143,7 @@ async function arriveAtChat(sessions: SessionSummary[] = [session("s1")]) {
   // verbatim → session_list_loaded.
   reportSessionList(actor, sessions);
   await waitFor(actor, (a) => childState(a, "session-chat") === "session_list_loaded");
-  return { actor, rec };
+  return { actor };
 }
 
 /** Report a client-observed session list THROUGH THE PARENT (the parent forwards
@@ -200,7 +161,7 @@ function reportSessionList(actor: ChatActor, sessions: SessionSummary[]) {
 
 describe("ChatApp Phase 2 — happy forward cycle (login → project → chat)", () => {
   it("advances onboarding(ready) → project_context(project_selected) → chat, threading both hand-offs", async () => {
-    const { actor, rec } = await arriveAtChat();
+    const { actor } = await arriveAtChat();
 
     // Parent settled in chat.
     expect(lifecycle(actor)).toEqual({ engaged: "chat" });

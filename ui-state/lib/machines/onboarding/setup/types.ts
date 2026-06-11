@@ -5,15 +5,16 @@
 // inline definitions get it inferred), so they all share `ActionArgs`/`GuardArgs`
 // from here.
 //
-// Imports are type-only and one-way: types.ts → actors.ts (for Config + the deps
-// bundle the params envelope carries) and types.ts → domain.ts (for OrgName,
+// Imports are type-only and one-way: types.ts → actors.ts (for the inert deps
+// bundle the params envelope still names) and types.ts → domain.ts (for OrgName,
 // PrincipalId, and the UnderlyingCauseTag failure vocabulary). Nothing here
 // imports machine.ts, so there is no machine ↔ types cycle.
 //
 // References:
 //   docs/decisions/adr-041-*.md  — session-onboarding domain realignment
+//   docs/decisions/adr-048-*.md  — ui-state zero egress (the egress `config` slot retired CDO-S5)
 
-import type { Config, OnboardingDeps } from "./actors.ts";
+import type { OnboardingDeps } from "./actors.ts";
 import type {
   OrgCreateFailureCause,
   OrgName,
@@ -46,14 +47,11 @@ export interface OnboardingParams {
   /** Branded id of the verified principal (the auth-proxy X-User-Id), branded
    *  once in the context factory; the raw machine input carries it as a string. */
   principal_id: PrincipalId;
-  /** The forwarded Bearer (L4) — from the router's Authorization header into the
-   *  re-verify invoke input. Never a client body claim. */
+  /** The forwarded Bearer (L4) — carried for envelope-shape stability; the
+   *  report-driven machine no longer re-verifies it (zero egress, CDO-S5). */
   bearer_token: string;
-  /** Env config (`workosUrl` + `backendUrl`) the `loadSession` resolver reads
-   *  from input rather than a closure. Null in tests that stub the actor. */
-  config: Config | null;
-  /** The I/O port (the `fetch` library) the resolvers call directly. Mirrors
-   *  `config`'s nullable + fail-fast pattern — null in tests that stub the actor. */
+  /** The (inert) I/O-port bundle the envelope still names. No resolver reads it
+   *  any more (zero egress, CDO-S5) — null in every path. */
   deps: OnboardingDeps | null;
 }
 
@@ -101,7 +99,13 @@ export interface OnboardingInput {
   request_id: string;
   principal_id: string;
   bearer_token?: string;
-  config?: Config | null;
+  /** Inert envelope field (zero egress, CDO-S5). The egress `Config`
+   *  (`workosUrl`/`backendUrl`) the `loadSession` resolver once read was DELETED
+   *  with the resolver; this slot is retained OPTIONAL + opaque so the chat-app
+   *  transport keeps naming it without an out-of-package churn. Nothing reads it. */
+  config?: unknown | null;
+  /** Inert envelope field (zero egress, CDO-S5) — retained OPTIONAL so the
+   *  chat-app transport may keep naming it without an out-of-package churn. */
   deps?: OnboardingDeps | null;
   /** Identity seeded at cold-start from the auth-proxy-verified headers
    *  (X-User-Email). The SINGLE writer of `context.user` — no outcome event ever

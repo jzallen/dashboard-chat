@@ -2,46 +2,29 @@ import { z } from "zod";
 
 /**
  * Runtime configuration for the ui-state service, validated from the
- * environment at startup. Required values have NO inline defaults — the
- * environment (compose / shell / a `.env` loaded via `node --env-file`) is the
- * single source of truth, and a missing or malformed variable fails fast here
- * (zod names the offending field) rather than silently falling back.
+ * environment at startup. After the CDO-S5 zero-egress cleanup (ADR-048 §4) the
+ * ui-state tier holds NO live network egress, so its startup config shrinks to
+ * REDIS ONLY — the former `workosUrl` (FAKE_WORKOS_URL) + `backendUrl`
+ * (BACKEND_URL) variables fed the deleted onboarding/project-context egress
+ * resolvers and are gone. The container now boots WITHOUT those env vars set
+ * (step 05-06 removes them from compose). A missing/malformed REDIS_URL is the
+ * only fail-fast surface; an ABSENT REDIS_URL is the explicit in-memory mode.
  */
 const envSchema = z.object({
-  /** Fake-WorkOS (dev) / WorkOS userinfo endpoint — from `FAKE_WORKOS_URL`. */
-  workosUrl: z.string().url(),
-  /** Backend the ui-state tier calls on behalf of a principal — from `BACKEND_URL`. */
-  backendUrl: z.string().url(),
   /** Redis backing for the flow event log — from `REDIS_URL`. Absent ⇒ the
    *  in-memory (noop) event log; this is an explicit mode, not a missing var. */
   redisUrl: z.string().optional(),
 });
 
-/**
- * Identity headers the ui-state tier presents to the backend when acting on
- * behalf of a flow's principal. This is a DEV FIXTURE (the AUTH_MODE=dev user);
- * in production a service-to-service M2M token replaces it (see auth-proxy).
- */
-const DEV_USER_HEADERS_FIXTURE: Record<string, string> = {
-  "x-user-id": "dev-user-001",
-  "x-org-id": "dev-org-001",
-  "x-user-email": "dev@localhost",
-};
-
-export interface Config extends z.infer<typeof envSchema> {
-  /** Dev-user identity fixture (see DEV_USER_HEADERS_FIXTURE). */
-  devUserHeadersFixture: Record<string, string>;
-}
+export type Config = z.infer<typeof envSchema>;
 
 /**
- * Parse + validate the environment into a typed Config. Throws (fail-fast at
- * startup) when a required variable is missing or malformed.
+ * Parse + validate the environment into a typed Config. Redis-only: the sole
+ * field is the optional `redisUrl`, so this never throws on the zero-egress
+ * deployment (no required network URLs remain).
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  const parsed = envSchema.parse({
-    workosUrl: env.FAKE_WORKOS_URL,
-    backendUrl: env.BACKEND_URL,
+  return envSchema.parse({
     redisUrl: env.REDIS_URL,
   });
-  return { ...parsed, devUserHeadersFixture: DEV_USER_HEADERS_FIXTURE };
 }

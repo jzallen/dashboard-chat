@@ -17,17 +17,10 @@ import {
   type AnyActorRef,
   type AnyStateMachine,
   createActor,
-  fromPromise,
 } from "xstate";
 
 import { createNoopChatAppSnapshotStore } from "../../persistence/chatapp-snapshot-store.ts";
-import { makeMockFetch, makeTestConfig } from "../../testing/test-config.ts";
-import type {
-  CreateProjectInput,
-  ProjectSummary,
-  ResolveInitialScopeInput,
-  ResolveInitialScopeOutput,
-} from "../project-context/index.ts";
+import type { ProjectSummary } from "../project-context/index.ts";
 import type { SessionSummary } from "../session-chat/index.ts";
 import { createChatApp } from "./index.ts";
 import type { OnboardingInput } from "./setup/types.ts";
@@ -57,14 +50,9 @@ function recorder(): Recorder {
 }
 
 function makeDeps(_rec: Recorder, _sessions: SessionSummary[]) {
+  // Both child surfaces EMPTY under the zero-egress report-driven model (CDO-S5).
   return {
-    projectContext: {
-      resolveInitialScope: fromPromise<ResolveInitialScopeOutput, ResolveInitialScopeInput>(
-        async () => ({ project: PROJECT_A }),
-      ),
-      createProject: fromPromise<ProjectSummary, CreateProjectInput>(async () => PROJECT_A),
-    },
-    // Report-driven session-chat (ADR-050 §e.5 / DR-8) invokes no actors.
+    projectContext: {},
     sessionChat: {},
   };
 }
@@ -74,12 +62,10 @@ function makeInput(): OnboardingInput {
     request_id: "R-snap",
     principal_id: PRINCIPAL,
     bearer_token: "tok-maya",
-    config: makeTestConfig(),
     // Identity seeded from input (INV-PCO single writer) — the onboarding child
-    // no longer re-verifies via fetch; it settles in awaiting_org_report and
-    // advances on the client's org report (see arriveAtChat).
+    // makes no backend round-trip (zero egress, CDO-S5); it settles in
+    // awaiting_org_report and advances on the client's org report (see arriveAtChat).
     user: { email: PROFILE.email, display_name: PROFILE.name, first_name: "Maya" },
-    deps: { request_client: makeMockFetch({ profile: PROFILE, existingOrg: ORG }) },
   };
 }
 
