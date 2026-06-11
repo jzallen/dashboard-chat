@@ -167,14 +167,7 @@ services:
     environment:
       PORT: "8788"
       REDIS_URL: redis://redis:6379/1
-      # Loopback HTTP to the fake WorkOS server the acceptance suite starts
-      # in-process. Override per scenario via compose env file.
-      FAKE_WORKOS_URL: ${FAKE_WORKOS_URL:-http://host.docker.internal:14299}
-      AUTH_MODE: ${AUTH_MODE:-dev}
       FLOW_EVENT_MAXLEN: ${FLOW_EVENT_MAXLEN:-1000}
-      # Backend URL the create-org-and-reissue actor calls on Maya's behalf.
-      # Default targets the api service on the compose network.
-      BACKEND_URL: ${UI_STATE_BACKEND_URL:-http://api:8000}
       # Failure-simulation gate tier per ADR-035. The shared registry denies
       # every knob unless tier ∈ {dev, ci}; the local compose stack hosts
       # the dev-tier acceptance suite so the default is `dev`. Production
@@ -186,10 +179,6 @@ services:
     ports:
       # Fixed host port so UI_STATE_URL stays stable across compose up.
       - "${UI_STATE_HOST_PORT:-1043}:8788"
-    extra_hosts:
-      # Lets the container resolve host.docker.internal on Linux (needed for
-      # the in-process fake WorkOS server running on the host).
-      - "host.docker.internal:host-gateway"
     depends_on:
       redis:
         condition: service_healthy
@@ -218,6 +207,12 @@ services:
     environment:
       AUTH_MODE: ${AUTH_MODE:-dev}
       WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
+      # WorkOS API base for the org-create interception egress (CDO-S5,
+      # ADR-048 §4). auth-proxy is the sole WORKOS holder; the explicit pin
+      # makes the upstream target a first-class compose key rather than a
+      # code default. Override per-environment; acceptance points it at the
+      # in-suite fake WorkOS server.
+      WORKOS_BASE: ${WORKOS_BASE:-https://api.workos.com}
       # WorkOS code-exchange secret (clientSecret) + OAuth redirect target, read
       # by the /api/auth/login and /api/auth/callback handlers (app.ts). Without
       # them workos mode mints an authorize URL with an empty redirect_uri and

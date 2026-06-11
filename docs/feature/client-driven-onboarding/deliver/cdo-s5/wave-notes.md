@@ -324,3 +324,37 @@ preserved.
 Reworked: `onboarding.test.tsx` (DISPLAY RULE + POST+report + Phase-D auto + (f) effect), `login.test.tsx`
 (mode discovery), `app-shell.test.tsx` (gate: `{needs_org, error_recoverable}`, no rejected branch,
 `awaiting_org_report` wait, Phase-B probe fires).
+
+---
+
+## Step 05-06 — Compose env deltas (single-cut) + full acceptance integration gate
+
+The single-cut compose deltas from ADR-048 §4 landed and were verified by the FULL
+org-onboarding acceptance suite against a stack rebuilt from this worktree (ui-state +
+auth-proxy + api). This is the CDO-S5 integration regression — config + gate step, no
+new unit test (RED_UNIT recorded SKIPPED, NOT_APPLICABLE).
+
+### Compose keys changed (docker-compose.yml only)
+
+- **ui-state service** — REMOVED `FAKE_WORKOS_URL`, `AUTH_MODE`, `BACKEND_URL`
+  (`UI_STATE_BACKEND_URL`), and the entire `extra_hosts:` (`host.docker.internal`)
+  block. The tier is now zero-egress (config.ts is Redis-only since 05-02); the
+  container BOOTS with these vars absent. KEPT: PORT, REDIS_URL, FLOW_EVENT_MAXLEN,
+  ENVIRONMENT, NWAVE_HARNESS_KNOBS, ports.
+- **auth-proxy service** — ADDED `WORKOS_BASE: ${WORKOS_BASE:-https://api.workos.com}`.
+  auth-proxy is now the sole WORKOS holder + sole AUTH_MODE reader; the upstream
+  target is an explicit compose key rather than a code default.
+- **api / api-full** — VERIFIED clean (no AUTH_MODE/WORKOS_* keys). NO-OP.
+- **agent** — left untouched (ADR-048 R3, out of scope).
+- **docker-compose.override.yml** — verify-only; api has no AUTH_MODE pin,
+  auth-proxy `AUTH_MODE: dev` left. NO-OP (no change).
+
+### ui-state boot confirmation
+
+`docker logs dashboard-ui-state` → `{"event":"flow.startup","port":8788}` — single
+clean startup, no restart, no config-validation crash. The split-brain failure class
+is now unrepresentable in compose config.
+
+### Integration result
+
+13 passed / 1 expected RED (the carried-forward UPSTREAM-S3-1) — see deliver-summary.md.
