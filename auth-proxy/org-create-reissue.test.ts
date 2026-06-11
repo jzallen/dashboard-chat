@@ -282,6 +282,184 @@ describe("org-create reissue — R7: backend cannot smuggle the header", () => {
   });
 });
 
+/** Parsed Set-Cookie shape (ported from app.test.ts ~613-654). */
+interface ParsedSetCookie {
+  name: string;
+  value: string;
+  httpOnly: boolean;
+  secure: boolean;
+  sameSite?: string;
+  path?: string;
+  maxAge?: string;
+}
+
+function parseSetCookie(raw: string): ParsedSetCookie {
+  const parts = raw
+    .split(";")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const [first, ...rest] = parts;
+  const eq = first.indexOf("=");
+  const attrs: Record<string, string | true> = {};
+  for (const seg of rest) {
+    const i = seg.indexOf("=");
+    if (i === -1) attrs[seg.toLowerCase()] = true;
+    else attrs[seg.slice(0, i).toLowerCase()] = seg.slice(i + 1);
+  }
+  return {
+    name: first.slice(0, eq),
+    value: first.slice(eq + 1),
+    httpOnly: attrs.httponly === true,
+    secure: attrs.secure === true,
+    sameSite: typeof attrs.samesite === "string" ? attrs.samesite : undefined,
+    path: typeof attrs.path === "string" ? attrs.path : undefined,
+    maxAge: typeof attrs["max-age"] === "string" ? attrs["max-age"] : undefined,
+  };
+}
+
+/** The first parsed `Set-Cookie` header for `name`. */
+function setCookie(res: Response, name: string): ParsedSetCookie | undefined {
+  for (const raw of res.headers.getSetCookie()) {
+    const parsed = parseSetCookie(raw);
+    if (parsed.name === name) return parsed;
+  }
+  return undefined;
+}
+
+// ui-cookie-session D8 un-park (ADR-050 §a): the org-create reissue rides
+// Set-Cookie too — dual emission. The same fresh token that lands in
+// X-New-Access-Token is ALSO written as the HttpOnly auth_token cookie, plus a
+// JS-readable session=1 flag, as TWO distinct never-collapsed headers (UC-6).
+// Mode-AGNOSTIC: emission is gated only by the existing path/method/status +
+// isUserToken guards; ONLY the Secure attribute is dev-gated.
+describe("org-create reissue — Set-Cookie dual emission (ADR-050 §a / D8)", () => {
+  it("(a) emits an auth_token cookie (HttpOnly, Lax, Path=/, Max-Age=expiry) whose value == X-New-Access-Token", async () => {
+    const { token } = await issueDevToken();
+    upstreamResponds({ status: 201, body: { id: "org-new", name: "Acme" } });
+
+    const res = await postOrgs(token);
+    expect(res.status).toBe(201);
+
+    const newToken = res.headers.get("X-New-Access-Token")!;
+    const expiresIn = res.headers.get("X-New-Token-Expires-In")!;
+
+    const cookie = setCookie(res, "auth_token");
+    expect(cookie).toBeDefined();
+    expect(cookie!.httpOnly).toBe(true);
+    expect(cookie!.sameSite).toBe("Lax");
+    expect(cookie!.path).toBe("/");
+    expect(cookie!.maxAge).toBe(expiresIn);
+    // Same minted token in both transports.
+    expect(cookie!.value).toBe(newToken);
+  });
+
+  it("(b) emits a session=1 cookie that is NOT HttpOnly (JS-readable sign-in flag)", async () => {
+    const { token } = await issueDevToken();
+    upstreamResponds({ status: 201, body: { id: "org-new", name: "Acme" } });
+
+    const res = await postOrgs(token);
+
+    const flag = setCookie(res, "session");
+    expect(flag).toBeDefined();
+    expect(flag!.value).toBe("1");
+    expect(flag!.httpOnly).toBe(false);
+  });
+
+  it("(c) emits the two cookies as SEPARATE headers, never one comma-joined value", async () => {
+    const { token } = await issueDevToken();
+    upstreamResponds({ status: 201, body: { id: "org-new", name: "Acme" } });
+
+    const res = await postOrgs(token);
+
+    const list = res.headers.getSetCookie();
+    expect(list.length).toBeGreaterThanOrEqual(2);
+    // No single header carries both cookie names comma-joined.
+    for (const raw of list) {
+      expect(raw.includes("auth_token=") && raw.includes("session=")).toBe(false);
+    }
+  });
+
+  it("(d) STILL emits X-New-Access-Token AND X-New-Token-Expires-In (dual emission, not replacement)", async () => {
+    const { token } = await issueDevToken();
+    upstreamResponds({ status: 201, body: { id: "org-new", name: "Acme" } });
+
+    const res = await postOrgs(token);
+
+    expect(res.headers.get("X-New-Access-Token")).toBeTruthy();
+    expect(Number(res.headers.get("X-New-Token-Expires-In"))).toBeGreaterThan(0);
+  });
+
+  it("(e) dev mode: the auth_token cookie has NO Secure attribute", async () => {
+    process.env.AUTH_MODE = "dev";
+    const { token } = await issueDevToken();
+    upstreamResponds({ status: 201, body: { id: "org-new", name: "Acme" } });
+
+    const res = await postOrgs(token);
+
+    const cookie = setCookie(res, "auth_token");
+    expect(cookie).toBeDefined();
+    expect(cookie!.secure).toBe(false);
+  });
+
+  it("(f) workos mode: the auth_token cookie HAS Secure (mode-agnostic emission, dev-gated Secure only)", async () => {
+    process.env.AUTH_MODE = "workos";
+    // Mint a user token directly to avoid the dev callback path under workos.
+    const { token } = await mintUserToken({
+      sub: "u-workos",
+      email: "w@x.example",
+      name: "W",
+      org_id: "",
+      sid: "sid-workos",
+    });
+    upstreamResponds({ status: 201, body: { id: "org-new", name: "Acme" } });
+
+    const res = await postOrgs(token);
+    expect(res.status).toBe(201);
+
+    const cookie = setCookie(res, "auth_token");
+    expect(cookie).toBeDefined();
+    expect(cookie!.secure).toBe(true);
+  });
+
+  it("(g) does NOT emit an auth_token cookie when the reissue does not fire", async () => {
+    // POST /api/projects 201 — wrong path
+    {
+      const { token } = await issueDevToken();
+      upstreamResponds({ status: 201, body: { id: "proj-1" } });
+      const res = await app.fetch(
+        new Request("http://localhost/api/projects", {
+          method: "POST",
+          headers: { "content-type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ name: "P" }),
+        }),
+      );
+      expect(setCookie(res, "auth_token")).toBeUndefined();
+    }
+    // POST /api/orgs 400 — wrong status
+    {
+      const { token } = await issueDevToken();
+      upstreamResponds({ status: 400, body: { error: "bad_request" } });
+      const res = await postOrgs(token, { name: "" });
+      expect(res.status).toBe(400);
+      expect(setCookie(res, "auth_token")).toBeUndefined();
+    }
+    // POST /api/orgs 409 — wrong status
+    {
+      const { token } = await issueDevToken();
+      upstreamResponds({ status: 409, body: { error: "name_taken" } });
+      const res = await postOrgs(token);
+      expect(res.status).toBe(409);
+      expect(setCookie(res, "auth_token")).toBeUndefined();
+    }
+    // Unauthenticated POST /api/orgs 401 — never reaches the hook
+    {
+      const res = await postOrgs(null);
+      expect(res.status).toBe(401);
+      expect(setCookie(res, "auth_token")).toBeUndefined();
+    }
+  });
+});
+
 describe("org-create reissue — concurrency", () => {
   it("does not cross-contaminate tokens across concurrent callers", async () => {
     // Two distinct user identities (minted directly so sub differs — dev mode

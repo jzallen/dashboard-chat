@@ -893,6 +893,32 @@ async function applyOrgCreateReissue(
   const headers = stripReissueHeaders(upstream.headers);
   headers.set("X-New-Access-Token", reissue.token);
   headers.set("X-New-Token-Expires-In", String(reissue.expiresIn));
+  // ui-cookie-session D8 un-park (ADR-050 §a, UC-6): the reissue rides
+  // Set-Cookie too — dual emission. Write the SAME fresh token as the HttpOnly
+  // auth_token cookie plus a JS-readable session=1 flag, mirroring the callback
+  // handler (app.ts:173-198). Two DISTINCT never-collapsed headers via
+  // Headers.append (preserves duplicate set-cookie entries). MODE-AGNOSTIC:
+  // emission is gated only by the path/method/status + isUserToken guards above;
+  // ONLY the Secure attribute is dev-gated.
+  const secure = (process.env.AUTH_MODE || "dev") !== "dev";
+  headers.append(
+    "Set-Cookie",
+    buildSetCookie(COOKIE_AUTH_TOKEN, reissue.token, {
+      httpOnly: true,
+      sameSite: "Lax",
+      path: "/",
+      maxAge: reissue.expiresIn,
+      secure,
+    }),
+  );
+  headers.append(
+    "Set-Cookie",
+    buildSetCookie(COOKIE_SESSION_FLAG, "1", {
+      sameSite: "Lax",
+      path: "/",
+      secure,
+    }),
+  );
   return new Response(upstream.body, { status: upstream.status, headers });
 }
 
