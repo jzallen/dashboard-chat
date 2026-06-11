@@ -36,8 +36,8 @@ class OrganizationController:
     """Controller for Organization aggregate HTTP endpoints."""
 
     @staticmethod
-    async def post_organization(name: str, user: "AuthUser", provisioned_org_id: str | None = None) -> tuple[dict, int]:
-        result = await _uc().create_organization(name=name, user=user, provisioned_org_id=provisioned_org_id)
+    async def post_organization(name: str, user: "AuthUser") -> tuple[dict, int]:
+        result = await _uc().create_organization(name=name, user=user)
         match result:
             case Success(data):
                 # The use case returns {"org_id", "org_name"}; map it to the

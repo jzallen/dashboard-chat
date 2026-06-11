@@ -829,8 +829,9 @@ app.all("*", async (c) => {
 
     // CDO-S5: WorkOS org-create interception. Cheap path+method+mode guard so
     // every other proxied request stays zero-overhead. In workos mode a
-    // POST /api/orgs is pre-checked + provisioned + forwarded carrying
-    // X-Provisioned-Org-Id; the post-response reissue still fires on the
+    // POST /api/orgs is pre-checked + provisioned + forwarded with X-Org-Id
+    // overridden to the freshly-provisioned WorkOS org id (the backend persists
+    // it as the new org's row id); the post-response reissue still fires on the
     // relayed 201. Dev mode (and every other route/method) falls through.
     if (
       c.req.method === "POST" &&
@@ -859,10 +860,10 @@ app.all("*", async (c) => {
  * site). Reuses the same backend-fetch wiring (`proxyRequest`) for the forward
  * and the same injected-fetch WorkOS boundary as the auth provider.
  *
- * `incomingHeaders` arrives already stripped of IDENTITY_HEADERS (including a
- * client-supplied `x-provisioned-org-id`) and injected with the verified
- * identity — the forward closure injects the proxy's own `X-Provisioned-Org-Id`
- * on top (strip-then-inject).
+ * `incomingHeaders` arrives already stripped of IDENTITY_HEADERS and injected
+ * with the verified identity — the forward closure then overrides `X-Org-Id`
+ * with the freshly-provisioned WorkOS org id (strip-then-inject), which the
+ * backend persists as the new org's row id.
  */
 async function interceptWorkosOrgCreate(
   c: { req: { raw: Request; url: string; method: string } },
@@ -906,11 +907,12 @@ async function interceptWorkosOrgCreate(
         provisioner.createOrganizationMembership(userId, orgId),
       deprovisionOrg: (orgId) => provisioner.deleteOrganization(orgId),
       forwardToBackend: async (provisionedOrgId) => {
-        // Strip-then-inject: incomingHeaders already had any client-supplied
-        // x-provisioned-org-id stripped (IDENTITY_HEADERS); inject the proxy's
-        // own provisioned id on top.
+        // Override X-Org-Id (empty for a first-org creator) with the freshly-
+        // provisioned WorkOS org id: the backend persists it as the new org's
+        // row id (the WorkOS org id IS the local org id). X-Org-Id is an
+        // IDENTITY_HEADER, so any client-supplied value was already stripped.
         const headers = new Headers(incomingHeaders);
-        headers.set("X-Provisioned-Org-Id", provisionedOrgId);
+        headers.set("X-Org-Id", provisionedOrgId);
         headers.delete("host");
         const target = `${BACKEND_URL}${url.pathname}${url.search}`;
         const response = await fetch(target, {

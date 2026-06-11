@@ -2,7 +2,6 @@
 
 from typing import TYPE_CHECKING
 
-from app.auth.exceptions import AuthorizationError
 from app.auth.types import AuthUser
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
@@ -18,7 +17,6 @@ async def create_organization(
     name: str,
     user: AuthUser,
     *,
-    provisioned_org_id: str | None = None,
     repositories: "RepositoryContainer",
 ) -> dict:
     """Create a new organization, stamping the creating user as owner.
@@ -27,11 +25,20 @@ async def create_organization(
     trusts auth-proxy's identity headers (ADR-048 §2). Identity-provider
     org/membership provisioning lives in auth-proxy, not here.
 
-    No project is auto-created — first-project creation belongs solely to
-    the project-context onboarding flow (org-onboarding D2).
-    """
-    _ensure_user_has_no_org(user)
+    The new org's id is the caller's org claim (``user.org_id`` ← ``X-Org-Id``,
+    resolved gated on ``trust_proxy_headers``): in workos mode the auth-proxy
+    sets ``X-Org-Id`` to the freshly-provisioned WorkOS org id on the
+    create-route forward — the WorkOS org id IS the local org id (ADR-050 §b).
+    Absent/None (dev, non-intercepted traffic) → backend-generated id.
 
+    There is no "user already has an org" guard: a create request by definition
+    persists the user's (new) org, so there is no prior org to reject against.
+    Uniqueness is enforced by the global org-name index
+    (``OrganizationNameTakenError`` → 409) and the org-id primary key.
+
+    No project is auto-created — first-project creation belongs solely to the
+    project-context onboarding flow (org-onboarding D2).
+    """
     metadata_repo = repositories.metadata
 
     # Org names are globally unique. Reject a collision with a cheap point
@@ -40,21 +47,17 @@ async def create_organization(
     if await metadata_repo.get_organization_by_name(name) is not None:
         raise OrganizationNameTakenError(f"Organization name '{name}' is already in use")
 
-    org = await _create_org_record(name, user.id, metadata_repo, provisioned_org_id)
+    org = await _create_org_record(name, user.id, metadata_repo, user.org_id)
 
     return {"org_id": org["id"], "org_name": org["name"]}
 
 
-def _ensure_user_has_no_org(user) -> None:
-    if user.org_id is not None:
-        raise AuthorizationError("User already belongs to an organization")
-
-
-async def _create_org_record(name, user_id, metadata_repo, provisioned_org_id=None):
+async def _create_org_record(name, user_id, metadata_repo, org_id=None):
     """Create the local org record, stamping the creating user as owner.
 
-    When ``provisioned_org_id`` is supplied (the trust-gated WorkOS org id), it
-    is used verbatim as the row ``id`` — preserving the rule that the WorkOS org
-    id IS the local org id (ADR-050 §b). Absent → backend-generated id.
+    When ``org_id`` is supplied (the trust-gated org claim — the WorkOS org id
+    in workos mode), it is used verbatim as the row ``id``, preserving the rule
+    that the WorkOS org id IS the local org id (ADR-050 §b). Absent →
+    backend-generated id.
     """
-    return await metadata_repo.create_organization(name=name, id=provisioned_org_id, created_by=user_id)
+    return await metadata_repo.create_organization(name=name, id=org_id, created_by=user_id)

@@ -65,16 +65,17 @@ const PUBLIC_PATHS = new Set([
 ]);
 
 /**
- * Headers that must never be forwarded from clients. `x-provisioned-org-id`
- * (CDO-S5, ADR-050 §b) joins the strip list so a client-supplied value is
- * dropped on EVERY route — only the WorkOS org-create interception re-injects
- * it on the backend forward (strip-then-inject), and the backend trusts it.
+ * Headers that must never be forwarded from clients — stripped on EVERY route
+ * and replaced with the verified identity (strip-then-inject), so a client can
+ * never spoof them. The WorkOS org-create interception (CDO-S5, ADR-050 §b)
+ * reuses this for the org-id carry: it overrides `x-org-id` with the freshly-
+ * provisioned WorkOS org id on the backend forward, which the backend persists
+ * as the new org's row id.
  */
 const IDENTITY_HEADERS = [
   "x-user-id",
   "x-org-id",
   "x-user-email",
-  "x-provisioned-org-id",
 ];
 
 export function isPublicPath(path: string): boolean {

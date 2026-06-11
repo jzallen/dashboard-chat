@@ -1054,7 +1054,7 @@ describe("mode discovery: GET /api/auth/config (ADR-050 §d)", () => {
 //
 // In AUTH_MODE=workos the proxy intercepts POST /api/orgs: pre-check name
 // availability against the backend, provision the WorkOS org + membership, then
-// forward to the backend carrying X-Provisioned-Org-Id. The post-response
+// forward to the backend with X-Org-Id = the new org id. The post-response
 // applyOrgCreateReissue (CDO-S4) still fires on the relayed 201. Every other
 // proxied request — and every request in dev mode — is straight-through.
 describe("CDO-S5: WorkOS org-create interception (workos mode)", () => {
@@ -1157,7 +1157,7 @@ describe("CDO-S5: WorkOS org-create interception (workos mode)", () => {
     );
   }
 
-  it("provisions the WorkOS org and forwards to the backend carrying X-Provisioned-Org-Id", async () => {
+  it("provisions the WorkOS org and forwards to the backend with X-Org-Id = the new org id", async () => {
     const calls = routeFetch({ workosOrgId: "wos-org-abc" });
     const token = await userToken();
 
@@ -1168,13 +1168,14 @@ describe("CDO-S5: WorkOS org-create interception (workos mode)", () => {
     const workosCreate = calls.find((c) => c.url.endsWith("/organizations"));
     expect(workosCreate).toBeDefined();
 
-    // The backend forward carried the freshly-created WorkOS org id.
+    // The backend forward carried the freshly-created WorkOS org id as X-Org-Id
+    // (the backend persists it as the new org's row id).
     const forward = calls.find(
       (c) => c.url.includes("/api/orgs") && !c.url.includes("availability"),
     );
     expect(forward).toBeDefined();
     const fwdHeaders = forward!.init.headers as Headers;
-    expect(fwdHeaders.get("X-Provisioned-Org-Id")).toBe("wos-org-abc");
+    expect(fwdHeaders.get("X-Org-Id")).toBe("wos-org-abc");
   });
 
   it("a 409 pre-check synthesizes a 409 and makes ZERO WorkOS calls (no orphaned IdP org)", async () => {
@@ -1210,7 +1211,7 @@ describe("CDO-S5: WorkOS org-create interception (workos mode)", () => {
     expect(decodeJwt(newToken!).org_id).toBe("wos-org-reissue");
   });
 
-  it("a client-supplied X-Provisioned-Org-Id is stripped before the backend forward", async () => {
+  it("a client-supplied X-Org-Id is stripped; the forward carries the provisioned org id", async () => {
     const calls = routeFetch({ workosOrgId: "wos-org-real" });
     const token = await userToken();
 
@@ -1220,7 +1221,7 @@ describe("CDO-S5: WorkOS org-create interception (workos mode)", () => {
         headers: {
           "content-type": "application/json",
           Authorization: `Bearer ${token}`,
-          "X-Provisioned-Org-Id": "client-smuggled-org",
+          "X-Org-Id": "client-smuggled-org",
         },
         body: JSON.stringify({ name: "Acme" }),
       }),
@@ -1232,13 +1233,11 @@ describe("CDO-S5: WorkOS org-create interception (workos mode)", () => {
     );
     const fwdHeaders = forward!.init.headers as Headers;
     // The smuggled value is gone; only the proxy's provisioned id survives.
-    expect(fwdHeaders.get("X-Provisioned-Org-Id")).toBe("wos-org-real");
-    expect(fwdHeaders.get("X-Provisioned-Org-Id")).not.toBe(
-      "client-smuggled-org",
-    );
+    expect(fwdHeaders.get("X-Org-Id")).toBe("wos-org-real");
+    expect(fwdHeaders.get("X-Org-Id")).not.toBe("client-smuggled-org");
   });
 
-  it("strips a client-supplied X-Provisioned-Org-Id on a NON-org route too (every route, strip-then-inject)", async () => {
+  it("strips a client-supplied X-Org-Id on a NON-org route too (every route, strip-then-inject)", async () => {
     mockFetch.mockResolvedValue(
       new Response(JSON.stringify({ ok: true }), {
         status: 200,
@@ -1251,14 +1250,16 @@ describe("CDO-S5: WorkOS org-create interception (workos mode)", () => {
       new Request("http://localhost/api/projects", {
         headers: {
           Authorization: `Bearer ${token}`,
-          "X-Provisioned-Org-Id": "client-smuggled-org",
+          "X-Org-Id": "client-smuggled-org",
         },
       }),
     );
 
     const [, init] = mockFetch.mock.calls.at(-1) as [unknown, RequestInit];
     const headers = init.headers as Headers;
-    expect(headers.get("X-Provisioned-Org-Id")).toBeNull();
+    // The smuggled value is dropped and replaced with the verified identity org.
+    expect(headers.get("X-Org-Id")).toBe("o-1");
+    expect(headers.get("X-Org-Id")).not.toBe("client-smuggled-org");
   });
 
   it("dev mode is straight-through: POST /api/orgs makes a single backend call, no WorkOS egress", async () => {

@@ -15,7 +15,7 @@
  *   2. PROVISION the WorkOS org, then the org-membership (1 retry on membership;
  *      it is idempotent). Either failing → 502 org_provisioning_failed; a
  *      membership failure after retry → best-effort compensation delete.
- *   3. FORWARD to the backend with X-Provisioned-Org-Id. Relay the backend
+ *   3. FORWARD to the backend with X-Org-Id = the new org id. Relay the backend
  *      status verbatim.
  *   4. COMPENSATE: backend non-201 after WorkOS success → best-effort delete
  *      (1 retry). Compensation failure → emit `workos.org_compensate.fail` with

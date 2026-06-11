@@ -73,6 +73,34 @@ class TestGetCurrentUser:
         assert user.org_id == "proxy-org-id"
         assert user.email == "proxy@test.com"
 
+    async def test_empty_org_header_normalises_to_none(self, monkeypatch):
+        """An empty X-Org-Id (a no-org WorkOS user's `organization_id ?? ""`
+        claim) is normalised to None — so create_organization's no-org guard
+        treats it as "no org" rather than misreading "" as "already belongs"."""
+        from app.config import Settings
+
+        monkeypatch.setattr(
+            "app.routers.deps.get_settings",
+            lambda: Settings(trust_proxy_headers=True),
+        )
+
+        from starlette.requests import Request
+
+        scope = {
+            "type": "http",
+            "headers": [
+                (b"x-user-id", b"proxy-user-id"),
+                (b"x-org-id", b""),
+                (b"x-user-email", b"proxy@test.com"),
+            ],
+        }
+        request = Request(scope)
+
+        user = await get_current_user(request)
+
+        assert user.id == "proxy-user-id"
+        assert user.org_id is None
+
     async def test_ignores_proxy_headers_when_trust_disabled(self, monkeypatch):
         """With TRUST_PROXY_HEADERS=false (default), should ignore headers."""
         from app.config import Settings

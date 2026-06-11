@@ -40,7 +40,12 @@ async def get_current_user(
         if user_id:
             user = AuthUser(
                 id=user_id,
-                org_id=request.headers.get("X-Org-Id"),
+                # Normalise an empty X-Org-Id to None: the auth-proxy mints a
+                # no-org WorkOS user's claim as "" (organization_id ?? ""), and an
+                # empty string MEANS "no org". Without this, downstream `org_id is
+                # not None` checks (e.g. create_organization's no-org guard) misread
+                # "" as "already belongs to an org" and reject first-org creation.
+                org_id=request.headers.get("X-Org-Id") or None,
                 email=request.headers.get("X-User-Email", ""),
             )
     if user is None:

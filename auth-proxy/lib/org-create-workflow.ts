@@ -27,7 +27,7 @@ export interface OrgCreateInterceptionDeps {
   provisionMembership: (userId: string, orgId: string) => Promise<void>;
   /** Compensation delete of the WorkOS org (best-effort — 1 retry here). */
   deprovisionOrg: (orgId: string) => Promise<void>;
-  /** Forward to the backend carrying X-Provisioned-Org-Id; the backend Response. */
+  /** Forward to the backend with X-Org-Id overridden to the new org id; the backend Response. */
   forwardToBackend: (provisionedOrgId: string) => Promise<Response>;
   emit: OrgCreateEmit;
 }
@@ -104,7 +104,7 @@ export async function runOrgCreateInterception(
     return provisioningFailed();
   }
 
-  // 3. FORWARD to the backend carrying X-Provisioned-Org-Id. Relay verbatim.
+  // 3. FORWARD to the backend with X-Org-Id = the new org id. Relay verbatim.
   const backend = await deps.forwardToBackend(orgId);
   if (backend.status === 201) {
     return backend;

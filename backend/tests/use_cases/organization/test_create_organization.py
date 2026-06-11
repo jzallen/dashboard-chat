@@ -49,16 +49,21 @@ class TestCreateOrganization:
             case Failure(error):
                 pytest.fail(f"Expected success, got: {error}")
 
-    async def test_create_org_when_user_already_has_org_fails(self, db_session: AsyncSession):
+    async def test_create_org_uses_caller_org_claim_as_row_id(self, db_session: AsyncSession):
+        """The caller's org claim (user.org_id ← X-Org-Id) becomes the persisted
+        row id verbatim — in workos mode the auth-proxy sets X-Org-Id to the
+        freshly-provisioned WorkOS org id (the WorkOS id IS the local id,
+        ADR-050 §b). There is NO 'already has an org' guard: a non-None claim is
+        the org being persisted, not a rejection trigger."""
         set_session(db_session)
 
-        result = await create_organization(name="Another Org", user=TEST_USER_WITH_ORG)
+        result = await create_organization(name="Claimed Org", user=TEST_USER_WITH_ORG)
 
         match result:
+            case Success(data):
+                assert data["org_id"] == TEST_USER_WITH_ORG.org_id
             case Failure(error):
-                assert "already belongs to an organization" in str(error)
-            case Success(_):
-                pytest.fail("Expected failure when user already has an org")
+                pytest.fail(f"Expected success (no no-org guard), got: {error}")
 
     async def test_create_org_when_name_already_taken_fails(self, db_session: AsyncSession):
         set_session(db_session)
@@ -67,8 +72,7 @@ class TestCreateOrganization:
         assert isinstance(first, Success), f"setup create failed: {first}"
 
         # Org names are globally unique — a second create with the same name is
-        # rejected before insert (TEST_USER.org_id is None, so the user-already-
-        # has-org guard does not short-circuit it).
+        # rejected on the duplicate name before insert.
         result = await create_organization(name="Acme Corp", user=TEST_USER)
 
         match result:
@@ -78,15 +82,18 @@ class TestCreateOrganization:
             case Success(_):
                 pytest.fail("Expected failure when org name is already taken")
 
-    async def test_create_org_honours_provisioned_org_id_as_row_id(self, db_session: AsyncSession):
-        """ADR-050 §b: a caller-supplied provisioned_org_id becomes the persisted
-        org row id verbatim (the WorkOS org id IS the local org id). Absent →
-        a backend-generated id, as today."""
+    async def test_create_org_generates_id_when_caller_has_no_org_claim(self, db_session: AsyncSession):
+        """ADR-050 §b, the two arms of "WorkOS id IS the local id, else generated":
+        a caller carrying an org claim (user.org_id) → that id verbatim; a caller
+        with org_id=None (dev / non-intercepted) → a backend-generated id."""
+        from dataclasses import replace
+
         set_session(db_session)
 
         provisioned = "org_workos_provisioned_42"
-        with_id = await create_organization(name="Provisioned Org", user=TEST_USER, provisioned_org_id=provisioned)
-        without_id = await create_organization(name="Generated Org", user=TEST_USER, provisioned_org_id=None)
+        claimed_user = replace(TEST_USER, org_id=provisioned)
+        with_id = await create_organization(name="Provisioned Org", user=claimed_user)
+        without_id = await create_organization(name="Generated Org", user=TEST_USER)  # org_id=None
 
         match (with_id, without_id):
             case (Success(provided), Success(generated)):
