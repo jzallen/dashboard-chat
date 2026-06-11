@@ -123,3 +123,85 @@ The lone surviving mentions are doc-comment references describing the now-delete
 ### Verification
 `cd ui-state && npx vitest run` → 17 files, 187 tests, all green. `npx tsc --noEmit` clean for
 ui-state/. eslint: 0 errors.
+
+## Step 05-03 — auth-proxy WorkOS org-create interception (request side)
+
+This is the production WorkOS write path that completes client-driven-onboarding: the
+REQUEST-side half of the org-create seam (the RESPONSE side already shipped as CDO-S4's
+`applyOrgCreateReissue`). ADR-048 §1/§3/§5 + ADR-050 §b/§c, layer = auth-proxy.
+
+### What changed (production)
+- **lib/user-auth/workos.ts** — ADDED three org-provisioning ops on the existing
+  injected-fetch boundary (`this.fetchPort`, `config.baseUrl=WORKOS_BASE`,
+  `config.clientSecret=WORKOS_API_KEY`): `createOrganization(name)→{id}`,
+  `createOrganizationMembership(userId, orgId)`, `deleteOrganization(orgId)`. A shared
+  `callWorkos` wrapper mirrors `callAuthenticate`'s failure mapping (throw/non-ok →
+  `service_error`) but targets the API-key-authorized `/organizations` surface with
+  `Authorization: Bearer <WORKOS_API_KEY>` and `AbortSignal.timeout(5000)` per call. NO
+  auto-retry lives in this module — the WORKFLOW owns retry policy (R5).
+- **lib/org-create-workflow.ts** — NEW. `runOrgCreateInterception({ name, userId,
+  identityHeaders, correlationId, deps })` — the pure POLICY SSOT, free of Hono internals
+  (every collaborator injected → the whole pre-check/provision/forward/compensate matrix is
+  fault-injection-testable without standing up the proxy). Sequence:
+  1. PRE-CHECK availability via the backend; a 409 mirrors the backend's JSON:API 409 and
+     makes ZERO WorkOS calls (no orphaned IdP org).
+  2. PROVISION org (no auto-retry — not idempotent) then membership (1 retry — idempotent).
+     A membership failure after the retry → best-effort compensation delete, then a
+     synthesized 502 `org_provisioning_failed`.
+  3. FORWARD to the backend carrying `X-Provisioned-Org-Id`; relay the backend status
+     verbatim.
+  4. COMPENSATE: a non-201 persist after WorkOS success → best-effort `deleteOrganization`
+     (1 retry). On compensation failure → emit the alertable `workos.org_compensate.fail`
+     carrying the orphan id, and STILL relay the backend status (compensated/uncompensated
+     is client-indistinguishable, ADR-050 §c).
+  Emits `org_create.intercepted` (ADR-048 §5) on every interception via the injected `emit`.
+- **lib/auth.ts** — `x-provisioned-org-id` joins `IDENTITY_HEADERS` so a client-supplied
+  value is STRIPPED on EVERY route (strip-then-inject); only the interception re-injects the
+  proxy's own provisioned id on the backend forward. The backend already trusts this channel
+  (TRUST_PROXY_HEADERS; ADR-050 §b — the WorkOS org id IS the local org id).
+- **app.ts** — the catch-all `app.all('*')` gains a CHEAP path+method+mode guard between the
+  identity-header inject and `proxyRequest`: `POST /api/orgs` in `AUTH_MODE=workos` →
+  `interceptWorkosOrgCreate` wires the closures (availability pre-check + WorkOS provisioner
+  from `createWorkosProvisioner` + a backend-forward that injects `X-Provisioned-Org-Id`) and
+  delegates to `runOrgCreateInterception`. The post-response `applyOrgCreateReissue` STILL
+  fires on the relayed 201. Dev mode and every other route/method fall through unchanged
+  (zero overhead).
+
+### Compensation is best-effort by design (UPSTREAM-3 RESOLVED)
+WorkOS does NOT enforce org-name uniqueness, so compensation stays best-effort per
+ADR-048 A+B: an uncompensated orphan does not block a later retry of the same name. The
+`workos.org_compensate.fail` event is the out-of-band reconciliation hook for orphans the
+best-effort delete (1 retry) could not clean up.
+
+### Body-streaming note
+The inbound `name` is read from `c.req.raw.clone().text()` and the SAME buffered bytes are
+re-emitted on the backend forward. In this undici version a clone-then-stream locks the
+original body that the forward would otherwise pass through, so buffering-once-and-re-emitting
+is the streaming-safe path here.
+
+### Test fixture fix (org-create-reissue.test.ts)
+`upstreamResponds` now uses `mockImplementation` (fresh Response per call) instead of
+`mockResolvedValue` (one shared Response). The workos-mode interception makes several fetches
+per `POST /api/orgs`; a single shared Response body cannot be consumed more than once. The
+assertions are unchanged — this is a fixture correctness fix exposed by the new behavior, not
+an assertion weakening.
+
+### Coverage (DWD-6 — no python cdo_s5 scenario; auth-proxy unit + integration only)
+- `lib/org-create-workflow.test.ts` (NEW) — the full fault-injected matrix: pre-check-409 →
+  synthesized 409 + ZERO provision calls; create fail → 502; membership fail after 1 retry →
+  502 + compensation attempted; membership-retry-succeeds → forwards; backend non-201 →
+  compensation (1 retry) + status relayed; compensation-fail → `workos.org_compensate.fail`
+  with orphan id + status still relayed; happy path → `X-Provisioned-Org-Id` carried + 201 +
+  `org_create.intercepted` emitted.
+- `lib/user-auth/workos.test.ts` — the three ops via constructor-injected `mockFetch`:
+  success shape, Bearer-API-key auth + 5s AbortSignal, WorkOS 4xx/5xx/network → typed
+  `service_error`.
+- `app.test.ts` — the workos-mode integration arm: provision+forward carrying
+  `x-provisioned-org-id`; 409 pre-check → ZERO WorkOS egress; `applyOrgCreateReissue` still
+  fires on the relayed 201; client-supplied `x-provisioned-org-id` stripped on the org route
+  AND on a non-org route (every route); dev-mode straight-through (single backend call, no
+  WorkOS egress).
+
+### Verification
+`cd auth-proxy && SKIP_DOCKER_ACCEPTANCE=1 npx vitest run` → 16 files, 276 passed, 5 skipped
+(the multi-replica docker suite skips: no `dashboard-chat/auth-proxy:bazel` image + the flag).

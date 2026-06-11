@@ -1047,3 +1047,239 @@ describe("mode discovery: GET /api/auth/config (ADR-050 §d)", () => {
     expect(second.headers.getSetCookie()).toEqual([]);
   });
 });
+
+// ----------------------------------------------------------------------------
+// CDO-S5 — WorkOS org-create interception (ADR-048 §1/§3/§5 + ADR-050 §b/§c)
+// ----------------------------------------------------------------------------
+//
+// In AUTH_MODE=workos the proxy intercepts POST /api/orgs: pre-check name
+// availability against the backend, provision the WorkOS org + membership, then
+// forward to the backend carrying X-Provisioned-Org-Id. The post-response
+// applyOrgCreateReissue (CDO-S4) still fires on the relayed 201. Every other
+// proxied request — and every request in dev mode — is straight-through.
+describe("CDO-S5: WorkOS org-create interception (workos mode)", () => {
+  const originalAuthMode = process.env.AUTH_MODE;
+  const originalWorkos = {
+    base: process.env.WORKOS_BASE,
+    key: process.env.WORKOS_API_KEY,
+    client: process.env.WORKOS_CLIENT_ID,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetSessionStore();
+    resetM2m();
+    process.env.AUTH_MODE = "workos";
+    process.env.WORKOS_BASE = "https://workos.test";
+    process.env.WORKOS_API_KEY = "wos-api-key";
+    process.env.WORKOS_CLIENT_ID = "test-workos-client";
+  });
+
+  afterEach(() => {
+    resetSessionStore();
+    if (originalAuthMode === undefined) delete process.env.AUTH_MODE;
+    else process.env.AUTH_MODE = originalAuthMode;
+    if (originalWorkos.base === undefined) delete process.env.WORKOS_BASE;
+    else process.env.WORKOS_BASE = originalWorkos.base;
+    if (originalWorkos.key === undefined) delete process.env.WORKOS_API_KEY;
+    else process.env.WORKOS_API_KEY = originalWorkos.key;
+    if (originalWorkos.client === undefined) delete process.env.WORKOS_CLIENT_ID;
+    else process.env.WORKOS_CLIENT_ID = originalWorkos.client;
+  });
+
+  /**
+   * Route the stubbed global fetch by URL: backend availability, WorkOS org
+   * create, WorkOS membership, and the backend forward each get their own
+   * canned response. Records every call so the test can assert what was sent.
+   */
+  function routeFetch(opts: {
+    availabilityStatus?: number;
+    workosOrgId?: string;
+    backendCreateStatus?: number;
+  } = {}) {
+    const {
+      availabilityStatus = 200,
+      workosOrgId = "wos-org-created",
+      backendCreateStatus = 201,
+    } = opts;
+    const calls: { url: string; init: RequestInit }[] = [];
+    mockFetch.mockImplementation(async (url: string, init: RequestInit = {}) => {
+      calls.push({ url: String(url), init });
+      const u = String(url);
+      if (u.includes("/api/orgs/availability")) {
+        return new Response(
+          JSON.stringify({ available: availabilityStatus !== 409 }),
+          { status: availabilityStatus, headers: { "content-type": "application/json" } },
+        );
+      }
+      if (u.endsWith("/organizations")) {
+        return new Response(JSON.stringify({ id: workosOrgId, name: "Acme" }), {
+          status: 201,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (u.includes("/organization_memberships")) {
+        return new Response(JSON.stringify({ id: "om_1" }), {
+          status: 201,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      // The backend forward (POST /api/orgs).
+      return new Response(JSON.stringify({ id: workosOrgId, name: "Acme" }), {
+        status: backendCreateStatus,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    return calls;
+  }
+
+  async function userToken(orgId = "") {
+    const { token } = await mintUserToken({
+      sub: "wos-user-1",
+      email: "u@example.com",
+      name: "U",
+      org_id: orgId,
+      sid: "sid-1",
+    });
+    return token;
+  }
+
+  function postOrgs(token: string, name = "Acme") {
+    return app.fetch(
+      new Request("http://localhost/api/orgs", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ name }),
+      }),
+    );
+  }
+
+  it("provisions the WorkOS org and forwards to the backend carrying X-Provisioned-Org-Id", async () => {
+    const calls = routeFetch({ workosOrgId: "wos-org-abc" });
+    const token = await userToken();
+
+    const res = await postOrgs(token);
+    expect(res.status).toBe(201);
+
+    // The WorkOS org create happened.
+    const workosCreate = calls.find((c) => c.url.endsWith("/organizations"));
+    expect(workosCreate).toBeDefined();
+
+    // The backend forward carried the freshly-created WorkOS org id.
+    const forward = calls.find(
+      (c) => c.url.includes("/api/orgs") && !c.url.includes("availability"),
+    );
+    expect(forward).toBeDefined();
+    const fwdHeaders = forward!.init.headers as Headers;
+    expect(fwdHeaders.get("X-Provisioned-Org-Id")).toBe("wos-org-abc");
+  });
+
+  it("a 409 pre-check synthesizes a 409 and makes ZERO WorkOS calls (no orphaned IdP org)", async () => {
+    const calls = routeFetch({ availabilityStatus: 409 });
+    const token = await userToken();
+
+    const res = await postOrgs(token);
+    expect(res.status).toBe(409);
+
+    // No WorkOS egress whatsoever on the taken-name path.
+    expect(calls.some((c) => c.url.endsWith("/organizations"))).toBe(false);
+    expect(calls.some((c) => c.url.includes("/organization_memberships"))).toBe(
+      false,
+    );
+    // And no backend forward either — only the availability pre-check ran.
+    expect(
+      calls.some(
+        (c) => c.url.includes("/api/orgs") && !c.url.includes("availability"),
+      ),
+    ).toBe(false);
+  });
+
+  it("applyOrgCreateReissue still fires on the relayed 201 (X-New-Access-Token present)", async () => {
+    routeFetch({ workosOrgId: "wos-org-reissue" });
+    const token = await userToken();
+
+    const res = await postOrgs(token);
+    expect(res.status).toBe(201);
+
+    const newToken = res.headers.get("X-New-Access-Token");
+    expect(newToken).toBeTruthy();
+    // The reissued token carries the provisioned org id as its org_id claim.
+    expect(decodeJwt(newToken!).org_id).toBe("wos-org-reissue");
+  });
+
+  it("a client-supplied X-Provisioned-Org-Id is stripped before the backend forward", async () => {
+    const calls = routeFetch({ workosOrgId: "wos-org-real" });
+    const token = await userToken();
+
+    const res = await app.fetch(
+      new Request("http://localhost/api/orgs", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          Authorization: `Bearer ${token}`,
+          "X-Provisioned-Org-Id": "client-smuggled-org",
+        },
+        body: JSON.stringify({ name: "Acme" }),
+      }),
+    );
+    expect(res.status).toBe(201);
+
+    const forward = calls.find(
+      (c) => c.url.includes("/api/orgs") && !c.url.includes("availability"),
+    );
+    const fwdHeaders = forward!.init.headers as Headers;
+    // The smuggled value is gone; only the proxy's provisioned id survives.
+    expect(fwdHeaders.get("X-Provisioned-Org-Id")).toBe("wos-org-real");
+    expect(fwdHeaders.get("X-Provisioned-Org-Id")).not.toBe(
+      "client-smuggled-org",
+    );
+  });
+
+  it("strips a client-supplied X-Provisioned-Org-Id on a NON-org route too (every route, strip-then-inject)", async () => {
+    mockFetch.mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const token = await userToken("o-1");
+
+    await app.fetch(
+      new Request("http://localhost/api/projects", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "X-Provisioned-Org-Id": "client-smuggled-org",
+        },
+      }),
+    );
+
+    const [, init] = mockFetch.mock.calls.at(-1) as [unknown, RequestInit];
+    const headers = init.headers as Headers;
+    expect(headers.get("X-Provisioned-Org-Id")).toBeNull();
+  });
+
+  it("dev mode is straight-through: POST /api/orgs makes a single backend call, no WorkOS egress", async () => {
+    process.env.AUTH_MODE = "dev";
+    const calls: { url: string }[] = [];
+    mockFetch.mockImplementation(async (url: string) => {
+      calls.push({ url: String(url) });
+      return new Response(JSON.stringify({ id: "org-dev", name: "Acme" }), {
+        status: 201,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    const token = await userToken();
+
+    const res = await postOrgs(token);
+    expect(res.status).toBe(201);
+
+    // No interception: no availability pre-check, no WorkOS calls — just the
+    // single straight-through backend proxy hop.
+    expect(calls.some((c) => c.url.includes("availability"))).toBe(false);
+    expect(calls.some((c) => c.url.endsWith("/organizations"))).toBe(false);
+    expect(calls.length).toBe(1);
+  });
+});

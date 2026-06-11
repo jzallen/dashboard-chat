@@ -590,6 +590,147 @@ describe("WorkOsUserAuthProvider", () => {
     });
   });
 
+  describe("org provisioning ops (CDO-S5)", () => {
+    function makeProvider(mockFetch: ReturnType<typeof vi.fn>) {
+      return new WorkOsUserAuthProvider({
+        fetch: mockFetch,
+        sessionStore: createInMemorySessionStore(),
+        config: TEST_CONFIG,
+      });
+    }
+
+    describe("createOrganization", () => {
+      it("POSTs the name to the WorkOS organizations endpoint and returns the new id", async () => {
+        const mockFetch = vi.fn().mockResolvedValue(
+          new Response(JSON.stringify({ id: "org_wos_123", name: "Acme" }), {
+            status: 201,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+        const provider = makeProvider(mockFetch);
+
+        const result = await provider.createOrganization("Acme");
+
+        expect(result).toEqual({ id: "org_wos_123" });
+        const call = recordedFetchCall(mockFetch);
+        expect(call.url).toBe("https://workos.test/organizations");
+        expect(call.method).toBe("POST");
+        expect(call.body).toEqual({ name: "Acme" });
+      });
+
+      it("authorizes with the WorkOS API key as a Bearer and times out at 5s (AbortSignal)", async () => {
+        let seenSignal: AbortSignal | undefined;
+        let seenAuth: string | undefined;
+        const mockFetch = vi.fn(async (_url: string, init: RequestInit) => {
+          seenSignal = init.signal ?? undefined;
+          seenAuth = new Headers(init.headers).get("authorization") ?? undefined;
+          return new Response(JSON.stringify({ id: "org_x" }), {
+            status: 201,
+            headers: { "content-type": "application/json" },
+          });
+        });
+        const provider = makeProvider(mockFetch);
+
+        await provider.createOrganization("Acme");
+
+        expect(seenSignal).toBeInstanceOf(AbortSignal);
+        expect(seenAuth).toBe("Bearer test-secret");
+      });
+
+      it("maps a WorkOS 4xx to a typed service_error failure", async () => {
+        const mockFetch = vi
+          .fn()
+          .mockResolvedValue(new Response("Bad Request", { status: 422 }));
+        const provider = makeProvider(mockFetch);
+
+        await expect(provider.createOrganization("Acme")).rejects.toThrow(
+          "service_error",
+        );
+      });
+
+      it("maps a WorkOS 5xx to a typed service_error failure", async () => {
+        const mockFetch = vi
+          .fn()
+          .mockResolvedValue(new Response("Server Error", { status: 503 }));
+        const provider = makeProvider(mockFetch);
+
+        await expect(provider.createOrganization("Acme")).rejects.toThrow(
+          "service_error",
+        );
+      });
+
+      it("maps a thrown fetch (network error) to a typed service_error failure", async () => {
+        const mockFetch = vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
+        const provider = makeProvider(mockFetch);
+
+        await expect(provider.createOrganization("Acme")).rejects.toThrow(
+          "service_error",
+        );
+      });
+    });
+
+    describe("createOrganizationMembership", () => {
+      it("POSTs the user id + org id to the memberships endpoint", async () => {
+        const mockFetch = vi.fn().mockResolvedValue(
+          new Response(JSON.stringify({ id: "om_1" }), {
+            status: 201,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+        const provider = makeProvider(mockFetch);
+
+        await provider.createOrganizationMembership("wos-user-1", "org_wos_123");
+
+        const call = recordedFetchCall(mockFetch);
+        expect(call.url).toBe(
+          "https://workos.test/user_management/organization_memberships",
+        );
+        expect(call.method).toBe("POST");
+        expect(call.body).toEqual({
+          user_id: "wos-user-1",
+          organization_id: "org_wos_123",
+        });
+      });
+
+      it("maps a WorkOS non-ok response to a typed service_error failure", async () => {
+        const mockFetch = vi
+          .fn()
+          .mockResolvedValue(new Response("nope", { status: 500 }));
+        const provider = makeProvider(mockFetch);
+
+        await expect(
+          provider.createOrganizationMembership("u", "o"),
+        ).rejects.toThrow("service_error");
+      });
+    });
+
+    describe("deleteOrganization", () => {
+      it("DELETEs the organization by id and resolves on success", async () => {
+        const mockFetch = vi
+          .fn()
+          .mockResolvedValue(new Response(null, { status: 204 }));
+        const provider = makeProvider(mockFetch);
+
+        await provider.deleteOrganization("org_wos_123");
+
+        const call = recordedFetchCall(mockFetch);
+        expect(call.url).toBe("https://workos.test/organizations/org_wos_123");
+        expect(call.method).toBe("DELETE");
+      });
+
+      it("maps a WorkOS non-ok delete response to a typed service_error failure", async () => {
+        const mockFetch = vi
+          .fn()
+          .mockResolvedValue(new Response("nope", { status: 500 }));
+        const provider = makeProvider(mockFetch);
+
+        await expect(
+          provider.deleteOrganization("org_wos_123"),
+        ).rejects.toThrow("service_error");
+      });
+    });
+  });
+
   describe("OQ1 (b) security invariant", () => {
     it("the WorkOS refresh_token never escapes the provider", async () => {
       const SECRET = "WOS-SECRET-DO-NOT-LEAK-ABC123";

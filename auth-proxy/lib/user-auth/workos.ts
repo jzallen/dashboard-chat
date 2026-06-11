@@ -142,6 +142,76 @@ export class WorkOsUserAuthProvider implements UserAuthProvider {
     this.sessionStore.delete(sid);
   }
 
+  /**
+   * Create a WorkOS organization (CDO-S5, ADR-048 §1). Authorizes with the
+   * WorkOS API key (`config.clientSecret` = WORKOS_API_KEY) as a Bearer.
+   * 5s timeout per call (R5); NO auto-retry — org create is NOT idempotent,
+   * so the WORKFLOW owns the (non-)retry policy, not this boundary.
+   */
+  async createOrganization(name: string): Promise<{ id: string }> {
+    const response = await this.callWorkos("POST", "/organizations", { name });
+    const json = (await response.json()) as { id?: unknown };
+    if (typeof json.id !== "string" || json.id.length === 0) {
+      throw new Error("service_error");
+    }
+    return { id: json.id };
+  }
+
+  /**
+   * Create a WorkOS organization-membership binding the verified user (their
+   * token `sub` IS the WorkOS user id) to the freshly-created org. Idempotent —
+   * the workflow may retry once on a transient failure.
+   */
+  async createOrganizationMembership(
+    userId: string,
+    orgId: string,
+  ): Promise<void> {
+    await this.callWorkos("POST", "/user_management/organization_memberships", {
+      user_id: userId,
+      organization_id: orgId,
+    });
+  }
+
+  /**
+   * Delete a WorkOS organization — the compensation leg for a backend persist
+   * failure after a successful WorkOS provision (ADR-048 §3, best-effort). The
+   * workflow may retry once.
+   */
+  async deleteOrganization(orgId: string): Promise<void> {
+    await this.callWorkos("DELETE", `/organizations/${orgId}`);
+  }
+
+  /**
+   * Shared WorkOS REST wrapper for the org-provisioning ops. Mirrors
+   * `callAuthenticate`'s failure mapping (throw → service_error, non-ok →
+   * service_error) but targets the API-key-authorized organizations surface
+   * with a 5s AbortSignal per call.
+   */
+  private async callWorkos(
+    method: "POST" | "DELETE",
+    path: string,
+    body?: Record<string, string>,
+  ): Promise<Response> {
+    let response: Response;
+    try {
+      response = await this.fetchPort(`${this.config.baseUrl}${path}`, {
+        method,
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${this.config.clientSecret}`,
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: AbortSignal.timeout(5000),
+      });
+    } catch {
+      throw new Error("service_error");
+    }
+    if (!response.ok) {
+      throw new Error("service_error");
+    }
+    return response;
+  }
+
   private async callAuthenticate(
     body: Record<string, string>,
   ): Promise<WorkOsAuthenticateResponse> {

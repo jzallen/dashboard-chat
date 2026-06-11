@@ -59,19 +59,25 @@ function resetEnv() {
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
-/** Configure the mocked upstream backend for the next proxied call. */
+/**
+ * Configure the mocked upstream backend for the next proxied call. A FRESH
+ * Response is produced per call (`mockImplementation`, not `mockResolvedValue`):
+ * the CDO-S5 workos-mode interception makes several fetches per POST /api/orgs
+ * (availability pre-check, WorkOS provision, backend forward), and a single
+ * shared Response body cannot be consumed more than once.
+ */
 function upstreamResponds(opts: {
   status: number;
   body?: unknown;
   headers?: Record<string, string>;
 }) {
-  const headers = new Headers({ "content-type": "application/json", ...opts.headers });
-  mockFetch.mockResolvedValue(
-    new Response(opts.body === undefined ? null : JSON.stringify(opts.body), {
+  mockFetch.mockImplementation(async () => {
+    const headers = new Headers({ "content-type": "application/json", ...opts.headers });
+    return new Response(opts.body === undefined ? null : JSON.stringify(opts.body), {
       status: opts.status,
       headers,
-    }),
-  );
+    });
+  });
 }
 
 /** Mint a real dev user token (callback flow) and return token + claims. */

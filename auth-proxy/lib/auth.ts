@@ -64,8 +64,18 @@ const PUBLIC_PATHS = new Set([
   "/api/auth/refresh",
 ]);
 
-/** Headers that must never be forwarded from clients. */
-const IDENTITY_HEADERS = ["x-user-id", "x-org-id", "x-user-email"];
+/**
+ * Headers that must never be forwarded from clients. `x-provisioned-org-id`
+ * (CDO-S5, ADR-050 §b) joins the strip list so a client-supplied value is
+ * dropped on EVERY route — only the WorkOS org-create interception re-injects
+ * it on the backend forward (strip-then-inject), and the backend trusts it.
+ */
+const IDENTITY_HEADERS = [
+  "x-user-id",
+  "x-org-id",
+  "x-user-email",
+  "x-provisioned-org-id",
+];
 
 export function isPublicPath(path: string): boolean {
   return PUBLIC_PATHS.has(path);

@@ -1,8 +1,9 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 
 import { Hono } from "hono";
 
 import { IDENTITY_HEADERS, isPublicPath, verifyToken } from "./lib/auth.ts";
+import { runOrgCreateInterception } from "./lib/org-create-workflow.ts";
 import {
   buildSetCookie,
   COOKIE_AUTH_TOKEN,
@@ -332,6 +333,30 @@ function createProviderForRequest(): UserAuthProvider {
     redirectUri: process.env.WORKOS_REDIRECT_URI || "",
     sessionTtlSeconds: 3600,
     revokeOnLogout: process.env.WORKOS_REVOKE_ON_LOGOUT === "true",
+  };
+  return new WorkOsUserAuthProvider({ sessionStore, config });
+}
+
+/**
+ * Concrete WorkOS provisioner for the org-create interception (CDO-S5). Reuses
+ * the same injected-fetch boundary as `createProviderForRequest` (no second
+ * WorkOS client) but returns the concrete type so the org-provisioning ops
+ * (createOrganization / createOrganizationMembership / deleteOrganization) are
+ * reachable. Built per-request so it observes the live WORKOS_BASE / API key.
+ */
+function createWorkosProvisioner(): WorkOsUserAuthProvider {
+  const sessionStore: SessionStorePort = {
+    set: setSession,
+    get: getSession,
+    getStatus: getSessionStatus,
+    delete: deleteSession,
+  };
+  const config: WorkOsConfig = {
+    baseUrl: process.env.WORKOS_BASE || "https://api.workos.com",
+    clientId: process.env.WORKOS_CLIENT_ID || "",
+    clientSecret: process.env.WORKOS_API_KEY || "",
+    redirectUri: process.env.WORKOS_REDIRECT_URI || "",
+    sessionTtlSeconds: 3600,
   };
   return new WorkOsUserAuthProvider({ sessionStore, config });
 }
@@ -745,6 +770,7 @@ function emitKpiEvent(payload: {
   event: string;
   request_id?: string;
   underlying_cause_tag?: string;
+  orphan_org_id?: string;
 }): void {
   // stdout-JSON observability per ADR-030 §SD4. One event per line so
   // downstream log shippers can tail-and-split without buffering.
@@ -801,12 +827,106 @@ app.all("*", async (c) => {
     incomingHeaders.set("X-Org-Id", identity.orgId);
     incomingHeaders.set("X-User-Email", identity.email);
 
+    // CDO-S5: WorkOS org-create interception. Cheap path+method+mode guard so
+    // every other proxied request stays zero-overhead. In workos mode a
+    // POST /api/orgs is pre-checked + provisioned + forwarded carrying
+    // X-Provisioned-Org-Id; the post-response reissue still fires on the
+    // relayed 201. Dev mode (and every other route/method) falls through.
+    if (
+      c.req.method === "POST" &&
+      new URL(c.req.url).pathname === "/api/orgs" &&
+      (process.env.AUTH_MODE || "dev") === "workos"
+    ) {
+      const intercepted = await interceptWorkosOrgCreate(
+        c,
+        incomingHeaders,
+        identity,
+      );
+      return applyOrgCreateReissue(c, intercepted, token);
+    }
+
     const upstream = await proxyRequest(c, incomingHeaders);
     return applyOrgCreateReissue(c, upstream, token);
   } catch {
     return c.json({ error: "Invalid or expired token" }, 401);
   }
 });
+
+/**
+ * Wire the CDO-S5 org-create interception collaborators from the live request
+ * and hand off to the pure `runOrgCreateInterception` policy. The interception
+ * is invoked only in workos mode for `POST /api/orgs` (guarded at the call
+ * site). Reuses the same backend-fetch wiring (`proxyRequest`) for the forward
+ * and the same injected-fetch WorkOS boundary as the auth provider.
+ *
+ * `incomingHeaders` arrives already stripped of IDENTITY_HEADERS (including a
+ * client-supplied `x-provisioned-org-id`) and injected with the verified
+ * identity — the forward closure injects the proxy's own `X-Provisioned-Org-Id`
+ * on top (strip-then-inject).
+ */
+async function interceptWorkosOrgCreate(
+  c: { req: { raw: Request; url: string; method: string } },
+  incomingHeaders: Headers,
+  identity: { userId: string; orgId: string; email: string },
+): Promise<Response> {
+  // Buffer the inbound body ONCE: we both parse `name` from it and re-send it
+  // verbatim on the forward leg. (A clone-then-stream would lock the original
+  // body the forward would otherwise pass to the backend; reading it once and
+  // re-emitting the bytes sidesteps that in undici.)
+  const rawBody = await c.req.raw.clone().text();
+  let name = "";
+  try {
+    const parsed = JSON.parse(rawBody) as { name?: unknown };
+    name = typeof parsed.name === "string" ? parsed.name : "";
+  } catch {
+    name = "";
+  }
+
+  const correlationId =
+    c.req.raw.headers.get("x-request-id") || randomUUID();
+  const provisioner = createWorkosProvisioner();
+  const url = new URL(c.req.url);
+
+  return runOrgCreateInterception({
+    name,
+    // The verified token's `sub` IS the WorkOS user id.
+    userId: identity.userId,
+    identityHeaders: incomingHeaders,
+    correlationId,
+    deps: {
+      checkAvailability: async () => {
+        const target = `${BACKEND_URL}/api/orgs/availability?name=${encodeURIComponent(name)}`;
+        const headers = new Headers(incomingHeaders);
+        headers.delete("host");
+        headers.set("X-Request-Id", correlationId);
+        return fetch(target, { method: "GET", headers });
+      },
+      provisionOrg: (orgName) => provisioner.createOrganization(orgName),
+      provisionMembership: (userId, orgId) =>
+        provisioner.createOrganizationMembership(userId, orgId),
+      deprovisionOrg: (orgId) => provisioner.deleteOrganization(orgId),
+      forwardToBackend: async (provisionedOrgId) => {
+        // Strip-then-inject: incomingHeaders already had any client-supplied
+        // x-provisioned-org-id stripped (IDENTITY_HEADERS); inject the proxy's
+        // own provisioned id on top.
+        const headers = new Headers(incomingHeaders);
+        headers.set("X-Provisioned-Org-Id", provisionedOrgId);
+        headers.delete("host");
+        const target = `${BACKEND_URL}${url.pathname}${url.search}`;
+        const response = await fetch(target, {
+          method: c.req.method,
+          headers,
+          body: rawBody,
+        });
+        return new Response(response.body, {
+          status: response.status,
+          headers: stripReissueHeaders(response.headers),
+        });
+      },
+      emit: (event) => emitKpiEvent(event),
+    },
+  });
+}
 
 /**
  * Stage 2 reissue (design.md §3.4): when the just-proxied request was a
