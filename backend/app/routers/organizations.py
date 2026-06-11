@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.types import AuthUser
@@ -17,6 +17,15 @@ class OrgCreate(BaseModel):
     """Schema for creating an organization."""
 
     name: str
+
+    @field_validator("name")
+    @classmethod
+    def strip_and_require_non_empty_name(cls, value: str) -> str:
+        """Strip surrounding whitespace and require a non-empty name (ADR-050 §c)."""
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("name must not be blank")
+        return stripped
 
 
 @router.post("", status_code=201)
