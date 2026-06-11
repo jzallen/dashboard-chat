@@ -70,19 +70,7 @@ export interface ReducedContext {
   scope_resolution_error: { reason: string } | null;
   /** The resolved scope from the most recent deep_link_opened event. */
   resolved_scope: ActiveScope | null;
-  /** Invariant 4: the non-security org-claim echo composed at the org_created
-   *  boundary. NOT a real credential. */
-  access_token: string | null;
-  /** project-context: the in-flight create's pending name. */
-  pending_project_name: string;
   project_validation_error: { kind: string; message: string } | null;
-  /** Per-project last_active_at map captured by resolveInitialScope. */
-  most_recent_session_per_project: Record<string, string>;
-  /** Degraded path: ids of projects whose list_sessions 5xx-failed. */
-  last_used_resolution_degraded: {
-    failed_project_ids: string[];
-    partial_result: boolean;
-  } | null;
   /** J-002 deep-link WISH payload (URL-level user wish, not yet confirmed). */
   deeplink_project_id: string | null;
   deeplink_session_id: string | null;
@@ -141,11 +129,7 @@ export function initialReducedContext(): ReducedContext {
     scope_reconciled: false,
     scope_resolution_error: null,
     resolved_scope: null,
-    access_token: null,
-    pending_project_name: "",
     project_validation_error: null,
-    most_recent_session_per_project: {},
-    last_used_resolution_degraded: null,
     deeplink_project_id: null,
     deeplink_session_id: null,
     intent_resource_id: null,
@@ -170,7 +154,7 @@ export function initialReducedContext(): ReducedContext {
 /** Coarse lifecycle phase — the parent ChatApp region value, for routing /
  *  first-paint dispatch. NOT a region's state-of-record (consumers dispatch on
  *  `regions.<r>.state`). */
-export type ChatAppPhase = "onboarding" | "project_context" | "chat" | "rejected";
+export type ChatAppPhase = "onboarding" | "project_context" | "chat";
 
 /** A derived slice of one lifecycle region — the discriminated state + its
  *  reduced context (the exact shape the per-machine projection exposed). */
@@ -228,8 +212,14 @@ export function anonymousStateDocument(): ChatAppStateDocument {
       // "waiting for the client's outcome report" state, NOT a server-probe
       // "verifying". sessionChat keeps its zero unchanged (CDO-S1 realigns only
       // onboarding + project-context).
-      onboarding: { state: "awaiting_org_report", context: initialReducedContext() },
-      projectContext: { state: "awaiting_scope_report", context: initialReducedContext() },
+      onboarding: {
+        state: "awaiting_org_report",
+        context: initialReducedContext(),
+      },
+      projectContext: {
+        state: "awaiting_scope_report",
+        context: initialReducedContext(),
+      },
       sessionChat: { state: "verifying", context: initialReducedContext() },
     },
   };

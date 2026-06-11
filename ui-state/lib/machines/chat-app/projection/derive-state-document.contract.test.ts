@@ -42,7 +42,7 @@ import type {
   SessionSummary,
 } from "../../session-chat/index.ts";
 import { createChatApp } from "../index.ts";
-import type { ChatUserIntent,OnboardingInput } from "../setup/types.ts";
+import type { ChatUserIntent, OnboardingInput } from "../setup/types.ts";
 import {
   aggregateBookkeeping,
   bookkeepingFromLog,
@@ -88,7 +88,11 @@ function deferredSwitch(projectId: string): Deferred {
   return { promise, resolve };
 }
 
-function makeDeps(rec: Recorder, sessions: SessionSummary[], slowSwitch?: Deferred) {
+function makeDeps(
+  rec: Recorder,
+  sessions: SessionSummary[],
+  slowSwitch?: Deferred,
+) {
   return {
     projectContext: {
       resolveInitialScope: fromPromise<
@@ -145,7 +149,11 @@ function makeInput(opts: { newUser?: boolean } = {}): OnboardingInput {
     config: makeTestConfig(),
     // Identity now arrives via the seeded input (INV-PCO single writer), not a
     // re-verify fetch round-trip. display_name/first_name mirror PROFILE.
-    user: { email: PROFILE.email, display_name: PROFILE.name, first_name: "Maya" },
+    user: {
+      email: PROFILE.email,
+      display_name: PROFILE.name,
+      first_name: "Maya",
+    },
     deps: {
       request_client: makeMockFetch({
         profile: PROFILE,
@@ -169,7 +177,9 @@ function childRef(actor: ChatActor, id: string): AnyActorRef | undefined {
   return (actor.getSnapshot().children as Record<string, AnyActorRef>)[id];
 }
 function childState(actor: ChatActor, id: string): string | undefined {
-  const snap = childRef(actor, id)?.getSnapshot() as { value?: unknown } | undefined;
+  const snap = childRef(actor, id)?.getSnapshot() as
+    | { value?: unknown }
+    | undefined;
   return snap ? (snap.value as string) : undefined;
 }
 
@@ -178,7 +188,12 @@ function ev(
   type: string,
   payload: Record<string, unknown> = {},
 ): FlowEvent {
-  return FlowEvent.fromCache(flowKey, { ts: TS, type, payload, request_id: REQ });
+  return FlowEvent.fromCache(flowKey, {
+    ts: TS,
+    type,
+    payload,
+    request_id: REQ,
+  });
 }
 
 async function waitFor(
@@ -191,7 +206,11 @@ async function waitFor(
     const tick = () => {
       if (pred(actor)) return resolve();
       if (Date.now() >= deadline) {
-        return reject(new Error(`waitFor timeout: lifecycle=${JSON.stringify(lifecycle(actor))}`));
+        return reject(
+          new Error(
+            `waitFor timeout: lifecycle=${JSON.stringify(lifecycle(actor))}`,
+          ),
+        );
       }
       setTimeout(tick, 2);
     };
@@ -204,9 +223,12 @@ async function arriveAtChat(
   slowSwitch?: Deferred,
 ) {
   const rec = recorder();
-  const actor = createActor(createChatApp(makeDeps(rec, sessions, slowSwitch)), {
-    input: makeInput(),
-  }).start();
+  const actor = createActor(
+    createChatApp(makeDeps(rec, sessions, slowSwitch)),
+    {
+      input: makeInput(),
+    },
+  ).start();
   // Client-reported model: report the returning user's org through the parent so
   // onboarding advances awaiting_org_report → ready → engaged.project_context.
   actor.send({
@@ -215,12 +237,18 @@ async function arriveAtChat(
   });
   // Then report the resolved project scope through the parent so project-context
   // advances awaiting_scope_report → project_selected → engaged.chat.
-  await waitFor(actor, (a) => childState(a, "project-context") === "awaiting_scope_report");
+  await waitFor(
+    actor,
+    (a) => childState(a, "project-context") === "awaiting_scope_report",
+  );
   actor.send({
     type: "child_event",
     child_event: { type: "scope_resolved", payload: { project: PROJECT_A } },
   });
-  await waitFor(actor, (a) => childState(a, "session-chat") === "session_list_loaded");
+  await waitFor(
+    actor,
+    (a) => childState(a, "session-chat") === "session_list_loaded",
+  );
   return { actor, rec };
 }
 
@@ -232,7 +260,11 @@ const SC_LOG = "session-chat:" + PRINCIPAL;
 
 const loginReadyEvents = () => [
   ev(LOGIN_LOG, "session_started", {
-    user: { email: PROFILE.email, display_name: PROFILE.name, first_name: "Maya" },
+    user: {
+      email: PROFILE.email,
+      display_name: PROFILE.name,
+      first_name: "Maya",
+    },
     org: { id: ORG.id, name: ORG.name },
   }),
 ];
@@ -263,13 +295,13 @@ const scListLoadedEvents = (sessions: SessionSummary[]) => [
 // ───────────────── the equivalence assertion (the gate) ─────────────────
 
 /** Independent map of the parent ChatApp lifecycle value → ChatAppPhase.
- *  Mirrors machine.ts (top-level login / engaged{project_context|chat} /
- *  user_rejected) — written separately from derivePhase so the test cross-checks
- *  the mapper rather than echoing it. */
+ *  Mirrors machine.ts (top-level login / engaged{project_context|chat}) —
+ *  written separately from derivePhase so the test cross-checks the mapper
+ *  rather than echoing it. The retired user_rejected → "rejected" mapping is
+ *  dropped (CDO-S3): ChatAppPhase no longer carries "rejected". */
 function expectedPhase(value: unknown): string {
   if (typeof value === "string") {
     if (value === "login") return "onboarding";
-    if (value === "user_rejected") return "rejected";
     return value;
   }
   if (value && typeof value === "object" && "engaged" in value) {
@@ -396,7 +428,11 @@ describe("ADR-046 gate — onboarding=needs_org (new user, child live)", () => {
     // (a state shared by the old and new models); only the live driver changed.
     const onboardingLog = [
       ev(LOGIN_LOG, "session_started", {
-        user: { email: PROFILE.email, display_name: PROFILE.name, first_name: "Maya" },
+        user: {
+          email: PROFILE.email,
+          display_name: PROFILE.name,
+          first_name: "Maya",
+        },
         org: null,
       }),
     ];
@@ -411,10 +447,7 @@ describe("ADR-046 gate — onboarding=needs_org (new user, child live)", () => {
     // un-invoked regions are pinned directly to the new production zero states
     // rather than against the (now-divergent) empty log fold.
     const onbBk = bookkeepingFromLog(onboardingLog);
-    const doc = deriveStateDocument(
-      view(actor),
-      aggregateBookkeeping([onbBk]),
-    );
+    const doc = deriveStateDocument(view(actor), aggregateBookkeeping([onbBk]));
     const goldenOnb = buildProjection(LOGIN_LOG, onboardingLog);
     expect(doc.regions.onboarding).toEqual({
       state: goldenOnb.state,
@@ -426,7 +459,10 @@ describe("ADR-046 gate — onboarding=needs_org (new user, child live)", () => {
 
     expect(doc.phase).toBe("onboarding");
     expect(doc.regions.onboarding.state).toBe("needs_org");
-    expect(doc.regions.onboarding.context.org).toEqual({ id: null, name: null });
+    expect(doc.regions.onboarding.context.org).toEqual({
+      id: null,
+      name: null,
+    });
     expect(doc.active_scope.org_id).toBe("");
   });
 });
@@ -439,7 +475,10 @@ describe("ADR-046 gate — projectContext=switching_project", () => {
     const { actor } = await arriveAtChat([session("s1")], slow);
 
     actor.send({ type: "PROJECT_SWITCH", new_project_id: "proj-B" });
-    await waitFor(actor, (a) => childState(a, "project-context") === "switching_project");
+    await waitFor(
+      actor,
+      (a) => childState(a, "project-context") === "switching_project",
+    );
 
     const pcLog = [
       ...pcSelectedEvents(),
@@ -459,7 +498,9 @@ describe("ADR-046 gate — projectContext=switching_project", () => {
       id: "proj-A",
       name: "Project A",
     });
-    expect(doc.regions.projectContext.context.deeplink_project_id).toBe("proj-B");
+    expect(doc.regions.projectContext.context.deeplink_project_id).toBe(
+      "proj-B",
+    );
 
     slow.resolve(); // settle the held invoke so the actor can stop cleanly
   });
@@ -474,9 +515,15 @@ describe("ADR-046 gate — sessionChat=session_active (resumed)", () => {
 
     actor.send({
       type: "user_intent",
-      intent: { type: "session_clicked", session_id: "s1" } satisfies ChatUserIntent,
+      intent: {
+        type: "session_clicked",
+        session_id: "s1",
+      } satisfies ChatUserIntent,
     });
-    await waitFor(actor, (a) => childState(a, "session-chat") === "session_active");
+    await waitFor(
+      actor,
+      (a) => childState(a, "session-chat") === "session_active",
+    );
 
     const scLog = [
       ...scListLoadedEvents(sessions),

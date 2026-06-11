@@ -29,7 +29,10 @@
 //   docs/decisions/adr-044-*.md  — ChatApp coordinator; hybrid log/derived-view projection
 //   docs/decisions/adr-028-*.md  — parent-ignorant children, onSnapshot hand-offs
 
-import type { ActiveScope, ResourceType } from "../../../domain/active-scope.ts";
+import type {
+  ActiveScope,
+  ResourceType,
+} from "../../../domain/active-scope.ts";
 import type { FlowEvent } from "../../../domain/flow-event.ts";
 import {
   deriveActiveScope,
@@ -167,9 +170,10 @@ function mapState(
 
 /** onboarding region ← onboarding child (or the retained outcome once the
  *  phase-scoped child is stopped on the advance to engaged/rejected). */
-export function deriveOnboarding(
-  snapshot: ChatAppSnapshotView,
-): { state: string; context: ReducedContext } {
+export function deriveOnboarding(snapshot: ChatAppSnapshotView): {
+  state: string;
+  context: ReducedContext;
+} {
   const context = initialContext();
   const child = readChild(snapshot, "onboarding");
 
@@ -209,9 +213,10 @@ export function deriveOnboarding(
 }
 
 /** projectContext region ← project-context child. */
-export function deriveProjectContext(
-  snapshot: ChatAppSnapshotView,
-): { state: string; context: ReducedContext } {
+export function deriveProjectContext(snapshot: ChatAppSnapshotView): {
+  state: string;
+  context: ReducedContext;
+} {
   const context = initialContext();
   const child = readChild(snapshot, "project-context");
 
@@ -254,9 +259,10 @@ export function deriveProjectContext(
 }
 
 /** sessionChat region ← session-chat child. */
-export function deriveSessionChat(
-  snapshot: ChatAppSnapshotView,
-): { state: string; context: ReducedContext } {
+export function deriveSessionChat(snapshot: ChatAppSnapshotView): {
+  state: string;
+  context: ReducedContext;
+} {
   const context = initialContext();
   const child = readChild(snapshot, "session-chat");
 
@@ -321,7 +327,7 @@ export function bookkeepingFromLog(events: FlowEvent[]): ProjectionBookkeeping {
 /** Coarse lifecycle phase — the parent ChatApp region value, for routing /
  *  first-paint. NOT a region's state-of-record (consumers dispatch on
  *  `regions.<r>.state`). */
-export type ChatAppPhase = "onboarding" | "project_context" | "chat" | "rejected";
+export type ChatAppPhase = "onboarding" | "project_context" | "chat";
 
 /** A derived slice of one lifecycle region — the discriminated state + its
  *  reduced context (the exact shape the per-machine projection exposed). */
@@ -356,14 +362,18 @@ export type StateDocumentBookkeeping = ProjectionBookkeeping;
 /**
  * Map the parent ChatApp lifecycle value to the coarse `ChatAppPhase`.
  *
- * machine.ts lifecycle: top-level `login` / `engaged` / `user_rejected`, where
- * `engaged` nests `project_context` / `chat`. XState renders an atomic value as
- * a string and a compound value as `{ engaged: "<sub>" }`.
+ * machine.ts lifecycle: top-level `login` / `engaged`, where `engaged` nests
+ * `project_context` / `chat`. XState renders an atomic value as a string and a
+ * compound value as `{ engaged: "<sub>" }`.
  *
  *   "login"                       → "onboarding"
  *   { engaged: "project_context"} → "project_context"
  *   { engaged: "chat" }           → "chat"
- *   "user_rejected"               → "rejected"
+ *
+ * The retired `user_rejected` → `"rejected"` mapping is removed (CDO-S3): the
+ * phase vocabulary no longer carries `"rejected"`, and the parent's
+ * `user_rejected` state is removed in 03-04. Any string lifecycle value folds
+ * to onboarding (first-paint safe).
  *
  * Reads the SETTLED value only — every `/state` derivation runs after `settle()`
  * (the R3 guard), so a mid-invoke transient is never observable on the wire.
@@ -371,7 +381,6 @@ export type StateDocumentBookkeeping = ProjectionBookkeeping;
 export function derivePhase(view: ChatAppSnapshotView): ChatAppPhase {
   const value = view.value;
   if (typeof value === "string") {
-    if (value === "user_rejected") return "rejected";
     // "login" (and any defensive atomic fallback) → onboarding.
     return "onboarding";
   }
@@ -410,7 +419,8 @@ function deriveTopActiveScope(
   sessionChat: RegionView,
 ): ActiveScope {
   if (sessionChat.context.org.id) return deriveActiveScope(sessionChat.context);
-  if (projectContext.context.org.id) return deriveActiveScope(projectContext.context);
+  if (projectContext.context.org.id)
+    return deriveActiveScope(projectContext.context);
   return deriveActiveScope(onboarding.context);
 }
 
@@ -470,7 +480,10 @@ export function deriveStateDocument(
     request_id: bookkeeping.request_id,
     regions: {
       onboarding: { state: onboarding.state, context: onboarding.context },
-      projectContext: { state: projectContext.state, context: projectContext.context },
+      projectContext: {
+        state: projectContext.state,
+        context: projectContext.context,
+      },
       sessionChat: { state: sessionChat.state, context: sessionChat.context },
     },
   };

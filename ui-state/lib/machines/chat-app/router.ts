@@ -153,7 +153,9 @@ async function coldStart(
     // display_name/first_name stay null (auth-proxy injects no such header).
     user: { email: user_email, display_name: null, first_name: null },
   };
-  const actor = createActor(createChatApp(runtime.chatAppDeps), { input }).start();
+  const actor = createActor(createChatApp(runtime.chatAppDeps), {
+    input,
+  }).start();
   runtime.registry.set(principal_id, actor);
   return actor;
 }
@@ -167,7 +169,10 @@ async function getActor(
 ): Promise<AnyActorRef | undefined> {
   const live = runtime.registry.get(principal_id);
   if (live) return live;
-  const snapshot = await loadChatAppSnapshot(runtime.snapshotStore, principal_id);
+  const snapshot = await loadChatAppSnapshot(
+    runtime.snapshotStore,
+    principal_id,
+  );
   if (!snapshot) return undefined;
   const actor = rehydrateChatApp(createChatApp(runtime.chatAppDeps), snapshot);
   runtime.registry.set(principal_id, actor);
@@ -249,7 +254,9 @@ const causeTag = z.string().refine(isUnderlyingCauseTag, {
 /** The {id,name} display snapshot a client-reported org outcome carries
  *  (ADR-050 §e.1). Well-formedness only — the org's existence is the client's
  *  earned-trust assertion, never re-probed here (INV-PCO). */
-const orgSnapshot = z.object({ id: z.string(), name: z.string() }).passthrough();
+const orgSnapshot = z
+  .object({ id: z.string(), name: z.string() })
+  .passthrough();
 
 const onboardingEventSchema = z.discriminatedUnion("type", [
   // ── client-reported outcomes (ADR-049/050) ──
@@ -300,7 +307,9 @@ async function readStateBookkeeping(
 ): Promise<ProjectionBookkeeping> {
   const parts = await Promise.all(
     CANONICAL_CHILDREN.map(async (child) =>
-      bookkeepingFromLog(await runtime.eventLog.read(`${child}:${principal_id}`)),
+      bookkeepingFromLog(
+        await runtime.eventLog.read(`${child}:${principal_id}`),
+      ),
     ),
   );
   return aggregateBookkeeping(parts);
@@ -336,7 +345,7 @@ function canonicalChildForPhase(phase: ChatAppPhase): ChatAppChildId {
     case "chat":
       return "session-chat";
     default:
-      return "onboarding"; // onboarding | rejected
+      return "onboarding";
   }
 }
 
@@ -438,7 +447,13 @@ export function buildStateRouter(runtime: ChatAppRuntime): Hono {
     // /begin's only load-bearing effects — re-verify the forwarded Bearer, cascade
     // onboarding → project-context → chat — happen identically here).
     if (!actor || forceRestart) {
-      actor = await coldStart(runtime, principal_id, bearer, request_id, user_email);
+      actor = await coldStart(
+        runtime,
+        principal_id,
+        bearer,
+        request_id,
+        user_email,
+      );
       await settle(actor);
       await persist(runtime, principal_id, actor);
       await appendStateBookkeeping(
@@ -530,7 +545,10 @@ export function buildStateRouter(runtime: ChatAppRuntime): Hono {
     const principal_id = c.req.header("X-User-Id") ?? "";
     const sinceParam = c.req.query("since") ?? "$";
     const budgetMs = Math.min(
-      Math.max(parseInt(c.req.query("budget_ms") ?? "25000", 10) || 25_000, 1_000),
+      Math.max(
+        parseInt(c.req.query("budget_ms") ?? "25000", 10) || 25_000,
+        1_000,
+      ),
       60_000,
     );
     const flowKeys = CANONICAL_CHILDREN.map(
@@ -549,7 +567,9 @@ export function buildStateRouter(runtime: ChatAppRuntime): Hono {
         const encoder = new TextEncoder();
         const writeEvent = (event: string, data: unknown): void => {
           controller.enqueue(
-            encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
+            encoder.encode(
+              `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`,
+            ),
           );
         };
         try {

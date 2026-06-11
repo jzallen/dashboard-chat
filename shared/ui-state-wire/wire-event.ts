@@ -5,16 +5,24 @@
 // `POST /state/events` accepts ONE event of this shape and maps it to the parent
 // ChatApp actor's event union via the same `forwardToActor` logic the live
 // router uses (`switching_project_intent` → PROJECT_SWITCH; everything else →
-// `child_event` forwarded to the active region's child). The named members below
-// document the meaningful vocabulary; the trailing catch-all keeps the surface
-// total (XState ignores events the active child doesn't model — research
-// Finding 4).
+// `child_event` forwarded to the active region's child).
+//
+// CLOSED UNION (ADR-050 §e; ADR-049 §4): the union is genuinely closed — there is
+// NO trailing `{ type: string; ... }` catch-all. Every member is named, so the
+// ui-state router's Zod ACL (03-04) is a closed `z.ZodType<ChatAppWireEvent>`
+// that 400s any unmodeled `type`. The closedness is the side-effect of the
+// crash-class routing model (ADR-049 §4): the client narrates a finite vocabulary
+// of past-tense outcomes + UI intents, never an open-ended event bag.
 //
 // Plain serializable types only — NO machine internals.
 //
 // References:
 //   docs/decisions/adr-046-*.md — Decision 3 (the event surface)
+//   docs/decisions/adr-049-*.md — §4 (closed union ← crash-class routing)
+//   docs/decisions/adr-050-*.md — §e (closed wire vocabulary + cause enums)
 //   ui-state/lib/machines/chat-app/router.ts — buildStateRouter (POST /state/events, forwardToActor)
+
+import type { ResourceType } from "./state-document.ts";
 
 /** The {id,name} display snapshot a client-reported org-outcome carries
  *  (ADR-050 §e.1). The client probes the org SSOT, then narrates the {id,name}
@@ -24,6 +32,28 @@ export type OrgSnapshot = { id: string; name: string };
 /** The {id,name} display snapshot a client-reported project-outcome carries
  *  (ADR-050 §e.1). */
 export type ProjectSnapshot = { id: string; name: string };
+
+// ───────────────────────────── failure-class cause enums (ADR-050 §c) ─────────────────────────────
+// The wire-contract SSOT for the failure-class causes. Defined HERE in shared
+// (shared cannot import ui-state); ui-state's machine-local copies carry the
+// identical string literals (string-literal unions with equal members are
+// assignable), and 03-04's router imports THESE for its closed Zod ACL.
+
+/** Why a client-reported org-create outcome failed (ADR-050 §c). */
+export type OrgCreateFailureCause =
+  | "org_name_taken"
+  | "org_name_invalid"
+  | "org_create_failed";
+
+/** Why a client-reported project-create outcome failed (ADR-050 §c). */
+export type ProjectCreateFailureCause = "project_create_failed";
+
+/** Why a client-reported scope resolution mismatched the requesting tenant
+ *  (ADR-050 §c). */
+export type ScopeMismatchCause =
+  | "cross_tenant"
+  | "project_not_found"
+  | "access_revoked";
 
 export type ChatAppWireEvent =
   // ── client-reported onboarding outcomes (ADR-049/050) — the client probes the
@@ -70,5 +100,32 @@ export type ChatAppWireEvent =
     }
   // restart — was POST /begin force-restart; now a reserved event (route collapsed)
   | { type: "session_begin"; payload?: { force_restart?: boolean } }
-  // everything else — forwarded verbatim as child_event to the active region's child
-  | { type: string; payload?: Record<string, unknown> };
+  // ── client-reported failure/outcome members (ADR-050 §c/§e) — the client
+  //    narrates the past-tense failure it observed; ui-state transitions on the
+  //    report. The cause enum is the wire SSOT (defined above). ──
+  | {
+      type: "org_create_failed";
+      payload: { cause: OrgCreateFailureCause; org_name?: string };
+    }
+  | {
+      type: "project_create_failed";
+      payload: { cause: ProjectCreateFailureCause };
+    }
+  | { type: "scope_mismatch"; payload: { cause: ScopeMismatchCause } }
+  | { type: "project_switched"; payload: { project: ProjectSnapshot } }
+  // ── surviving session-chat UI intents — the chat phase still delivers these
+  //    as today; named here so 03-04's closed Zod ACL can NAME them. ──
+  | { type: "session_clicked"; payload: { session_id: string } }
+  | { type: "new_session_clicked" }
+  | { type: "first_message_sent"; payload: { content: string } }
+  | { type: "refresh_session_list" }
+  | {
+      type: "dataset_resolved_by_agent";
+      payload: { resource_id: string; resource_type: ResourceType };
+    }
+  | {
+      type: "dataset_picked_directly";
+      payload: { resource_id: string; resource_type: ResourceType };
+    }
+  | { type: "suggestion_chip_clicked_upload" }
+  | { type: "suggestion_chip_clicked_browse_projects" };

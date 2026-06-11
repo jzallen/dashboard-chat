@@ -10,11 +10,15 @@
 import { describe, expect, it } from "vitest";
 
 import { FlowEvent } from "../../../domain/flow-event.ts";
-import { deriveActiveScope, initialContext } from "../../../domain/projection.ts";
+import {
+  deriveActiveScope,
+  initialContext,
+} from "../../../domain/projection.ts";
 import type { OnboardingResult } from "../setup/types.ts";
 import {
   bookkeepingFromLog,
   type ChatAppSnapshotView,
+  derivePhase,
   deriveOnboarding,
   deriveProjectContext,
   deriveSessionChat,
@@ -60,6 +64,32 @@ describe("bookkeepingFromLog (the log-sourced envelope fields)", () => {
   });
 });
 
+// ───────────────────────────── phase (parent lifecycle value → ChatAppPhase) ─────────────────────────────
+
+describe("derivePhase (parent lifecycle value → ChatAppPhase)", () => {
+  it("maps the login atomic value to onboarding", () => {
+    expect(derivePhase(snap({}))).toBe("onboarding");
+  });
+
+  it("maps engaged.project_context to project_context and engaged.chat to chat", () => {
+    expect(
+      derivePhase({ ...snap({}), value: { engaged: "project_context" } }),
+    ).toBe("project_context");
+    expect(derivePhase({ ...snap({}), value: { engaged: "chat" } })).toBe(
+      "chat",
+    );
+  });
+
+  it("NEVER yields the retired 'rejected' phase — a string lifecycle value (incl. the legacy user_rejected) folds to onboarding (CDO-S3: ChatAppPhase drops 'rejected', the user_rejected branch is removed)", () => {
+    // The parent's user_rejected state is removed in 03-04; this string value
+    // is already unreachable, but the mapper must no longer special-case it.
+    expect(derivePhase({ ...snap({}), value: "user_rejected" })).toBe(
+      "onboarding",
+    );
+    expect(derivePhase({ ...snap({}), value: "login" })).toBe("onboarding");
+  });
+});
+
 // ───────────────────────────── onboarding region ─────────────────────────────
 
 describe("deriveOnboarding (regions.onboarding slice)", () => {
@@ -81,7 +111,7 @@ describe("deriveOnboarding (regions.onboarding slice)", () => {
     const out = deriveOnboarding(
       snap({
         children: {
-          "onboarding": child("needs_org", {
+          onboarding: child("needs_org", {
             user: { email: "m@x", display_name: "M X", first_name: "M" },
             org: { id: null, name: null },
             underlying_cause_tag: null,
