@@ -3,8 +3,8 @@
 **Author:** Morgan (nw-solution-architect)
 **Date:** 2026-06-10
 **Mode:** Propose (boundary assignments are user-ratified and FIXED — `../design-intent.md` §"Boundary assignments"; options are presented only for the genuinely open application-level points (a)–(f), each with a recommendation)
-**ADR:** ADR-050 (Proposed) — `docs/decisions/adr-050-client-driven-onboarding-application-contracts.md`
-**Upstream passes (binding):** system scope — `system-architecture.md` + ADR-048 (pre-check-then-compensate A+B layered, zero nginx changes, env/credential deltas, observability events, D8 un-park); domain scope — `domain-model.md` + ADR-049 (the `*_reported` outcome vocabulary, INV-PCO, phase-gated vocabulary routing, state-set deltas, the domain answer to (f))
+**ADR:** ADR-050 (Accepted — user-ratified 2026-06-11; amended: naming override + cause-tag display rule) — `docs/decisions/adr-050-client-driven-onboarding-application-contracts.md`
+**Upstream passes (binding):** system scope — `system-architecture.md` + ADR-048 (pre-check-then-compensate A+B layered, zero nginx changes, env/credential deltas, observability events, D8 un-park); domain scope — `domain-model.md` + ADR-049 (the past-tense outcome vocabulary (DR-2 override), INV-PCO, phase-gated vocabulary routing, state-set deltas, the domain answer to (f))
 **Downstream:** DISTILL (acceptance rework per §(e).4) → DELIVER
 
 This pass pins the CONCRETE CONTRACTS — HTTP shapes, headers, wire-schema deltas, file-by-file map, cleanup inventory, migration path — that make ADR-048/049 implementable. Every claim about live code carries file:line evidence.
@@ -112,20 +112,22 @@ export type ScopeMismatchCause = "cross_tenant" | "project_not_found" | "access_
 
 ADR-049's domain rule (the two-way split: *re-edit causes return to the form; everything else is retryable*) maps: `org_name_taken` | `org_name_invalid` → remain `needs_org` with `org_validation_error` set (the inline form error — today's 409 arm preserved, ADR-049 Spec 4); `org_create_failed` → `error_recoverable` (report-accepting — Spec 5). These tags join the `UnderlyingCauseTag` set (`ui-state/lib/machines/onboarding/setup/domain.ts`); `partial-setup` dies (ADR-048 binding constraint).
 
+**Display rule (user-ratified amendment, 2026-06-11):** cause tags are machine-readable wire values — **the UI never renders a raw tag**. Re-edit causes map to user-friendly inline helper text the client owns (e.g. `org_name_taken` → "That organization name is already in use — try another"); the retry class triggers a distinct "something went wrong on our end" presentation with the retry affordance. Raw tags belong in the console-log audit trail only. The shipped `Cause: partial-setup` rendering (`ui/app/routes/onboarding.tsx`) is the anti-pattern this rule retires; the DISTILL acceptance criteria must assert friendly copy (or the generic-error surface), not tag strings, anywhere a failure is rendered.
+
 ### The client's status→event mapping (ONE function, `ui/`)
 
 ```
 POST /api/orgs result        → outcome report posted to /ui-state/state/events
-  201 {data:{id, attributes:{name}}}  → org_created_reported   { org: { id, name } }
-  409                                 → org_create_failed_reported { cause: "org_name_taken",   org_name }
-  400 | 422                           → org_create_failed_reported { cause: "org_name_invalid", org_name }
-  any other status / network / timeout→ org_create_failed_reported { cause: "org_create_failed" }
+  201 {data:{id, attributes:{name}}}  → org_created   { org: { id, name } }
+  409                                 → org_create_failed { cause: "org_name_taken",   org_name }
+  400 | 422                           → org_create_failed { cause: "org_name_invalid", org_name }
+  any other status / network / timeout→ org_create_failed { cause: "org_create_failed" }
   401                                 → NOT an outcome report — credential problem; fold to the auth gate (/login)
 
 POST /api/projects result
-  201                                 → project_created_reported { project: { id, name } }
+  201                                 → project_created { project: { id, name } }
   401                                 → auth gate
-  anything else                       → project_create_failed_reported { cause: "project_create_failed" }
+  anything else                       → project_create_failed { cause: "project_create_failed" }
 ```
 
 (The 201 body shape is the backend's JSON:API single — `data.id` + `data.attributes.name`, `organization_controller.py:47–54`. The `requires_reauth` attribute **dies** with the backend's workos path — the cookie reissue replaces its purpose.)
@@ -136,8 +138,8 @@ POST /api/projects result
 |---|---|
 | `org_name_taken` / `org_name_invalid` | No retry. User re-edits; submit re-POSTs. The form renders `org_validation_error` from the report's machine action. |
 | `org_create_failed` | **Manual retry only** (no auto-retry — org create is not idempotent end-to-end, ADR-048 R5). The `error_recoverable` surface offers a retry affordance; retry = re-`POST /api/orgs` (same name) → re-report. Clean after a compensated failure; still succeeds after an uncompensated one (orphan inert + alerted). |
-| `project_create_failed` | Manual retry with **probe-first convergence**: before re-POSTing, the client re-probes `GET /api/projects`; non-empty → report `scope_resolved_reported` (covers the lost-response duplicate — the project actually exists); empty → re-`POST` + re-report. |
-| Probe transport failure (Phase B `GET /api/orgs/me` 5xx/network) | **Not reportable.** Only definitive answers are reported: `200 → org_exists_reported`, `404 → org_missing_reported`. A transport error triggers a bounded local re-probe; the document stays `awaiting_org_report` and the surface stays on the waiting state. This is the earned-trust rule client-side: *report only what the SSOT actually said.* |
+| `project_create_failed` | Manual retry with **probe-first convergence**: before re-POSTing, the client re-probes `GET /api/projects`; non-empty → report `scope_resolved` (covers the lost-response duplicate — the project actually exists); empty → re-`POST` + re-report. |
+| Probe transport failure (Phase B `GET /api/orgs/me` 5xx/network) | **Not reportable.** Only definitive answers are reported: `200 → org_found`, `404 → org_not_found`. A transport error triggers a bounded local re-probe; the document stays `awaiting_org_report` and the surface stays on the waiting state. This is the earned-trust rule client-side: *report only what the SSOT actually said.* |
 
 ---
 
@@ -189,17 +191,17 @@ export type ChatAppWireEvent =
   // ── lifecycle (kept) ──
   | { type: "session_begin"; payload?: { force_restart?: boolean } }
   // ── onboarding outcome reports (login-phase vocabulary) ──
-  | { type: "org_exists_reported"; payload: { org: OrgSnapshot } }
-  | { type: "org_missing_reported"; payload?: Record<string, never> }
-  | { type: "org_created_reported"; payload: { org: OrgSnapshot } }
-  | { type: "org_create_failed_reported"; payload: { cause: OrgCreateFailureCause; org_name: string } }
+  | { type: "org_found"; payload: { org: OrgSnapshot } }
+  | { type: "org_not_found"; payload?: Record<string, never> }
+  | { type: "org_created"; payload: { org: OrgSnapshot } }
+  | { type: "org_create_failed"; payload: { cause: OrgCreateFailureCause; org_name: string } }
   // ── project-context outcome reports + kept intents (engaged-phase vocabulary) ──
-  | { type: "scope_resolved_reported"; payload: { project: ProjectSnapshot } }
-  | { type: "no_projects_reported"; payload?: Record<string, never> }
-  | { type: "scope_mismatch_reported"; payload: { cause: ScopeMismatchCause } }
-  | { type: "project_created_reported"; payload: { project: ProjectSnapshot } }
-  | { type: "project_create_failed_reported"; payload: { cause: ProjectCreateFailureCause } }
-  | { type: "project_switched_reported"; payload: { project: ProjectSnapshot } }
+  | { type: "scope_resolved"; payload: { project: ProjectSnapshot } }
+  | { type: "no_projects_found"; payload?: Record<string, never> }
+  | { type: "scope_mismatch"; payload: { cause: ScopeMismatchCause } }
+  | { type: "project_created"; payload: { project: ProjectSnapshot } }
+  | { type: "project_create_failed"; payload: { cause: ProjectCreateFailureCause } }
+  | { type: "project_switched"; payload: { project: ProjectSnapshot } }
   | { type: "open_deep_link"; payload: { intent_project_id?: string; intent_session_id?: string;
         intent_resource_id?: string; intent_resource_type?: string } }   // kept — wish-capture
   | { type: "back_to_projects_clicked"; payload?: Record<string, never> } // kept — UI intent
@@ -241,7 +243,7 @@ export type ChatAppWireEvent =
 | `pending_project_name` (`:77`) | **DELETE** | In-flight create retired (ADR-049 DR-1); nothing captures a pending name. |
 | `most_recent_session_per_project` (`:79`) / `last_used_resolution_degraded` (`:82`) | **DELETE** | The last-used-resolution policy moved to the client with `resolveInitialScopeFn`; the machine only learns the resolved answer. |
 | `org_validation_error` / `project_validation_error` | **KEEP** | The re-edit class renders them (Spec 4). |
-| `retries_count` | **KEEP** | Now counts received `*_create_failed_reported` events — still honest, still display-only. |
+| `retries_count` | **KEEP** | Now counts received `*_create_failed` events — still honest, still display-only. |
 | everything else | KEEP | unchanged. |
 
 ### (e).4 Migration path
@@ -251,7 +253,7 @@ export type ChatAppWireEvent =
 | Surface | Today | Target |
 |---|---|---|
 | `ui/app/lib/StateProxyProvider.tsx` (`ensureBootstrap`, `:59–73`) | Once-latched `session_begin` | **Unchanged.** The probe sequencing lives in the new driver module, composed after `ensureBootstrap` by the entry surfaces — the latch stays auth-bootstrap-only. |
-| **NEW** `ui/app/lib/onboarding-driver.ts` | — (this policy lived in the retired ui-state actors) | The relocated flow-driving policy: Phase B probe (`GET /api/orgs/me` → `org_exists_reported` / `org_missing_reported`; definitive-answers-only rule §c), the status→cause mapping (§c), Phase D auto default project (once-latched `POST /api/projects {name: "My First Project"}` → report), the probe-first retry policy, and the initial-scope resolution policy ported from `resolveInitialScopeFn` (`project-context/setup/actors.ts:229–331`) → `scope_resolved_reported` / `no_projects_reported`. |
+| **NEW** `ui/app/lib/onboarding-driver.ts` | — (this policy lived in the retired ui-state actors) | The relocated flow-driving policy: Phase B probe (`GET /api/orgs/me` → `org_found` / `org_not_found`; definitive-answers-only rule §c), the status→cause mapping (§c), Phase D auto default project (once-latched `POST /api/projects {name: "My First Project"}` → report), the probe-first retry policy, and the initial-scope resolution policy ported from `resolveInitialScopeFn` (`project-context/setup/actors.ts:229–331`) → `scope_resolved` / `no_projects_found`. |
 | `ui/app/routes/onboarding.tsx` | `OrgNameForm` posts `org_form_submitted` (`:216`); `ProjectNameForm` posts `create_project_submitted` with the UI-1 quirk (`:170–175`); switch arms on `verifying`/`creating_org`/`session_rejected` (`:97–116`) | `OrgNameForm` submit → `POST /api/orgs` → report per the §c mapping (in-flight UI is **local** `useState` — DR-1; the document never shows an in-flight state). **`ProjectNameForm` is deleted** — Phase D is automatic (design-intent step 12); the project-phase surface becomes a progress view driven by the driver's auto-create. Switch arms: `verifying`→`awaiting_org_report`; `creating_org`/`session_rejected` arms die; `error_recoverable` gains the retry affordance (§c). The existing `project_selected` → `refreshOrgGlobal()` → `navigate("/")` effect (`:73–88`) survives verbatim — it is already the (f) contract. |
 | `ui/app/routes/app-shell.tsx` (the gate) | `ONBOARDING_ACTIVE_STATES = {needs_org, creating_org, error_recoverable}` (`:120–124`); `phase === "rejected"` branch (`:142`); waits on `"verifying"` (`:143`); `no_projects` → `/onboarding` (`:153`) | States set → `{needs_org, error_recoverable}`; the `rejected` branch dies (DR-5 — auth failure is auth-proxy's 401, surfaced by the `hasSession()` gate); waits on `"awaiting_org_report"` (also the new anonymous-document zero state, so pre-first-frame behavior is unchanged); after bootstrap, the gate invokes the driver's Phase-B probe when the document shows `awaiting_org_report`. `no_projects` routing survives (the driver auto-creates from `/onboarding`). |
 | `ui/app/routes/login.tsx` | Unconditional dev button | Mode-discovery consumption per §d. |
@@ -262,13 +264,13 @@ export type ChatAppWireEvent =
 
 | File | Verdict | What changes |
 |---|---|---|
-| `driver.py` | **REWORK (extend)** | Keeps `session_begin`/`post_event`/`get_state`/`get_my_org`/`create_org` (`:115–144` — `create_org` already does the direct `POST /api/orgs`!). Gains: `create_project` (`POST /api/projects`), `report(event)` sugar, and a `probe_and_report_org()` helper implementing Phase B (`GET /api/orgs/me` → post `org_missing_reported`/`org_exists_reported`). |
-| `test_walking_skeleton_org_then_default_project.py` | **REWORK** | New sequence: `session_begin` → assert `awaiting_org_report` → probe+report (404 → `org_missing_reported`) → assert `needs_org` → `create_org` (real POST) → post `org_created_reported{org}` → assert `ready`/phase advanced → `create_project` (real POST) → post `project_created_reported{project}` → assert `project_selected` + `phase == "chat"` + `active_scope.project_id` (the (f) triple) + the existing DB side-effect asserts. Same business scenario, new driver choreography. |
+| `driver.py` | **REWORK (extend)** | Keeps `session_begin`/`post_event`/`get_state`/`get_my_org`/`create_org` (`:115–144` — `create_org` already does the direct `POST /api/orgs`!). Gains: `create_project` (`POST /api/projects`), `report(event)` sugar, and a `probe_and_report_org()` helper implementing Phase B (`GET /api/orgs/me` → post `org_not_found`/`org_found`). |
+| `test_walking_skeleton_org_then_default_project.py` | **REWORK** | New sequence: `session_begin` → assert `awaiting_org_report` → probe+report (404 → `org_not_found`) → assert `needs_org` → `create_org` (real POST) → post `org_created{org}` → assert `ready`/phase advanced → `create_project` (real POST) → post `project_created{project}` → assert `project_selected` + `phase == "chat"` + `active_scope.project_id` (the (f) triple) + the existing DB side-effect asserts. Same business scenario, new driver choreography. |
 | `test_orgless_principal_routes_to_onboarding.py` | **REWORK** | "Begin session → guided to onboarding" now asserts `awaiting_org_report` after begin, then `needs_org` after the probe+report pair. Identity-shown assertion unchanged (DR-4 header seed). |
 | `test_org_absent_from_db_routes_to_onboarding.py` | **REWORK** | Same probe+report insertion as above. |
-| `test_org_creation_persists_created_by.py` | **REWORK (light)** | Replace the `org_form_submitted` post (`:47–48`) with `driver.create_org` + `org_created_reported`. The `created_by` DB assertion survives unchanged (backend behavior untouched). |
-| `test_default_project_completes_onboarding.py` | **REWORK** | The user-driven `create_project_submitted` (`:49–50`, with the UI-1 dual-key stopgap) becomes the automatic-default sequence: real `POST /api/projects` + `project_created_reported`. **The UI-1 quirk dies with the event** — close the upstream issue. |
-| `test_invalid_org_name_stays_needs_org.py` | **DIES → REWRITE** | It asserts the machine-side `isOrgNameValid` guard (`:41–46`), which retires. Replacement scenario: `POST /api/orgs {"name": "   "}` → backend `422` (the **new** backend validation — §c ordering note; without it this scenario has no SSOT to assert) → post `org_create_failed_reported{cause: org_name_invalid}` → assert still `needs_org` + `org_validation_error` set. |
+| `test_org_creation_persists_created_by.py` | **REWORK (light)** | Replace the `org_form_submitted` post (`:47–48`) with `driver.create_org` + `org_created`. The `created_by` DB assertion survives unchanged (backend behavior untouched). |
+| `test_default_project_completes_onboarding.py` | **REWORK** | The user-driven `create_project_submitted` (`:49–50`, with the UI-1 dual-key stopgap) becomes the automatic-default sequence: real `POST /api/projects` + `project_created`. **The UI-1 quirk dies with the event** — close the upstream issue. |
+| `test_invalid_org_name_stays_needs_org.py` | **DIES → REWRITE** | It asserts the machine-side `isOrgNameValid` guard (`:41–46`), which retires. Replacement scenario: `POST /api/orgs {"name": "   "}` → backend `422` (the **new** backend validation — §c ordering note; without it this scenario has no SSOT to assert) → post `org_create_failed{cause: org_name_invalid}` → assert still `needs_org` + `org_validation_error` set. |
 | `test_post_orgs_no_longer_auto_creates_project.py` | **SURVIVES (near-as-is)** | Already drives `driver.create_org` directly (`:41`) with no ui-state write event; only the Background's session bookkeeping needs the probe+report pair if it asserts region state. |
 | `features/org-onboarding.feature` | **REWORK (wording)** | Org-creation scenarios survive verbatim at business language. Phase-D wording changes: "When they submit a name for their first project" → "Then their first project is created automatically". **New scenarios** (RED at DISTILL): name-taken 409 → re-edit; org-create failure → retryable `error_recoverable` → successful retry (Spec 5); late/duplicate report convergence with the process alive (Spec 8 — the 2026-06-10 crash regression); invalid name 422 re-edit. |
 | `conftest.py`, `pyproject.toml`, `README.md` | **SURVIVE** | `DEV_NO_ORG` Background unchanged; marker descriptions updated. UI-2 (repeatable-run reset) remains open and unchanged by this feature. |
@@ -281,10 +283,10 @@ The tier-wide `BACKEND_URL` deletion (ADR-048 §4) retires session-chat's four e
 
 | Retired invoke | Outcome reports (new wire members) | Triggering UI intent (kept wire member) |
 |---|---|---|
-| `loadSessionList` | `session_list_reported { sessions, next_cursor, has_more }` (mirrors `ReducedContext.session_list`, `state-document.ts:97–102`) / `session_list_failed_reported { cause: "session_list_failed" }` | `refresh_session_list` (kept; client re-lists + reports) |
-| `resumeSession` | `session_resumed_reported { session_id, transcript, resource, session_dataset_unavailable }` / `session_resume_failed_reported { cause }` | `session_clicked` (kept — wish; client resumes + reports) |
-| `createSessionEagerly` | `session_created_reported { session }` / `session_create_failed_reported { cause }` | `first_message_sent` (kept — carries `content`) |
-| `switchDatasetContext` | `dataset_context_switched_reported { resource }` / `dataset_context_switch_failed_reported { cause }` | `dataset_resolved_by_agent`, `dataset_picked_directly` (kept) |
+| `loadSessionList` | `session_list_loaded { sessions, next_cursor, has_more }` (mirrors `ReducedContext.session_list`, `state-document.ts:97–102`) / `session_list_failed { cause: "session_list_failed" }` | `refresh_session_list` (kept; client re-lists + reports) |
+| `resumeSession` | `session_resumed { session_id, transcript, resource, session_dataset_unavailable }` / `session_resume_failed { cause }` | `session_clicked` (kept — wish; client resumes + reports) |
+| `createSessionEagerly` | `session_created { session }` / `session_create_failed { cause }` | `first_message_sent` (kept — carries `content`) |
+| `switchDatasetContext` | `dataset_context_switched { resource }` / `dataset_context_switch_failed { cause }` | `dataset_resolved_by_agent`, `dataset_picked_directly` (kept) |
 
 Pure-UI intents survive as named members: `new_session_clicked`, `suggestion_chip_clicked_upload`, `suggestion_chip_clicked_browse_projects` (`session-chat/setup/types.ts:123–131`). `retry_clicked` (`:129`) retires (consistent with onboarding/project-context — retry is re-do + re-report). Exact payload field lists are enumerated mechanically at DISTILL from the invoke output types in `session-chat/setup/actors.ts` (they become the report payloads verbatim — display data under INV-PCO).
 
@@ -307,7 +309,7 @@ The domain answer (ADR-049 §5.2) is inherited: the parent's `isInitialProjectSe
 
 ### The contract (Option A)
 
-The client enters the app on **the response document of its own `project_created_reported` POST** (ADR-046 Decision 3 — the POST response is always the new settled document; no extra read, no race). That document satisfies, atomically:
+The client enters the app on **the response document of its own `project_created` POST** (ADR-046 Decision 3 — the POST response is always the new settled document; no extra read, no race). That document satisfies, atomically:
 
 ```
 regions.projectContext.state == "project_selected"     ← the gate predicate (state-of-record)
@@ -317,15 +319,15 @@ phase                        == "chat"                 ← routing convenience (
                                                           isInitialProjectSelected during the same settle)
 ```
 
-The same triple holds for the returning-user fast path (`scope_resolved_reported`) — one gate predicate for both.
+The same triple holds for the returning-user fast path (`scope_resolved`) — one gate predicate for both.
 
 ### Edge cases (all converge — ADR-049 Spec 8)
 
 | Case | Behavior |
 |---|---|
-| **Duplicate report** (re-submit after a lost response) | `project_selected` has no `project_created_reported` handler (ADR-049 §5.1) → no transition, no send; the response is the current document — already showing the triple → the client's navigation is idempotent. |
+| **Duplicate report** (re-submit after a lost response) | `project_selected` has no `project_created` handler (ADR-049 §5.1) → no transition, no send; the response is the current document — already showing the triple → the client's navigation is idempotent. |
 | **Report arrives while the phase already advanced** (stale tab) | Same convergence: dropped, current document returned, tab routes correctly off it. |
-| **Out-of-order report** (`project_created_reported` while phase is still `onboarding`) | No handler on `login` → dropped; the document still shows onboarding → gate predicate false → the tab does NOT navigate. Only cross-tab reachable (the driving client orders its own reports). |
+| **Out-of-order report** (`project_created` while phase is still `onboarding`) | No handler on `login` → dropped; the document still shows onboarding → gate predicate false → the tab does NOT navigate. Only cross-tab reachable (the driving client orders its own reports). |
 | **Crash/reload recovery** | `session_begin` → the rehydrated actor's document (router `getActor`, `router.ts:159–170`); if already `project_selected`, the gate enters the app directly — no re-onboarding. |
 
 ---
@@ -465,7 +467,7 @@ C4Component
     Rel(icept, orgs, "forwards POST carrying X-Provisioned-Org-Id to")
     Rel(icept, reissue, "201 triggers")
     Rel(reissue, driver, "201 + Set-Cookie auth_token returns to")
-    Rel(driver, proxyc, "posts *_reported outcome via")
+    Rel(driver, proxyc, "posts past-tense outcome via")
     Rel(proxyc, acl, "POST /ui-state/state/events (cookie-credentialed)")
     Rel(acl, machine, "forwards validated event to")
     Rel(machine, gate, "settled document (phase, region states, active_scope) drives")
@@ -510,7 +512,7 @@ C4Component
 
 ---
 
-## Decisions needing user ratification
+## Decisions needing user ratification (RESOLVED: AR-1–AR-8 ratified as recommended, 2026-06-11, plus the (c) display-rule amendment — see wave-decisions.md §"Ratification record")
 
 (R1–R5 and DR-1–DR-8 are upstream and not repeated; AR = application-scope.)
 

@@ -91,7 +91,7 @@ surfaces), ui-cookie-session (the cookie session this rides on).
   /api/auth/config → {mode} or mode folded into the login response), and how the
   reverse-proxy "forwards the client to auth-proxy first."
 - **(e) ui-state event vocabulary:** the outcome-event schema for the onboarding +
-  project-context regions (org_exists_reported / org_created / org_create_failed /
+  project-context regions (org_found / org_created / org_create_failed /
   default_project_created / ... — names TBD), what happens to the retired invokes
   (getUserOrg, createOrg, createProject, the WorkOS re-verify), and the migration path
   for the shipped org-onboarding surfaces + acceptance suite.

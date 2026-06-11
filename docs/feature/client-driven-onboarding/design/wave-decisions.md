@@ -10,7 +10,7 @@
 - **[D1] WorkOS write workflow moves to auth-proxy via org-create route interception** (ADR-048): auth-proxy becomes the sole WorkOS boundary and sole AUTH_MODE reader; backend loses `_create_workos_org`, its `auth_mode` read, and all `WORKOS_*` config/env. The AUTH_MODE split-brain becomes unrepresentable in compose. (see: `system-architecture.md` §1, §4)
 - **[D2] Failure strategy = pre-check-then-compensate (A+B layered)** (ADR-048 §3): backend name pre-check BEFORE any WorkOS egress (a user-typo 409 can never orphan an IdP org; TOCTOU backstopped by the DB unique constraint), layered with best-effort compensation `DELETE /organizations/{id}` on failed backend persist; failed compensation emits the alertable `workos.org_compensate.fail` (the operator reconcile queue). No scheduled reconciler at ~0.001 QPS. (see: `system-architecture.md` §2)
 - **[D3] Zero topology delta**: no new containers/replicas/ports; zero nginx changes (`/api/*` already routes to auth-proxy — `frontend/nginx.conf:37–42`); ui-state loses ALL network egress (the ADR-016 bypass is removed, not patched). (see: `system-architecture.md` §3, §8)
-- **[D4] Client-reported outcome event model** (ADR-049, amends ADR-041): ui-state transitions only on client-reported `*_reported` outcome events; all five egress invokes (getUserOrg, createOrg, createProject, the WorkOS re-verify, project-context's resolver egress) are retired. ADR-041 superseded decision-by-decision (D1 survives; D2 survives with amended seed mechanism; D3/D6 superseded; D4 survives absolute FOR IDENTITY; D5 amended; D7 superseded in part; D8 recommend retire). (see: `domain-model.md` §1.3)
+- **[D4] Client-reported outcome event model** (ADR-049, amends ADR-041): ui-state transitions only on client-reported past-tense outcome events (`org_created`, `org_found`, … — DR-2 ratified as plain past tense, overriding the pass's `*_reported` recommendation); all five egress invokes (getUserOrg, createOrg, createProject, the WorkOS re-verify, project-context's resolver egress) are retired. ADR-041 superseded decision-by-decision (D1 survives; D2 survives with amended seed mechanism; D3/D6 superseded; D4 survives absolute FOR IDENTITY; D5 amended; D7 superseded in part; D8 recommend retire). (see: `domain-model.md` §1.3)
 - **[D5] INV-PCO — the Presentation-Coordination-Only trust invariant** (ADR-049): ui-state state and every outcome report are trusted for presentation coordination ONLY — never an authorization input, never a resource-existence oracle, never identity (identity stays headers-only, seeded at cold-start). Enforced by construction: zero egress, no downstream reader, reissue triggers off the backend's 201, reports apply only to the reporter's own header-keyed actor. (see: `domain-model.md` §2)
 - **[D6] The settled-child event-crash class dies by phase-gated vocabulary routing** (ADR-049): events have handlers only in states where the target child is provably alive; the root-level total forward (`chat-app/machine.ts:72–75` → `sendTo(active_child_id)`) and `active_child_id` itself are deleted; the wire union closes. The crash (event → stopped onboarding child → unobserved XState throw → process death) becomes unrepresentable. (see: `domain-model.md` §6)
 - **[D7] The six application contracts (a)–(f) pinned** (ADR-050) — one-line each:
@@ -18,8 +18,8 @@
   - **(b) Org-id carry:** trusted `X-Provisioned-Org-Id` header on the forwarded backend POST, added to the `IDENTITY_HEADERS` strip list (`auth-proxy/lib/auth.ts:68`) — strip-then-inject unforgeability; backend passes it to the repo `id=`; "WorkOS id IS the local id" preserved; dev stays backend-generated.
   - **(c) Failure paths:** backend statuses relayed verbatim; WorkOS-egress failures → one synthesized 502 envelope; cause enums `org_name_taken`/`org_name_invalid` (re-edit) vs `org_create_failed` (retryable); compensated-vs-orphaned is client-indistinguishable by design; probe-first convergence for the default project; backend `OrgCreate` gains the name validation the retired machine guard performed.
   - **(d) Mode discovery:** side-effect-free `GET /api/auth/config → {mode: "dev"|"workos"}` (`max-age=300`); `login.tsx` renders no affordance until mode is known; the dev button renders ONLY when the server says `dev`.
-  - **(e) Wire vocabulary:** `ChatAppWireEvent` becomes a CLOSED union (catch-all retired; `org_form_submitted`/`create_project_submitted`/`create_project_clicked`/`switching_project_intent`/`retry_clicked` retired; `_reported` family added); router ACL compile-bound via `z.ZodType<ChatAppWireEvent>`; migration paths pinned for the shipped ui/ surfaces and per-test for `tests/acceptance/org-onboarding/`.
-  - **(f) Engaged flip:** FE gate reads `regions.projectContext.state === "project_selected"` + non-null `active_scope.project_id` on the `project_created_reported` POST's OWN response document; `phase === "chat"` is routing convenience only; duplicate/stale/out-of-order reports converge per phase-gating.
+  - **(e) Wire vocabulary:** `ChatAppWireEvent` becomes a CLOSED union (catch-all retired; `org_form_submitted`/`create_project_submitted`/`create_project_clicked`/`switching_project_intent`/`retry_clicked` retired; past-tense outcome family added); router ACL compile-bound via `z.ZodType<ChatAppWireEvent>`; migration paths pinned for the shipped ui/ surfaces and per-test for `tests/acceptance/org-onboarding/`.
+  - **(f) Engaged flip:** FE gate reads `regions.projectContext.state === "project_selected"` + non-null `active_scope.project_id` on the `project_created` POST's OWN response document; `phase === "chat"` is routing convenience only; duplicate/stale/out-of-order reports converge per phase-gating.
 
 ## Architecture Summary
 
@@ -66,9 +66,19 @@ No new technologies. Hono (auth-proxy/ui-state), XState v5, FastAPI/SQLAlchemy, 
 - **org-onboarding**: shipped surfaces stay; write path + machine events change; UI-1 (the `create_project_submitted` name-field quirk) closes structurally — the event itself retires.
 - **DISCUSS-level assumption changes:** none (no DISCUSS artifacts exist; the seed is the user-ratified design-intent). No `upstream-changes.md` needed beyond the ADR supersessions recorded above.
 
-## Decisions needing user ratification
+## Ratification record (2026-06-11)
 
-All ADRs are **Status: Proposed** — the user ratifies. Each point below carries the architect's recommendation; full options tables in the pass docs.
+The user ratified the wave: **ADR-048, ADR-049, and ADR-050 are Accepted.** All R1–R5 / DR-1–DR-8 / AR-1–AR-8 recommendations stand as proposed, with **three amendments**:
+
+1. **DR-2 overridden → plain past tense** (`org_created`, `org_found`, `project_created`, …; session-chat: `session_list_loaded`, `session_resumed`, …). Rationale: ui-state is an **extension of the frontend** — same trust domain, existing to persist presentation state across re-entry (tab-crash recovery deferred; re-entry currently starts at login) — so the event language reads as the flow the user is following through the app. INV-PCO + ADR-049 carry the trust posture; the homonym risk was temporal only (the old vocabulary retires in this feature). Applied throughout the pass docs and ADRs.
+2. **Cause-tag display rule (amends contract (c))**: cause enums are machine-readable wire values only — the UI never renders a raw tag. Re-edit causes map to user-friendly inline helper text; the retry class triggers a distinct "something went wrong on our end" presentation. The wire names themselves are fine as-is.
+3. **Console-log audit trail (new requirement on the client)**: each posted outcome event and resulting region state is logged via the structured logger (`createLogger`, `ui/app/lib/log.ts`) so the console narrates the user's path — presentation-tier observability, not a written-audit requirement (domain-model §8 posture unchanged).
+
+`system-architecture.md` and ADR-048 were ratified without amendment.
+
+## Decisions needing user ratification (resolved — see Ratification record)
+
+All points below carried the architect's recommendation; full options tables in the pass docs. **Outcome: all ratified as recommended except DR-2 (overridden).**
 
 **System (R1–R5 — `system-architecture.md` §10):**
 - **R1** Failure/compensation strategy → **A+B layered** (pre-check + best-effort compensate). NOTE the embedded assumption: WorkOS does not enforce org-name uniqueness — validate during DELIVER; if false, compensation becomes mandatory-blocking.
@@ -79,8 +89,8 @@ All ADRs are **Status: Proposed** — the user ratifies. Each point below carrie
 
 **Domain (DR-1–DR-8 — `domain-model.md` §8):**
 - **DR-1** In-flight-state model → **report-only (Option B)**: `creating_org`/`creating_project` etc. retire; no server-visible in-flight states.
-- **DR-2** Naming family → **`*_reported`** (the INV-PCO linguistic marker).
-- **DR-3** Phase-D event name → **generic `project_created_reported`** ("default" is client policy, invisible to the machine).
+- **DR-2** Naming family → recommended `*_reported`; **OVERRIDDEN at ratification → plain past tense** (see Ratification record below).
+- **DR-3** Phase-D event name → **generic `project_created`** ("default" is client policy, invisible to the machine).
 - **DR-4** User-profile source after the re-verify retires → **auth-proxy-verified identity headers seeded at cold-start**.
 - **DR-5** Retire `session_rejected` + `user_rejected` + their guards → **yes** (only producer is gone; auth failure is auth-proxy's 401).
 - **DR-6** Retire ADR-041 D8's non-security `access_token` echo → **yes** (executed by AR-7).

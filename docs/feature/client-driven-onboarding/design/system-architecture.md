@@ -3,7 +3,7 @@
 **Author:** Titan (nw-system-designer)
 **Date:** 2026-06-10
 **Mode:** Propose (boundary assignments are user-ratified and FIXED — `../design-intent.md` §"Boundary assignments"; this pass designs the system-level consequences, not the boundaries)
-**ADR:** ADR-048 (Proposed) — `docs/decisions/adr-048-auth-proxy-owns-workos-write-workflow.md`
+**ADR:** ADR-048 (Accepted — user-ratified 2026-06-11) — `docs/decisions/adr-048-auth-proxy-owns-workos-write-workflow.md`
 **Downstream passes:** domain events → ddd-architect; client→ui-state outcome-event contracts, org-id carry mechanism, mode-discovery endpoint shape → solution-architect. This document pins the SYSTEM view only.
 
 ---
@@ -229,7 +229,7 @@ flowchart LR
 
 ---
 
-## 10. Decisions needing user ratification
+## 10. Decisions needing user ratification (RESOLVED: R1–R5 ratified as recommended, 2026-06-11 — see wave-decisions.md §"Ratification record")
 
 | # | Question | Recommendation |
 |---|---|---|

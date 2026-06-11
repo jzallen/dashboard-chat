@@ -1,6 +1,6 @@
 # ADR-048: Auth-Proxy Owns the WorkOS Write Workflow (Org-Create Interception + Credential/AUTH_MODE Consolidation)
 
-**Status:** Proposed (awaiting user ratification — R1–R5 in the system-architecture doc)
+**Status:** Accepted (user-ratified 2026-06-11 without amendment; R1–R5 ratified as recommended — R1 retains its DELIVER-validated WorkOS org-name-uniqueness assumption)
 **Date:** 2026-06-10
 **Originating wave:** DESIGN — `client-driven-onboarding` (system-scope pass)
 **Author:** Titan (nw-system-designer), propose mode; grounded in the user-ratified seed `docs/feature/client-driven-onboarding/design-intent.md` and the live source

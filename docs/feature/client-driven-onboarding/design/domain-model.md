@@ -3,7 +3,7 @@
 **Author:** Hera (nw-ddd-architect)
 **Date:** 2026-06-10
 **Mode:** Propose (boundary assignments are user-ratified and FIXED — `../design-intent.md` §"Boundary assignments"; options are presented only for genuinely open domain-level points)
-**ADR:** ADR-049 (Proposed) — `docs/decisions/adr-049-client-reported-outcome-event-model.md`
+**ADR:** ADR-049 (Accepted — user-ratified 2026-06-11; DR-2 overridden → plain past tense) — `docs/decisions/adr-049-client-reported-outcome-event-model.md`
 **Upstream pass:** system scope — `system-architecture.md` + ADR-048 (binding constraint inherited: *no terminal-in-practice partial-setup states — every failure outcome must be representable as retryable*)
 **Downstream pass:** solution architect — exact wire schemas (Zod/TS deltas to `shared/ui-state-wire/`), HTTP contracts (mode discovery, org-id carry, reissue cookie attributes), file-by-file deltas, fixture/acceptance migration list. This document pins the DOMAIN view only: contexts, language, event model, machine state-sets, routing semantics, invariants.
 
@@ -75,7 +75,7 @@ Reading notes (the load-bearing deltas vs. the brief's session-onboarding map):
 | **D2** self-contained opening event seeds the projection (identity in at t0, never read back) | **SURVIVES in principle; mechanism amended.** The opening seed remains self-contained, but the verified user profile now arrives from the Authentication context (auth-proxy-verified identity headers at `session_begin` cold-start), not from a ui-state re-verification call. (Ratification point DR-4, §9.) |
 | **D3** `workosUserInfo` repurposed as Bearer re-verification | **SUPERSEDED — retired.** ui-state has zero egress; auth-proxy is the only verifier. See §2.3 for the residual-risk note D3 was defending against. |
 | **D4** identity from the verified token/headers, never a client body claim | **SURVIVES FOR IDENTITY — narrowed and clarified** by the PCO invariant (§2). Outcome body claims are admitted as presentation-coordination signals; they are never identity and never authorization inputs. |
-| **D5** state-set (`verifying`, `needs_org`, `creating_org`, `ready`, `error_recoverable`, `session_rejected`, `[hasOrg]` shortcut) | **AMENDED.** `verifying` → `awaiting_org_report` (no I/O to verify); `creating_org` retired (no server-side write); `error_recoverable` kept and made *actually recoverable*; `session_rejected` retired (its only producer — re-verify failure — is gone). The `[hasOrg]` returning-user shortcut survives as the `org_exists_reported` fast path. §4. |
+| **D5** state-set (`verifying`, `needs_org`, `creating_org`, `ready`, `error_recoverable`, `session_rejected`, `[hasOrg]` shortcut) | **AMENDED.** `verifying` → `awaiting_org_report` (no I/O to verify); `creating_org` retired (no server-side write); `error_recoverable` kept and made *actually recoverable*; `session_rejected` retired (its only producer — re-verify failure — is gone). The `[hasOrg]` returning-user shortcut survives as the `org_found` fast path. §4. |
 | **D6** `session_rejected` shape over HTTP 200 | **SUPERSEDED** (state retired with its producer; an unauthenticated request never reaches ui-state — auth-proxy 401s it). |
 | **D7** context map: auth-proxy→SO Customer-Supplier+ACL; SO→WorkOS Conformist; (SO→Org/Project Customer-Supplier in the brief's map) | **SUPERSEDED IN PART.** auth-proxy→ui-state Customer-Supplier + ACL **survives** (ACL re-scoped, §2). Both ui-state-downstream edges (WorkOS conformist, backend customer-supplier) **deleted**. |
 | **D8** non-security `access_token` projection echo | **RECOMMEND RETIRE** (ratification DR-6): the real org-scoped token now rides `Set-Cookie` on the org-create response (ADR-048 §6); the alg:none echo has no remaining consumer. |
@@ -113,7 +113,7 @@ The invariant is enforced **by construction**, not by runtime checks:
 - **No downstream reader exists.** ui-state has zero egress (ADR-048): there is no call it could make on the strength of a false report. The 2026-06-10 incident class — a machine-internal write acting on machine state — becomes unrepresentable.
 - **The backend never reads ui-state.** Every backend write the client performs (org create, project create) is independently authenticated, authorized, and validated at the ingress + backend; the subsequent report to ui-state is *after-the-fact narration*, causally downstream of the real write, never upstream of it.
 - **auth-proxy never reads ui-state for minting.** The org-scoped reissue triggers off the **backend's 201** inside the intercepted org-create response (ADR-048) — the resource SSOT's answer, not the presentation tier's.
-- **The self-harm property** (the enforcement test): a client that lies (`org_created_reported` with no real org) gets a document saying `ready`, routes itself into the app shell, and then every real API call 404s/403s against the SSOTs. A false report can produce a broken screen for the liar; it can never produce a privilege, a resource, or another principal's state change.
+- **The self-harm property** (the enforcement test): a client that lies (`org_created` with no real org) gets a document saying `ready`, routes itself into the app shell, and then every real API call 404s/403s against the SSOTs. A false report can produce a broken screen for the liar; it can never produce a privilege, a resource, or another principal's state change.
 - **The router ACL survives, re-scoped.** The closed onboarding vocabulary (ADR-046 Decision 3; `router.ts:244–253, 440–456`) continues to validate **well-formedness and phase-applicability** — it is shape validation, not truth validation. Truth validation is structurally elsewhere (the SSOTs).
 - **Residual risk accepted (replaces ADR-041 D3's defense-in-depth):** D3's re-verify defended against a misconfigured deployment exposing ui-state to the open web. Post-change the exposure surface is presentation state only (the PCO invariant caps the damage at wrong-screen), and the compose topology keeps ui-state reachable only via auth-proxy. Accepted; documented here rather than silently dropped.
 
@@ -128,9 +128,9 @@ The invariant is enforced **by construction**, not by runtime checks:
 | Example | `org_created_reported` | `org_created` | `client_org_created` |
 | Trust posture in the name | **Explicit** — every reader of the machine/wire sees the event is a *claim observed by the client*, not a system fact | Invisible — reads identically to the retired actor-output events (`org_created` was the old server-verified FlowEvent vocabulary: a dangerous homonym across two trust regimes) | Explicit but names the *sender*, not the *speech act*; collides stylistically with nothing in the repo |
 | Glossary fit | Pairs with INV-PCO: the suffix IS the invariant's linguistic marker | Shorter | Verbose at every payload site |
-| Verdict | ✅ **RECOMMENDED** | ❌ rejected (homonym across trust regimes) | ⚠️ workable, not preferred |
+| Verdict | recommended by this pass; **overridden at ratification** | ✅ **SELECTED (user-ratified 2026-06-11)** | ⚠️ workable, not preferred |
 
-**Recommendation: Option A.** Language divergence is the boundary signal — the same words meaning different things under different trust regimes is precisely the confusion the old vocabulary would re-introduce. The `_reported` suffix encodes "this is a client observation admitted under INV-PCO" into every event name.
+**Decision (user-ratified, overriding the pass's Option-A recommendation): Option B — plain past tense.** ui-state is not a distinct trust domain to be marked off linguistically: it is an **extension of the frontend**, existing to persist presentation state so the frontend can re-read it on re-entry (e.g., after a tab crash — a flow deferred for now; every re-entry currently starts at login). The event language therefore reads as **the flow the user is following** as they navigate the app (`org_created`, `org_found`), and the event stream doubles as an **audit trail surfaced in the client console logs** (structured `createLogger` — each posted event and resulting region state is logged). The trust posture Option A encoded per-name lives instead in INV-PCO + ADR-049 — the *model* remains "client-reported" even though the names don't repeat it. The homonym risk that motivated Option A is temporal only: the old server-verified FlowEvent vocabulary retires in this same feature, so the two trust regimes never coexist.
 
 ### 3.2 The vocabulary (recommended; exact Zod/TS shapes → solution architect)
 
@@ -139,37 +139,37 @@ The invariant is enforced **by construction**, not by runtime checks:
 | Event | Payload (domain-level) | Meaning |
 |---|---|---|
 | `session_begin` | `{ force_restart? }` | KEPT (ADR-046 3a). Cold-start; identity seeded from verified headers. |
-| `org_exists_reported` | `{ org: { id, name } }` | Client's existence probe (Phase B: `GET /api/orgs/me` through the ingress) answered 200. The returning-user fast path (ADR-041's `[hasOrg]`, reported instead of invoked). |
-| `org_missing_reported` | `{}` | The probe answered 404 — the principal needs an org. |
-| `org_created_reported` | `{ org: { id, name } }` | Client's `POST /api/orgs` (through auth-proxy, ADR-048 interception) returned 201. |
-| `org_create_failed_reported` | `{ cause, org_name }` | The POST failed. `cause = org_name_taken` (409 — re-edit, not retry) vs. `org_create_failed` (5xx/compensated/orphaned — retryable). Exact cause-tag set: solution architect; the domain rule is the **two-way split**: *re-edit causes return to the form; everything else lands in a retryable error state*. |
+| `org_found` | `{ org: { id, name } }` | Client's existence probe (Phase B: `GET /api/orgs/me` through the ingress) answered 200. The returning-user fast path (ADR-041's `[hasOrg]`, reported instead of invoked). |
+| `org_not_found` | `{}` | The probe answered 404 — the principal needs an org. |
+| `org_created` | `{ org: { id, name } }` | Client's `POST /api/orgs` (through auth-proxy, ADR-048 interception) returned 201. |
+| `org_create_failed` | `{ cause, org_name }` | The POST failed. `cause = org_name_taken` (409 — re-edit, not retry) vs. `org_create_failed` (5xx/compensated/orphaned — retryable). Exact cause-tag set: solution architect; the domain rule is the **two-way split**: *re-edit causes return to the form; everything else lands in a retryable error state*. |
 | `__force_failure__` | `{ tag }` | KEPT (failure-sim side-channel, gate-authorized — `router.ts:467–482`). |
 
 **Project-context region:**
 
 | Event | Payload (domain-level) | Meaning |
 |---|---|---|
-| `scope_resolved_reported` | `{ project: { id, name }, … }` | Client resolved the initial scope (probed `/api/projects*`) to a project. Replaces the `resolveInitialScope` invoke's happy output. |
-| `no_projects_reported` | `{}` | The probe found zero projects. |
-| `scope_mismatch_reported` | `{ cause: cross_tenant \| project_not_found \| access_revoked }` | Deep-link / switch target rejected by the backend (403/404 observed by the client). One event covers the old resolve-time AND switch-time mismatch arms. |
-| `project_created_reported` | `{ project: { id, name } }` | Client's `POST /api/projects` returned 201 — Phase D's automatic default project, and any later creation. |
-| `project_create_failed_reported` | `{ cause }` | The POST failed (retryable). |
-| `project_switched_reported` | `{ project: { id, name } }` | Client validated a switch target (`GET /api/projects/:id` 200) and is now on it. |
+| `scope_resolved` | `{ project: { id, name }, … }` | Client resolved the initial scope (probed `/api/projects*`) to a project. Replaces the `resolveInitialScope` invoke's happy output. |
+| `no_projects_found` | `{}` | The probe found zero projects. |
+| `scope_mismatch` | `{ cause: cross_tenant \| project_not_found \| access_revoked }` | Deep-link / switch target rejected by the backend (403/404 observed by the client). One event covers the old resolve-time AND switch-time mismatch arms. |
+| `project_created` | `{ project: { id, name } }` | Client's `POST /api/projects` returned 201 — Phase D's automatic default project, and any later creation. |
+| `project_create_failed` | `{ cause }` | The POST failed (retryable). |
+| `project_switched` | `{ project: { id, name } }` | Client validated a switch target (`GET /api/projects/:id` 200) and is now on it. |
 | `open_deep_link` | (unchanged payload) | KEPT — captures the URL **wish**; the client resolves it and reports the outcome. |
 | `back_to_projects_clicked` | `{}` | KEPT — UI intent exiting `scope_mismatch_terminal`; the client re-probes and reports. |
 
-**"default" is client policy, not machine vocabulary** (contested — recorded): the seed's example list says `default_project_created_reported`; this pass recommends the generic `project_created_reported` because the machine cannot tell (and must not care) whether the name was a client-chosen default — "default" is the *client's* Phase-D policy, and the generic name survives the later project-naming feature unchanged. (Ratification DR-3.)
+**"default" is client policy, not machine vocabulary** (contested — recorded): the seed's example list says `default_project_created`; this pass recommends the generic `project_created` because the machine cannot tell (and must not care) whether the name was a client-chosen default — "default" is the *client's* Phase-D policy, and the generic name survives the later project-naming feature unchanged. (Ratification DR-3.)
 
 ### 3.3 What dies with the invokes (glossary delta)
 
 | Retired | Was | Replaced by |
 |---|---|---|
-| `loadSession` invoke (`getWorkOSUserInfo` + `getUserOrg`) | `onboarding/setup/actors.ts:121–234`; the `verifying` state's I/O | Identity: verified headers at cold-start. Org existence: `org_exists_reported` / `org_missing_reported`. |
-| `createOrg` invoke (`createOrgFn`, incl. the 500-idempotent `/api/orgs/me` reconcile rule) | `actors.ts:264–396`; `creating_org` state | `org_created_reported` / `org_create_failed_reported`. The 409 rule (`actors.ts:279–289`) survives as the `org_name_taken` cause arm; the 500 quirk rule dies (DEV_NO_ORG resolved it upstream — org-onboarding D1). |
+| `loadSession` invoke (`getWorkOSUserInfo` + `getUserOrg`) | `onboarding/setup/actors.ts:121–234`; the `verifying` state's I/O | Identity: verified headers at cold-start. Org existence: `org_found` / `org_not_found`. |
+| `createOrg` invoke (`createOrgFn`, incl. the 500-idempotent `/api/orgs/me` reconcile rule) | `actors.ts:264–396`; `creating_org` state | `org_created` / `org_create_failed`. The 409 rule (`actors.ts:279–289`) survives as the `org_name_taken` cause arm; the 500 quirk rule dies (DEV_NO_ORG resolved it upstream — org-onboarding D1). |
 | `org_form_submitted` wire event + `isOrgNameValid` guard + `creating_org` | the shipped org-onboarding write trigger (`wire-event.ts:23`) | Nothing — the client posts the backend directly and reports the outcome (§4.1 Option B). Name validation lives where it always truly did: backend (SSOT) + client (UX). |
-| `create_project_submitted` / `create_project_clicked` wire events + `projectNameValid` guard + `creating_project` | the shipped Phase-D trigger — including the UI-1 `org_name`-carries-project-name misnomer (`wire-event.ts:25–33`) | `project_created_reported` / `project_create_failed_reported`. The UI-1 quirk dies with the event. |
-| `resolveInitialScope` / `createProject` / `switchProject` invokes | `project-context/setup/actors.ts:140–480` | `scope_resolved_reported` / `no_projects_reported` / `scope_mismatch_reported` / `project_created_reported` / `project_switched_reported`. |
-| `switching_project_intent` wire event + parent `PROJECT_SWITCH` | the switch *trigger* (`router.ts:565–571`) | `project_switched_reported` / `scope_mismatch_reported` — report-only; the client performs the validation it used to delegate. |
+| `create_project_submitted` / `create_project_clicked` wire events + `projectNameValid` guard + `creating_project` | the shipped Phase-D trigger — including the UI-1 `org_name`-carries-project-name misnomer (`wire-event.ts:25–33`) | `project_created` / `project_create_failed`. The UI-1 quirk dies with the event. |
+| `resolveInitialScope` / `createProject` / `switchProject` invokes | `project-context/setup/actors.ts:140–480` | `scope_resolved` / `no_projects_found` / `scope_mismatch` / `project_created` / `project_switched`. |
+| `switching_project_intent` wire event + parent `PROJECT_SWITCH` | the switch *trigger* (`router.ts:565–571`) | `project_switched` / `scope_mismatch` — report-only; the client performs the validation it used to delegate. |
 | `retry_clicked` | `error_recoverable → creating_project` re-invoke (`project-context/machine.ts:274–281`) | Retry = the client re-POSTs and re-reports; error states accept outcome reports directly. |
 | `session_rejected` state + `user_rejected` parent state + `isUserRejected` guard + `captureUserRejected` | the re-verify failure arm (ADR-041 D6) | Nothing — authentication failure is auth-proxy's 401; it never reaches ui-state. (Ratification DR-5.) |
 | WorkOS re-verify (`workosUrl`, `FAKE_WORKOS_URL` seam) | ADR-041 D3 | auth-proxy's per-request verification (ADR-016/043, unchanged); the fake seam relocates to auth-proxy (`WORKOS_BASE`, ADR-048 R4). |
@@ -180,7 +180,7 @@ The invariant is enforced **by construction**, not by runtime checks:
 
 | Term | Meaning |
 |---|---|
-| **Outcome report** | A client-posted event narrating a result the client observed from the SSOTs (`*_reported`). Admitted under INV-PCO: presentation-coordination signal, never a fact. |
+| **Outcome report** | A client-posted event narrating a result the client observed from the SSOTs (the past-tense outcome vocabulary: `org_created`, `org_found`, `project_created`, …). Admitted under INV-PCO: presentation-coordination signal, never a fact. |
 | **Existence probe** | The client's sparse read (`GET /api/orgs/me`, `GET /api/projects*`) through the normal ingress, whose answer it reports. |
 | **Display snapshot** | An org/project value held in ui-state context purely for rendering; sourced from reports; never authoritative. |
 | **Convergence** | The property that a late/duplicate/contradicted report is absorbed without error and the returned document tells the reporter the actual current state (multi-tab safety; §4.3 Spec 8). |
@@ -207,15 +207,15 @@ The invariant is enforced **by construction**, not by runtime checks:
 ```mermaid
 stateDiagram-v2
     [*] --> awaiting_org_report : session_begin (cold-start)<br/>seed user from verified identity headers
-    awaiting_org_report --> ready : org_exists_reported<br/>/ assignReportedOrg
-    awaiting_org_report --> needs_org : org_missing_reported
-    needs_org --> ready : org_created_reported<br/>/ assignReportedOrg
-    needs_org --> ready : org_exists_reported (convergence)<br/>/ assignReportedOrg
-    needs_org --> needs_org : org_create_failed_reported<br/>[cause = org_name_taken]<br/>/ recordOrgNameTaken
-    needs_org --> error_recoverable : org_create_failed_reported [else]<br/>/ tagCause
+    awaiting_org_report --> ready : org_found<br/>/ assignReportedOrg
+    awaiting_org_report --> needs_org : org_not_found
+    needs_org --> ready : org_created<br/>/ assignReportedOrg
+    needs_org --> ready : org_found (convergence)<br/>/ assignReportedOrg
+    needs_org --> needs_org : org_create_failed<br/>[cause = org_name_taken]<br/>/ recordOrgNameTaken
+    needs_org --> error_recoverable : org_create_failed [else]<br/>/ tagCause
     needs_org --> error_recoverable : __force_failure__ / tagCause
-    error_recoverable --> ready : org_created_reported \| org_exists_reported<br/>/ assignReportedOrg
-    error_recoverable --> error_recoverable : org_create_failed_reported<br/>/ tagCause (cause refresh)
+    error_recoverable --> ready : org_created \| org_found<br/>/ assignReportedOrg
+    error_recoverable --> error_recoverable : org_create_failed<br/>/ tagCause (cause refresh)
     note right of error_recoverable
         RETRYABLE by construction —
         accepts every outcome report.
@@ -240,38 +240,38 @@ State-set delta vs. shipped (`onboarding/machine.ts:98–193`): `verifying` → 
 Spec 1 — existence probe, returning user (Phase B fast path; was [hasOrg])
   Given a cold-started actor in onboarding.awaiting_org_report
     And context.user seeded from verified identity headers
-  When org_exists_reported { org: {id: "org-1", name: "Acme"} }
+  When org_found { org: {id: "org-1", name: "Acme"} }
   Then onboarding settles in ready with org display snapshot {org-1, Acme}
     And the parent advances login → engaged (isUserReady, unchanged)
     And the document shows phase=project_context
 
 Spec 2 — existence probe, new user (Phase B)
   Given onboarding.awaiting_org_report
-  When org_missing_reported {}
+  When org_not_found {}
   Then onboarding settles in needs_org and the document shows phase=onboarding
     (the client routes to the OnboardingRoute)
 
 Spec 3 — org create success (Phase C)
   Given onboarding.needs_org
-  When org_created_reported { org: {id: "org-1", name: "Acme"} }
+  When org_created { org: {id: "org-1", name: "Acme"} }
   Then onboarding settles in ready; parent advances to engaged
     (the real write + WorkOS provisioning + Set-Cookie reissue already
      happened upstream at auth-proxy/backend — ADR-048; this event is narration)
 
 Spec 4 — name taken (409; re-edit, not retry)
   Given onboarding.needs_org
-  When org_create_failed_reported { cause: org_name_taken, org_name: "Acme" }
+  When org_create_failed { cause: org_name_taken, org_name: "Acme" }
   Then onboarding REMAINS in needs_org
     And org_validation_error records the taken name (inline form error)
     And no error screen is shown (mirrors today's 409 → needs_org arm)
 
 Spec 5 — orphan/partial outcome is retryable (ADR-048 inheritance)
   Given onboarding.needs_org
-  When org_create_failed_reported { cause: org_create_failed }
+  When org_create_failed { cause: org_create_failed }
   Then onboarding settles in error_recoverable carrying the cause
   When the user resubmits, the client re-POSTs /api/orgs (clean after a
        compensated failure; still succeeding after an uncompensated one —
-       ADR-048 §3) and posts org_created_reported
+       ADR-048 §3) and posts org_created
   Then onboarding settles in ready — error_recoverable is NOT a dead end
 
 Spec 6 — identity is never event-writable (INV-PCO / D4)
@@ -300,16 +300,16 @@ Spec 6 — identity is never event-writable (INV-PCO / D4)
 ```mermaid
 stateDiagram-v2
     [*] --> awaiting_scope_report : (auth_ready hand-off from parent — internal, unchanged)
-    awaiting_scope_report --> project_selected : scope_resolved_reported<br/>/ assignReportedProject
-    awaiting_scope_report --> project_selected : project_created_reported (Phase D fast path)<br/>/ assignReportedProject
-    awaiting_scope_report --> no_projects : no_projects_reported
-    awaiting_scope_report --> scope_mismatch_terminal : scope_mismatch_reported / tagCause
-    no_projects --> project_selected : project_created_reported<br/>/ assignReportedProject
-    no_projects --> error_recoverable : project_create_failed_reported / tagCause
-    error_recoverable --> project_selected : project_created_reported<br/>/ assignReportedProject
-    error_recoverable --> error_recoverable : project_create_failed_reported / tagCause
-    project_selected --> project_selected : project_switched_reported<br/>/ assignReportedProject (parent re-forwards<br/>project_ready on id change — unchanged guard)
-    project_selected --> scope_mismatch_terminal : scope_mismatch_reported / tagCause
+    awaiting_scope_report --> project_selected : scope_resolved<br/>/ assignReportedProject
+    awaiting_scope_report --> project_selected : project_created (Phase D fast path)<br/>/ assignReportedProject
+    awaiting_scope_report --> no_projects : no_projects_found
+    awaiting_scope_report --> scope_mismatch_terminal : scope_mismatch / tagCause
+    no_projects --> project_selected : project_created<br/>/ assignReportedProject
+    no_projects --> error_recoverable : project_create_failed / tagCause
+    error_recoverable --> project_selected : project_created<br/>/ assignReportedProject
+    error_recoverable --> error_recoverable : project_create_failed / tagCause
+    project_selected --> project_selected : project_switched<br/>/ assignReportedProject (parent re-forwards<br/>project_ready on id change — unchanged guard)
+    project_selected --> scope_mismatch_terminal : scope_mismatch / tagCause
     scope_mismatch_terminal --> awaiting_scope_report : back_to_projects_clicked<br/>/ clearScopeMismatch (client re-probes + reports)
     note right of awaiting_scope_report
         open_deep_link stays a ROOT-level
@@ -321,15 +321,15 @@ stateDiagram-v2
 
 Delta vs. shipped (`project-context/machine.ts:126–282`): `resolving_initial_scope` (invoke) → **`awaiting_scope_report`**; `creating_project` + `switching_project` (invokes) **retired**; `scope_mismatch_terminal`, `no_projects`, `project_selected`, `error_recoverable` survive by name; `retry_clicked` retired (error state accepts reports directly). The last-used-resolution policy embedded in `resolveInitialScopeFn` (`actors.ts:229–331`) becomes **client-side policy** — the machine only ever learns the resolved answer; the `most_recent_session_per_project` / degraded-probe context fields follow the client (display data per INV-PCO; exact context-field pruning → solution architect).
 
-**Phase D is two client actions, one region transition.** After Spec 3 the parent is in `engaged.project_context` with the child in `awaiting_scope_report` (or `no_projects` if the client probed first). The client AUTOMATICALLY POSTs the default project (no user input) and reports `project_created_reported` — accepted from both states (the fast path keeps the auto-step a single report regardless of whether the client bothered probing an obviously-empty org).
+**Phase D is two client actions, one region transition.** After Spec 3 the parent is in `engaged.project_context` with the child in `awaiting_scope_report` (or `no_projects` if the client probed first). The client AUTOMATICALLY POSTs the default project (no user input) and reports `project_created` — accepted from both states (the fast path keeps the auto-step a single report regardless of whether the client bothered probing an obviously-empty org).
 
 ### 5.2 The engaged-state flip (open point f — domain-level answer)
 
-**The flip contract does not change shape; only the producer of the child state changes.** Today the chat-app parent advances `engaged.project_context → engaged.chat` when its `onSnapshot` watcher sees the project-context child in `project_selected` with no project yet forwarded (`isInitialProjectSelected`, `chat-app/setup/guards.ts:36–38`), then forwards the `project_ready` hand-off to session-chat. That machinery is **reused verbatim**: under the new design the child enters `project_selected` because the client reported `project_created_reported` / `scope_resolved_reported` instead of because an invoke resolved — the parent cannot tell the difference and must not.
+**The flip contract does not change shape; only the producer of the child state changes.** Today the chat-app parent advances `engaged.project_context → engaged.chat` when its `onSnapshot` watcher sees the project-context child in `project_selected` with no project yet forwarded (`isInitialProjectSelected`, `chat-app/setup/guards.ts:36–38`), then forwards the `project_ready` hand-off to session-chat. That machinery is **reused verbatim**: under the new design the child enters `project_selected` because the client reported `project_created` / `scope_resolved` instead of because an invoke resolved — the parent cannot tell the difference and must not.
 
 So, domain-level:
 
-- **What the client posts:** `project_created_reported { project }` (Phase D) — the final outcome report of onboarding.
+- **What the client posts:** `project_created { project }` (Phase D) — the final outcome report of onboarding.
 - **What flips chat-app to engaged-chat:** the same parent-observed child state `project_selected` via the unchanged `isInitialProjectSelected` guard.
 - **What the client observes as "enter the app":** the document returned by that very POST (the `/state/events` response is always the new settled document — ADR-046 Decision 3): `phase === "chat"`, `regions.projectContext.state === "project_selected"`, `active_scope.project_id` set. The client routes into the app shell on that document — no extra read, no race.
 - **What the solution architect pins:** the exact wire shape of that response assertion set (which fields the FE gate dispatches on) and the acceptance-suite migration from today's `project_selected`-after-`create_project_submitted` assertion.
@@ -341,7 +341,7 @@ Spec 7 — Phase D: automatic default project completes onboarding
   Given the parent in engaged.project_context
     And projectContext in awaiting_scope_report (org just created, Spec 3)
   When the client POSTs the default project to the backend (auto, no user input)
-    And posts project_created_reported { project: {id: "proj-1", name: <default>} }
+    And posts project_created { project: {id: "proj-1", name: <default>} }
   Then projectContext settles in project_selected
     And the parent advances engaged.project_context → engaged.chat
         (isInitialProjectSelected — unchanged) and forwards project_ready
@@ -350,9 +350,9 @@ Spec 7 — Phase D: automatic default project completes onboarding
 
 Spec 7b — Phase D failure is retryable
   Given projectContext in no_projects (or awaiting_scope_report)
-  When project_create_failed_reported { cause: transient }
+  When project_create_failed { cause: transient }
   Then projectContext settles in error_recoverable (cause carried)
-  When the client re-POSTs and posts project_created_reported
+  When the client re-POSTs and posts project_created
   Then projectContext settles in project_selected — no dead end, no retry_clicked
 ```
 
@@ -388,7 +388,7 @@ The crash is a four-step chain:
 ```gherkin
 Spec 8 — late/duplicate reports converge instead of crashing (the regression spec)
   Given the parent in engaged (onboarding child stopped)
-  When a stale tab posts org_created_reported (or any onboarding-vocabulary event)
+  When a stale tab posts org_created (or any onboarding-vocabulary event)
   Then NO transition occurs and NO send is attempted (no handler in engaged)
     And the response is the current document (phase=project_context|chat)
     And the ui-state process is alive
@@ -409,34 +409,36 @@ Spec 8 — late/duplicate reports converge instead of crashing (the regression s
 | Project-context machine | `project-context/machine.ts` | **EXTEND (realign)** | State-set per §5.1; `tagCause`/`assignResolvedScope`-family actions reused with reported payloads. |
 | Project-context egress actors | `project-context/setup/actors.ts` (`resolveInitialScopeFn` incl. last-used policy, `createProjectFn`, `switchProjectFn`) | **RETIRE** | Last-used resolution + deep-link 403/404 discrimination become client-side policy (the client already owns catalog reads — memory: backend-catalog-integration). |
 | Session-chat egress actors | `session-chat/setup/actors.ts` | **RETIRE (egress), vocabulary follow-on** | ADR-048 removes `BACKEND_URL` tier-wide, so session-chat's I/O retires in this feature too; its reported-outcome vocabulary follows this ADR's pattern mechanically (list/resume reports) and is pinned by the solution architect (ratification DR-8). |
-| `shared/ui-state-wire/wire-event.ts` | `wire-event.ts:19–52` | **EXTEND → closed union** | New `*_reported` members; retire `org_form_submitted`, `create_project_submitted` (+ UI-1 quirk), `switching_project_intent`, the trailing catch-all. Exact Zod/TS: solution architect. |
+| `shared/ui-state-wire/wire-event.ts` | `wire-event.ts:19–52` | **EXTEND → closed union** | New outcome-report members; retire `org_form_submitted`, `create_project_submitted` (+ UI-1 quirk), `switching_project_intent`, the trailing catch-all. Exact Zod/TS: solution architect. |
 | `shared/ui-state-wire/state-document.ts` | `state-document.ts` | **REUSE (shape unchanged)** | Document/regions shape untouched; region `state` string sets change per §4/§5 (FE + acceptance dispatch sites: solution architect). `error_recoverable` and `ready` names preserved deliberately for the auth-proxy KPI sniffer literals. |
 | Settled-store / hybrid persistence + ADR-042 inheritance | `chat-app/snapshot.ts`, `persistence/*` | **REUSE (unchanged)** | Synchronous reported transitions make the no-ES posture *more* right, not less (still no temporal requirement). |
 | org-onboarding acceptance suite + `ui/` onboarding route | `tests/acceptance/org-onboarding/`, `ui/app/routes/onboarding.tsx` | **REWORK (sequenced)** | Shipped 2026-06-10; its write path is what this feature replaces (design-intent §Relationship). Migration plan: solution architect. |
 | ADR-041 D8 `access_token` echo (`mintAccessTokenForReady`) | onboarding projection convenience | **RETIRE (recommended, DR-6)** | Superseded by the real `Set-Cookie` reissue (ADR-048 §6); no remaining consumer identified. |
 
-**Zero unjustified CREATE NEW.** The genuinely new domain artifacts are the `*_reported` vocabulary and two renamed waiting states; everything else is extension, realignment, or retirement of what exists.
+**Zero unjustified CREATE NEW.** The genuinely new domain artifacts are the outcome-report vocabulary and two renamed waiting states; everything else is extension, realignment, or retirement of what exists.
 
 ---
 
 ## 8. Event-model trade-off note (ES/CQRS posture — confirmed unchanged)
 
-The client-reported model is *not* event sourcing and must not drift toward it: reports are commands-to-coordinate, the live actor + settled snapshot remain the state-of-record (ADR-044 hybrid / ADR-042 inheritance), and the bookkeeping log stays demoted to SSE/audit substrate. No written audit or temporal requirement has appeared; if one ever does, it belongs on the **SSOT sides** (backend resources, auth-proxy KPI events — ADR-048 §5 already gives org-create a structured trail), not on the presentation tier.
+The client-reported model is *not* event sourcing and must not drift toward it: reports are commands-to-coordinate, the live actor + settled snapshot remain the state-of-record (ADR-044 hybrid / ADR-042 inheritance), and the bookkeeping log stays demoted to SSE/audit substrate. No *written* audit or temporal requirement has appeared; if one ever does, it belongs on the **SSOT sides** (backend resources, auth-proxy KPI events — ADR-048 §5 already gives org-create a structured trail), not on the presentation tier.
+
+**Console-log audit trail (user-ratified requirement):** the event stream *is* the audit trail of the user's flow at the presentation tier — the client logs each posted outcome event and the resulting region state via the structured logger (`createLogger`, `ui/app/lib/log.ts`), so the console reads as a narration of the user's path through the app. This is observability, not a written-audit requirement; it changes nothing in the paragraph above.
 
 ---
 
-## 9. Decisions needing user ratification
+## 9. Decisions needing user ratification (RESOLVED 2026-06-11: all as recommended except DR-2, overridden → plain past tense — see wave-decisions.md §"Ratification record")
 
 | # | Question | Recommendation |
 |---|---|---|
 | **DR-1** | In-flight states: report-only (Option B, §4.1 — `org_form_submitted`/`create_project_submitted` retire) vs. two-step with server-visible in-flight states (Option A)? | **B.** In-flight server states under the no-I/O rule are danglable promises only the client can keep — a new dead-end class; the catalog write-through philosophy keeps in-flight local. |
-| **DR-2** | Naming family for outcome events (§3.1): `*_reported` vs. plain past tense vs. `client_` prefix? | **`*_reported`.** The suffix is INV-PCO's linguistic marker; plain past tense is a dangerous homonym with the retired server-verified vocabulary. |
-| **DR-3** | `project_created_reported` (generic) vs. `default_project_created_reported` (flow-explicit) for Phase D? | **Generic.** "Default" is client policy invisible to the machine; the generic name survives the later project-naming feature unchanged. |
+| **DR-2** | Naming family for outcome events (§3.1): `*_reported` vs. plain past tense vs. `client_` prefix? | ~~`*_reported`~~ **RATIFIED AS PLAIN PAST TENSE (user override, 2026-06-11).** ui-state is an extension of the frontend, not a distinct trust domain; events read as the user's flow narration and double as the console-log audit trail. INV-PCO + ADR-049 carry the trust posture; the homonym risk is temporal only (the old vocabulary retires in this feature). See §3.1. |
+| **DR-3** | `project_created` (generic) vs. `default_project_created` (flow-explicit) for Phase D? | **Generic.** "Default" is client policy invisible to the machine; the generic name survives the later project-naming feature unchanged. |
 | **DR-4** | Source of the user profile (email/display_name/first_name) after the re-verify retires: (i) auth-proxy-verified identity headers seeded at cold-start, (ii) drop the profile from the document and let the client fetch its own profile, (iii) client-reported profile? | **(i).** Preserves D2's self-contained seed and D4's identity rule with zero new trust surface ((iii) is rejected outright — identity from a body claim is the exact gap D4 closed). Exact header set: solution architect. |
 | **DR-5** | Retire `session_rejected` (onboarding) + `user_rejected` (parent) + `isUserRejected`/`captureUserRejected`, since their only producer (the re-verify) is gone? | **Yes.** Authentication failure is auth-proxy's 401 and never reaches ui-state; keeping an unreachable rejection arm preserves the exact stale-pointer window §6 closes. |
 | **DR-6** | Retire ADR-041 D8's non-security `access_token` projection echo? | **Yes.** The real org-scoped token now rides `Set-Cookie` on the org-create response (ADR-048); the alg:none echo has no consumer left. Verify no harness reads it at DISTILL. |
 | **DR-7** | Crash-class elimination: phase-gated vocabulary routing + closed wire union (Option 1, §6.2) vs. never-stopping regions (2) vs. guarded forwarder (3)? | **Option 1** (3 acceptable as added defense inside surviving forwarders). Makes the invalid send unrepresentable and resolves ADR-046's unmodeled-event-silence question as a side effect. |
-| **DR-8** | Session-chat egress retirement: define its reported-outcome vocabulary in this feature (ADR-048's env table already deletes `BACKEND_URL` tier-wide) or sequence as an immediate follow-on slice? | **Same feature, solution-architect-pinned vocabulary** following this ADR's pattern — shipping the env deletion with a still-egressing session-chat machine is not buildable; the vocabulary is mechanical (`session_list_reported`, `session_resumed_reported`, …). |
+| **DR-8** | Session-chat egress retirement: define its reported-outcome vocabulary in this feature (ADR-048's env table already deletes `BACKEND_URL` tier-wide) or sequence as an immediate follow-on slice? | **Same feature, solution-architect-pinned vocabulary** following this ADR's pattern — shipping the env deletion with a still-egressing session-chat machine is not buildable; the vocabulary is mechanical (`session_list_loaded`, `session_resumed`, …). |
 
 ---
 
