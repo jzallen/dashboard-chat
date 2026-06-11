@@ -148,12 +148,112 @@ describe("when a failure is surfaced (via the test harness)", () => {
   });
 });
 
+// CDO-S3 — the org_create_failed report splits RE-EDIT (org_name_taken /
+// org_name_invalid → stay on the form) from RETRY (everything else →
+// error_recoverable). The re-edit causes mirror today's 409/422 inline-error
+// arms; the generic cause lands in a report-accepting error_recoverable that is
+// NOT a dead end.
+
+describe("when the client reports the org name is already taken (re-edit, not retry)", () => {
+  it("keeps the user on the org-setup form with an inline duplicate-name error", async () => {
+    const actor = startMaya();
+    actor.send({ type: "org_not_found" });
+    await waitFor(actor, (s) => s.value === "needs_org");
+    // Spec 4 — 409: REMAIN in needs_org (no error screen), record inline error.
+    actor.send({
+      type: "org_create_failed",
+      cause: "org_name_taken",
+      org_name: "Acme Data",
+    });
+    const snap = actor.getSnapshot();
+    expect(snap.value).toBe("needs_org");
+    expect(snap.context.org_validation_error).toEqual({
+      kind: "duplicate",
+      message: "That name is already in use in your organization",
+    });
+    // The user re-submits a free name and reports it created → into the app.
+    actor.send({ type: "org_created", org: ACME_ORG });
+    await waitFor(actor, (s) => s.value === "ready");
+    expect(actor.getSnapshot().value).toBe("ready");
+    expect(actor.getSnapshot().context.org).toEqual(ACME_ORG);
+  });
+});
+
+describe("when the client reports the org name is invalid (re-edit, not retry)", () => {
+  it("keeps the user on the org-setup form with an inline shape error", async () => {
+    const actor = startMaya();
+    actor.send({ type: "org_not_found" });
+    await waitFor(actor, (s) => s.value === "needs_org");
+    // org_name_invalid: REMAIN in needs_org, record the shape-rule rejection
+    // (a blank name → "empty") as the inline form error.
+    actor.send({
+      type: "org_create_failed",
+      cause: "org_name_invalid",
+      org_name: "   ",
+    });
+    const snap = actor.getSnapshot();
+    expect(snap.value).toBe("needs_org");
+    expect(snap.context.org_validation_error).toEqual({
+      kind: "empty",
+      message: "Please enter an organization name",
+    });
+  });
+});
+
+describe("when the client reports a generic org-create failure (retryable)", () => {
+  it("moves the user to a recoverable error screen they can retry out of", async () => {
+    const actor = startMaya();
+    actor.send({ type: "org_not_found" });
+    await waitFor(actor, (s) => s.value === "needs_org");
+    // Spec 5 — generic cause → error_recoverable carrying the cause.
+    actor.send({ type: "org_create_failed", cause: "org_create_failed" });
+    await waitFor(actor, (s) => s.value === "error_recoverable");
+    expect(actor.getSnapshot().context.underlying_cause_tag).toBe(
+      "org_create_failed",
+    );
+    // error_recoverable is NOT a dead end — a successful re-submit settles ready.
+    actor.send({ type: "org_created", org: ACME_ORG });
+    await waitFor(actor, (s) => s.value === "ready");
+    expect(actor.getSnapshot().value).toBe("ready");
+    expect(actor.getSnapshot().context.org).toEqual(ACME_ORG);
+  });
+
+  it("accepts an org_found probe from the recoverable error screen", async () => {
+    const actor = startMaya();
+    actor.send({ type: "org_not_found" });
+    await waitFor(actor, (s) => s.value === "needs_org");
+    actor.send({ type: "org_create_failed", cause: "org_create_failed" });
+    await waitFor(actor, (s) => s.value === "error_recoverable");
+    actor.send({ type: "org_found", org: ACME_ORG });
+    await waitFor(actor, (s) => s.value === "ready");
+    expect(actor.getSnapshot().value).toBe("ready");
+    expect(actor.getSnapshot().context.org).toEqual(ACME_ORG);
+  });
+
+  it("absorbs a repeated org-create failure without leaving the error screen", async () => {
+    const actor = startMaya();
+    actor.send({ type: "org_not_found" });
+    await waitFor(actor, (s) => s.value === "needs_org");
+    actor.send({ type: "org_create_failed", cause: "org_create_failed" });
+    await waitFor(actor, (s) => s.value === "error_recoverable");
+    // A second failure self-loops error_recoverable, refreshing the cause.
+    actor.send({ type: "org_create_failed", cause: "org_create_failed" });
+    expect(actor.getSnapshot().value).toBe("error_recoverable");
+    expect(actor.getSnapshot().context.underlying_cause_tag).toBe(
+      "org_create_failed",
+    );
+  });
+});
+
 // Compile-time exhaustiveness guard: adding a member to UnderlyingCauseTag
 // without listing it here fails `npm run build` (tsc).
 type _AssertNever<T extends never> = T;
 type _AllUnderlyingCausesHandled = _AssertNever<
   Exclude<
     UnderlyingCauseTag,
-    "transient" | "cookie-blocked" | "partial-setup" | "workos-profile-corrupt"
+    | "transient"
+    | "cookie-blocked"
+    | "org_create_failed"
+    | "workos-profile-corrupt"
   >
 >;

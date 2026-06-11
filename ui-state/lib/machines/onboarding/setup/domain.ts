@@ -141,11 +141,23 @@ export interface VerifiedSession {
 // that sniffed `error.message` substrings: the seam that raised the failure
 // declares its cause; nothing downstream has to guess from a string.
 
-/** The closed set of underlying causes the projection drives error copy from. */
+/** The §c onboarding org-create failure causes the client reports on the wire
+ *  (`org_create_failed { cause }`). Machine-readable only — never rendered raw
+ *  (that mapping is CDO-S5). The re-edit causes (`org_name_taken`,
+ *  `org_name_invalid`) return the user to the form; the generic
+ *  `org_create_failed` is the retryable cause that lands in error_recoverable. */
+export type OrgCreateFailureCause =
+  | "org_name_taken"
+  | "org_name_invalid"
+  | "org_create_failed";
+
+/** The closed set of underlying causes the projection drives error copy from.
+ *  `partial-setup` retired (ADR-048: no terminal-in-practice dead-end); the
+ *  generic retryable onboarding cause `org_create_failed` takes its place. */
 export type UnderlyingCauseTag =
   | "transient"
   | "cookie-blocked"
-  | "partial-setup"
+  | "org_create_failed"
   | "workos-profile-corrupt";
 
 /** Brand a thrown failure with its domain cause so a downstream action can route
@@ -172,13 +184,23 @@ export function causeOf(error: unknown): UnderlyingCauseTag {
     : "transient";
 }
 
+/** Map a reported org-create failure cause to the projection's underlying cause
+ *  tag. The error_recoverable arm is only ever reached by the generic
+ *  `org_create_failed` cause (the re-edit causes are intercepted by their guards
+ *  and never tag a cause), so every cause that reaches a tag is the retryable
+ *  `org_create_failed`. The total signature keeps the wire union honest without a
+ *  cast at the call site. */
+export function causeTagOf(_cause: OrgCreateFailureCause): UnderlyingCauseTag {
+  return "org_create_failed";
+}
+
 export function isUnderlyingCauseTag(
   value: string,
 ): value is UnderlyingCauseTag {
   return (
     value === "transient" ||
     value === "cookie-blocked" ||
-    value === "partial-setup" ||
+    value === "org_create_failed" ||
     value === "workos-profile-corrupt"
   );
 }

@@ -14,7 +14,12 @@
 //   docs/decisions/adr-041-*.md  — session-onboarding domain realignment
 
 import type { Config, OnboardingDeps } from "./actors.ts";
-import type { OrgName, PrincipalId, UnderlyingCauseTag } from "./domain.ts";
+import type {
+  OrgCreateFailureCause,
+  OrgName,
+  PrincipalId,
+  UnderlyingCauseTag,
+} from "./domain.ts";
 
 export type { UnderlyingCauseTag } from "./domain.ts";
 
@@ -57,7 +62,11 @@ export interface OnboardingContext {
   params: OnboardingParams;
 
   // Outputs — the verified session being assembled.
-  user: { email: string | null; display_name: string | null; first_name: string | null };
+  user: {
+    email: string | null;
+    display_name: string | null;
+    first_name: string | null;
+  };
   org: { id: string | null; name: string | null };
 
   // Bookkeeping / coordination state.
@@ -77,6 +86,13 @@ export type OnboardingEvent =
   | { type: "org_found"; org: { id: string; name: string } }
   | { type: "org_not_found" }
   | { type: "org_created"; org: { id: string; name: string } }
+  // The org-create failure report. The transport spreads the wire payload
+  // ({ cause, org_name }) to the event top level, matching org_found/org_created.
+  | {
+      type: "org_create_failed";
+      cause: OrgCreateFailureCause;
+      org_name?: string;
+    }
   | { type: "__force_failure__"; tag: UnderlyingCauseTag };
 
 /** The raw machine input (the begin envelope before the context factory

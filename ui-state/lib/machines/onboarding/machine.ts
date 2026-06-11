@@ -6,19 +6,20 @@
 // does not re-enact a sign-in handshake; it brings the verified principal to
 // an org-scoped, app-ready state.
 //
-// States:
-//   - verifying      — re-verify the forwarded Bearer against WorkOS
-//                      /oauth/userinfo (defense-in-depth).
-//   - needs_org      — verified, no org binding yet. Awaits org_form_submitted.
-//   - creating_org   — POST /api/orgs. The org-scoped JWT is minted by
-//                      auth-proxy on the org-create response (X-New-Access-Token);
-//                      this machine does not reissue tokens.
-//   - ready          — signed in with an org. Reached directly from verifying
-//                      on the [hasOrg] returning-user shortcut, or from
-//                      creating_org for a new user.
-//   - error_recoverable — org-setup error landing zone (genuine create failure
-//                      or the __force_failure__ harness jump).
-//   - session_rejected — terminal: re-verify failed (token/user invalid).
+// States (client-reported model — ADR-049/050; no invokes, no egress):
+//   - awaiting_org_report — settled on cold-start; waits for the client's
+//                      existence report (org_found / org_not_found).
+//   - needs_org      — no org binding yet. The client POSTs the org and reports
+//                      the outcome: org_created → ready; org_create_failed splits
+//                      RE-EDIT (org_name_taken / org_name_invalid stay here with an
+//                      inline form error) from RETRY (everything else →
+//                      error_recoverable). See domain-model §4.3 Specs 4-5.
+//   - ready          — signed in with an org. Reached from the [org_found]
+//                      returning-user fast path or from a reported org_created.
+//   - error_recoverable — REPORT-ACCEPTING retryable landing (NOT a dead end):
+//                      a later org_created/org_found settles ready; a repeated
+//                      org_create_failed self-loops, refreshing the cause. Also
+//                      the __force_failure__ harness jump target.
 //
 // This file is MAPPING ONLY: it wires the setup pieces and lays out the state
 // transitions. The pieces live under ./setup/ —
@@ -38,9 +39,15 @@
 
 import { assign, setup } from "xstate";
 
-import { assignCreatedOrg, assignResolvedOrg, tagCause } from "./setup/actions.ts";
+import {
+  assignCreatedOrg,
+  assignResolvedOrg,
+  recordOrgNameTaken,
+  recordOrgValidationError,
+  tagCause,
+} from "./setup/actions.ts";
 import { actors } from "./setup/actors.ts";
-import type { PrincipalId } from "./setup/domain.ts";
+import { causeTagOf, type PrincipalId } from "./setup/domain.ts";
 import { guards } from "./setup/guards.ts";
 import type {
   OnboardingContext,
@@ -60,6 +67,8 @@ export function createOnboardingMachine() {
     actions: {
       assignResolvedOrg: assign(assignResolvedOrg),
       assignCreatedOrg: assign(assignCreatedOrg),
+      recordOrgNameTaken: assign(recordOrgNameTaken),
+      recordOrgValidationError: assign(recordOrgValidationError),
       tagCause: assign(tagCause),
     },
   }).createMachine({
@@ -100,6 +109,27 @@ export function createOnboardingMachine() {
           // Convergence: an org_found arriving here (the client raced a probe
           // after landing on setup) also settles ready.
           org_found: { target: "ready", actions: "assignResolvedOrg" },
+          // The org-create report split (domain §4.3 Specs 4-5): the RE-EDIT
+          // causes (org_name_taken / org_name_invalid) REMAIN here (no target)
+          // and record an inline form error; everything else falls through to
+          // the retryable error_recoverable. Order = precedence (first match).
+          org_create_failed: [
+            // 409 collision → inline duplicate-name error, stay on the form.
+            { guard: "causeIsOrgNameTaken", actions: "recordOrgNameTaken" },
+            // 422 shape rejection → inline validation error, stay on the form.
+            {
+              guard: "causeIsOrgNameInvalid",
+              actions: "recordOrgValidationError",
+            },
+            // Generic (5xx / compensated / orphaned) → retryable error screen.
+            {
+              target: "error_recoverable",
+              actions: {
+                type: "tagCause",
+                params: ({ event }) => ({ tag: causeTagOf(event.cause) }),
+              },
+            },
+          ],
           // Harness-only side-channel: force the machine into error_recoverable
           // carrying the supplied cause tag. Gated at the HTTP layer (router.ts)
           // by the failure-simulation gate so production builds never see it.
@@ -113,9 +143,22 @@ export function createOnboardingMachine() {
         },
       },
       ready: {},
-      // Recoverable-error landing: reached by the __force_failure__ harness jump
-      // (empty in CDO-S1; genuine org-create failures route here in CDO-S3).
-      error_recoverable: {},
+      // Recoverable-error landing — REPORT-ACCEPTING (domain §4.2 Spec 5): NOT a
+      // dead end. A successful re-submit (org_created / org_found) settles ready;
+      // a repeated failure self-loops here, refreshing the cause.
+      error_recoverable: {
+        on: {
+          org_created: { target: "ready", actions: "assignCreatedOrg" },
+          org_found: { target: "ready", actions: "assignResolvedOrg" },
+          org_create_failed: {
+            target: "error_recoverable",
+            actions: {
+              type: "tagCause",
+              params: ({ event }) => ({ tag: causeTagOf(event.cause) }),
+            },
+          },
+        },
+      },
     },
   });
 }

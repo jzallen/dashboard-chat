@@ -39,28 +39,34 @@ describe("constructOrgName — the OrgName value object", () => {
     ["   ", "empty"],
     ["a", "too_short"],
     ["x".repeat(65), "too_long"],
-  ])("rejects %j: not valid, null value, getError().kind %j", (input, expectedKind) => {
-    const name = constructOrgName(input);
-    expect(name.isValid()).toBe(false);
-    expect(name.value).toBeNull();
-    expect(name.getError()?.kind).toBe(expectedKind);
-  });
+  ])(
+    "rejects %j: not valid, null value, getError().kind %j",
+    (input, expectedKind) => {
+      const name = constructOrgName(input);
+      expect(name.isValid()).toBe(false);
+      expect(name.value).toBeNull();
+      expect(name.getError()?.kind).toBe(expectedKind);
+    },
+  );
 });
 
 describe("failWithCause / causeOf — the failure-cause round-trip", () => {
   const members: UnderlyingCauseTag[] = [
     "transient",
     "cookie-blocked",
-    "partial-setup",
+    "org_create_failed",
     "workos-profile-corrupt",
   ];
 
-  it.each(members)("round-trips a %s cause through the thrown Error", (cause) => {
-    const err = failWithCause(cause, `boundary failed: ${cause}`);
-    expect(err).toBeInstanceOf(Error);
-    expect(err.message).toBe(`boundary failed: ${cause}`);
-    expect(causeOf(err)).toBe(cause);
-  });
+  it.each(members)(
+    "round-trips a %s cause through the thrown Error",
+    (cause) => {
+      const err = failWithCause(cause, `boundary failed: ${cause}`);
+      expect(err).toBeInstanceOf(Error);
+      expect(err.message).toBe(`boundary failed: ${cause}`);
+      expect(causeOf(err)).toBe(cause);
+    },
+  );
 
   it.each<[string, unknown]>([
     ["an untagged Error", new Error("backend 500")],
