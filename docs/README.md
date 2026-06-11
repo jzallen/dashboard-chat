@@ -1,5 +1,14 @@
 # Documentation
 
+> **`docs/` is an nwave-managed folder — do not relocate or rename it.**
+>
+> nwave-ai (our SDLC framework, see [ADR-013](decisions/adr-013-nwave-adoption.md)) hardcodes `docs/` as its knowledge-base root. The path is not configurable: it is baked into the wave agent/skill prompts **and** into the DES runtime. Specifically, the DELIVER-wave DES hooks construct `docs/feature/{feature-id}/deliver/execution-log.json` from the repo root at runtime — no path is passed in — so moving `docs/` silently breaks enforcement rather than erroring loudly. A symlink is the only safe relocation, and we've chosen not to depend on one (devs would have to remember to recreate it per environment).
+>
+> **nwave owns these subtrees** (generated/curated by waves; ADRs are referenced by the wave prompts):
+> `feature/` · `evolution/` · `product/` · `decisions/` · `research/` · `mikado/` · `refactor/` · `refactoring/`
+>
+> **Human-curated docs share the same root** (the rest of this index — `architecture/`, `domain/`, `api/`, `diagrams/`, `requirements/`, `guides/`, `infrastructure/`, `vision.md`, etc.). If the shared space becomes a problem, the plan is to carve out a separate human-owned root (e.g. `dev-docs/`) rather than fight nwave for `docs/`.
+
 Dashboard Chat — a chat-first prototyping tool for data models and dashboards. Users go from raw files (or synthetic data) to working prototypes, then hand off dbt projects and renderable dashboard code to engineering teams.
 
 ## Product Vision
