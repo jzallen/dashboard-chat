@@ -1,19 +1,20 @@
 // @vitest-environment happy-dom
 //
-// App-shell behaviors:
+// App-shell behaviors (CDO-S5; ADR-050 §e.4/§f):
 //   - clientLoader: org-global fetch gated on the session flag (ui-cookie-session C4).
-//   - Onboarding gate (step 02-04, D6): redirect matrix over the StateProxy
-//     document — (a) no session → /login; (b) verifying → waiting state, NO
-//     redirect; (c) phase onboarding + {needs_org, creating_org,
-//     error_recoverable} → /onboarding; (d) phase advanced + projectContext
-//     no_projects → /onboarding; (rejected) phase rejected → /onboarding (the
-//     02-03 surface renders the honest error — one consistent surface, no loop);
-//     (e) settled (ready + project_selected) → the shell chrome renders.
+//   - Onboarding gate (the D6 redirect matrix over the StateProxy document):
+//       (a) no session                                   → /login
+//       (b) awaiting_org_report                          → waiting state, NO
+//           redirect, AND the driver's Phase-B org probe fires
+//       (c) phase onboarding + {needs_org, error_recoverable} → /onboarding
+//       (d) phase advanced + projectContext no_projects  → /onboarding
+//           (the driver auto-creates from there)
+//       (e) settled (ready + project_selected)           → the shell chrome
+//     There is NO rejected branch (the closed-union model retired it).
 //
-// Driving port: the route tree (memory router rendering the shell layout) under
-// the same providers root.tsx supplies. Driven port boundary: the proxy's
-// injected fetchImpl + eventSourceFactory (the onboarding.test.tsx pattern) —
-// the only test doubles besides the session-flag mock. No network, no EventSource.
+// Driving port: the route tree under the providers root.tsx supplies. Driven
+// ports: the proxy's transport (scriptedStateProxy) + the injected
+// OnboardingClient (the probe's HTTP port) + the session-flag mock.
 import {
   anonymousStateDocument,
   type ChatAppPhase,
@@ -23,6 +24,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ApiError } from "../catalog/dataSources/backendClient";
 import { hasSession } from "../auth/tokenStorage";
 import { ThemeProvider } from "../components/AppShell/ThemeProvider";
 import { FlashedNodeProvider } from "../components/FlashedNodeProvider";
@@ -30,6 +32,7 @@ import {
   installCatalogForTest,
   refreshOrgGlobal,
 } from "../components/useCatalog";
+import type { OnboardingClient } from "../lib/onboarding-driver";
 import { scriptedStateProxy } from "../lib/_stateProxyTestKit";
 import { type StateProxy } from "../lib/state-proxy";
 import { StateProxyProvider } from "../lib/StateProxyProvider";
@@ -52,6 +55,17 @@ vi.mock("../components/useCatalog", async (importOriginal) => {
 });
 
 afterEach(() => vi.clearAllMocks());
+
+const apiError = (status: number) =>
+  new ApiError(status, null, `failed with status ${status}`);
+
+/** A client whose get/post default to empty resolves; programmable per test. */
+function makeClient(overrides: Partial<OnboardingClient> = {}): OnboardingClient {
+  return {
+    get: overrides.get ?? vi.fn(async () => ({})),
+    post: overrides.post ?? vi.fn(async () => ({})),
+  };
+}
 
 describe("app-shell clientLoader — org-global fetch gated on the session", () => {
   it("fetches org-global data when hasSession() is true", async () => {
@@ -83,7 +97,7 @@ describe("AppShell gate", () => {
   });
 });
 
-// ── onboarding gate (02-04) ──────────────────────────────────────────────────
+// ── onboarding gate (CDO-S5 redirect matrix) ─────────────────────────────────
 
 /** A document whose phase + region states are scripted; everything else is the
  *  anonymous zero-state. */
@@ -105,20 +119,18 @@ function stateDocument(
   };
 }
 
-/** The shared scripted proxy, pinned to one document: every POST returns
- *  `doc` — the document never advances, so each gate branch stays observable. */
+/** The shared scripted proxy, pinned to one document: every POST returns `doc`. */
 function scriptedProxy(doc: ChatAppStateDocument) {
   return scriptedStateProxy(doc, () => doc);
 }
 
-/** Render the shell layout at "/" under the providers root.tsx supplies, with
- *  stub targets for the two redirect destinations. */
-function renderShell(proxy: StateProxy) {
+/** Render the shell layout at "/" under the providers root.tsx supplies. */
+function renderShell(proxy: StateProxy, client: OnboardingClient) {
   const router = createMemoryRouter(
     [
       {
         path: "/",
-        element: <AppShell />,
+        element: <AppShell client={client} />,
         children: [{ index: true, element: <div>CONTENT</div> }],
       },
       { path: "/onboarding", element: <div>ONBOARDING</div> },
@@ -144,65 +156,67 @@ describe("AppShell onboarding gate (D6 redirect matrix)", () => {
     await installCatalogForTest(NO_PRIMARY, fixtureFallback());
   });
 
-  it("verifying: renders the waiting state, posts session_begin, and does NOT redirect", async () => {
-    // The anonymous document — every region verifying; the scripted server keeps
-    // it verifying so the transient state is observable.
-    const { proxy, posted } = scriptedProxy(anonymousStateDocument());
+  it("awaiting_org_report: renders the waiting state, posts session_begin, fires the Phase-B probe, and does NOT redirect", async () => {
+    // The zero state: onboarding awaiting_org_report; the scripted server keeps
+    // it there so the transient state — and the Phase-B probe — is observable.
+    const awaiting = stateDocument(
+      "onboarding",
+      "awaiting_org_report",
+      "awaiting_scope_report",
+    );
+    const { proxy, posted } = scriptedProxy(awaiting);
+    // A 404 probe → org_not_found reported (the definitive Phase-B answer).
+    const get = vi.fn(async () => {
+      throw apiError(404);
+    });
+    const client = makeClient({ get });
 
-    const { router } = renderShell(proxy);
+    const { router } = renderShell(proxy, client);
 
     expect(await screen.findByText(/checking your session/i)).toBeTruthy();
     // ensureBootstrap fired exactly one session_begin at the transport port.
     await waitFor(() =>
       expect(posted.map((e) => e.type)).toContain("session_begin"),
     );
+    // The Phase-B probe fired against GET /api/orgs/me.
+    await waitFor(() => expect(get).toHaveBeenCalledWith("/api/orgs/me"));
+    await waitFor(() =>
+      expect(posted.map((e) => e.type)).toContain("org_not_found"),
+    );
     // No redirect: still on "/", neither destination rendered, no chrome.
     expect(router.state.location.pathname).toBe("/");
     expect(screen.queryByText("ONBOARDING")).toBeNull();
     expect(screen.queryByText("LOGIN")).toBeNull();
-    expect(screen.queryByTitle("Upload a source")).toBeNull();
   });
 
-  it.each(["needs_org", "creating_org", "error_recoverable"])(
+  it.each(["needs_org", "error_recoverable"])(
     "phase onboarding + %s: redirects to /onboarding",
     async (onboardingState) => {
       const doc = stateDocument("onboarding", onboardingState, "verifying");
       const { proxy } = scriptedProxy(doc);
 
-      const { router } = renderShell(proxy);
+      const { router } = renderShell(proxy, makeClient());
 
       expect(await screen.findByText("ONBOARDING")).toBeTruthy();
       expect(router.state.location.pathname).toBe("/onboarding");
     },
   );
 
-  it("phase advanced + projectContext no_projects: redirects to /onboarding (default-project step)", async () => {
+  it("phase advanced + projectContext no_projects: redirects to /onboarding (the driver auto-creates from there)", async () => {
     const doc = stateDocument("project_context", "ready", "no_projects");
     const { proxy } = scriptedProxy(doc);
 
-    const { router } = renderShell(proxy);
+    const { router } = renderShell(proxy, makeClient());
 
     expect(await screen.findByText("ONBOARDING")).toBeTruthy();
     expect(router.state.location.pathname).toBe("/onboarding");
-  });
-
-  it("phase rejected: redirects to /onboarding (the 02-03 honest error surface — one surface, no loop)", async () => {
-    const doc = stateDocument("rejected", "session_rejected", "verifying");
-    const { proxy } = scriptedProxy(doc);
-
-    const { router } = renderShell(proxy);
-
-    expect(await screen.findByText("ONBOARDING")).toBeTruthy();
-    expect(router.state.location.pathname).toBe("/onboarding");
-    // No bounce: the shell route is gone, /onboarding stays put.
-    expect(screen.queryByText("LOGIN")).toBeNull();
   });
 
   it("settled (ready + project_selected): renders the shell chrome — Topbar present, no redirect", async () => {
     const doc = stateDocument("chat", "ready", "project_selected");
     const { proxy } = scriptedProxy(doc);
 
-    const { router } = renderShell(proxy);
+    const { router } = renderShell(proxy, makeClient());
 
     // Topbar's upload action is unique to the chrome.
     expect(await screen.findByTitle("Upload a source")).toBeTruthy();

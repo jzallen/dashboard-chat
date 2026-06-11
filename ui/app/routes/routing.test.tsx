@@ -22,6 +22,14 @@ import {
 import { signIn, signOut } from "./_session";
 import { TestProviders, testRouteTree } from "./_testRoutes";
 
+// /login now does mode discovery (ADR-050 §d): it renders no sign-in affordance
+// until fetchAuthConfig() resolves. Stub it to the dev happy path so the route
+// surfaces the dev button (the contract this suite asserts).
+vi.mock("../auth/bootstrap", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../auth/bootstrap")>();
+  return { ...actual, fetchAuthConfig: vi.fn(async () => ({ mode: "dev" })) };
+});
+
 /** Render the route tree at a URL under the same providers root.tsx supplies. */
 function renderAt(initialEntries: string[]) {
   const router = createMemoryRouter(testRouteTree, { initialEntries });

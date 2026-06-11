@@ -16,6 +16,7 @@ import { Navigate, Outlet, useLocation } from "react-router";
 
 import { hasSession } from "../auth/tokenStorage";
 import type { Edge, LineageNode } from "../catalog";
+import { apiGet, apiPost } from "../catalog/dataSources/backendClient";
 import { Overlays } from "../components/AppShell/Overlays";
 import { useTheme } from "../components/AppShell/ThemeProvider";
 import { Topbar } from "../components/AppShell/Topbar";
@@ -25,8 +26,19 @@ import { useFlashedNode } from "../components/FlashedNodeProvider";
 import { useUpload } from "../components/Upload";
 import { catalog, refreshOrgGlobal, useCatalog } from "../components/useCatalog";
 import { ChatProvider } from "../lib/chatContext";
+import { createLogger } from "../lib/log";
 import { useNavIntents } from "../lib/nav";
+import {
+  createOnboardingDriver,
+  type OnboardingClient,
+} from "../lib/onboarding-driver";
 import { useStateProxy } from "../lib/StateProxyProvider";
+
+/** The default backend client adapter — the Phase-B probe's real HTTP port. */
+const defaultClient: OnboardingClient = {
+  get: (path) => apiGet(path),
+  post: (path, body) => apiPost(path, body),
+};
 
 // The first authenticated entry point: fetch the real org-global payloads
 // (projects/org) so they replace the fixture seed before any child route (the
@@ -97,33 +109,31 @@ function Chrome() {
   );
 }
 
-/* ─── the onboarding gate (D6) ────────────────────────────────────────────────
+/* ─── the onboarding gate (CDO-S5; ADR-050 §e.4/§f) ───────────────────────────
 
    Engaged only when a session exists. Reads the StateProxy document (the one
    app-wide proxy from StateProxyProvider) and dispatches:
 
-     onboarding verifying           → waiting surface (transient; ALSO the
-                                      anonymous pre-first-frame document — never
-                                      a redirect)
-     phase rejected                 → /onboarding (02-03 renders the honest
-                                      session_rejected surface — one surface)
+     onboarding awaiting_org_report → waiting surface (transient; ALSO the
+                                      anonymous pre-first-frame zero state — never
+                                      a redirect). On this state the gate fires
+                                      the driver's Phase-B org probe
+                                      (probeAndReportOrg) — the client-driven
+                                      convergence that resolves the report.
      phase onboarding + needs_org /
-       creating_org /
-       error_recoverable            → /onboarding
+       error_recoverable            → /onboarding (the client-driven flow)
      phase advanced + projectContext
-       no_projects                  → /onboarding (the default-project step)
+       no_projects                  → /onboarding (the driver auto-creates the
+                                      default project from there)
      anything else                  → the chrome, exactly as before
 
-   /onboarding never redirects an authenticated user back here, and the gate
-   never targets /login when a session exists — no loops. */
+   There is NO rejected branch — the closed-union crash-class model (ADR-049 §4)
+   retired phase==='rejected'. /onboarding never redirects an authenticated user
+   back here, and the gate never targets /login when a session exists — no loops. */
 
-const ONBOARDING_ACTIVE_STATES = new Set([
-  "needs_org",
-  "creating_org",
-  "error_recoverable",
-]);
+const ONBOARDING_ACTIVE_STATES = new Set(["needs_org", "error_recoverable"]);
 
-function OnboardingGate() {
+function OnboardingGate({ client }: { client: OnboardingClient }) {
   const { proxy, ensureBootstrap } = useStateProxy();
   const phase = useSelector(proxy, (doc) => doc.phase);
   const onboardingState = useSelector(
@@ -135,12 +145,30 @@ function OnboardingGate() {
     (doc) => doc.regions.projectContext.state,
   );
 
+  const driver = useMemo(
+    () =>
+      createOnboardingDriver({
+        client,
+        report: (event) => proxy.postEvent(event),
+        log: createLogger("onboarding-driver"),
+      }),
+    [client, proxy],
+  );
+
   useEffect(() => {
     void ensureBootstrap();
   }, [ensureBootstrap]);
 
-  if (phase === "rejected") return <Navigate to="/onboarding" replace />;
-  if (onboardingState === "verifying") {
+  // Phase-B probe: when the document shows onboarding awaiting_org_report, the
+  // client converges the flow by probing the org SSOT and reporting the
+  // definitive outcome (org_found / org_not_found). Re-fires while the state
+  // persists awaiting — the driver only POSTs on a definitive HTTP answer.
+  const awaitingOrgReport = onboardingState === "awaiting_org_report";
+  useEffect(() => {
+    if (awaitingOrgReport) void driver.probeAndReportOrg();
+  }, [awaitingOrgReport, driver]);
+
+  if (onboardingState === "verifying" || awaitingOrgReport) {
     return (
       <main className="shell-waiting">
         <p>Checking your session…</p>
@@ -160,7 +188,12 @@ function OnboardingGate() {
   );
 }
 
-export default function AppShell() {
+export default function AppShell({
+  client = defaultClient,
+}: {
+  /** Test seam: inject the Phase-B probe's HTTP port; defaults to the backend. */
+  client?: OnboardingClient;
+}) {
   if (!hasSession()) return <Navigate to="/login" replace />;
-  return <OnboardingGate />;
+  return <OnboardingGate client={client} />;
 }

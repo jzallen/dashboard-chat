@@ -253,3 +253,74 @@ the outcome, POST the past-tense report (the StateProxy.postEvent sink), and log
 `cd ui && npx vitest run` → 22 files, 249 passed. `cd ui && npm run typecheck` → clean.
 New: `onboarding-driver.test.ts` (21 tests). Extended: `bootstrap.test.ts` (+4 fetchAuthConfig),
 `backendClient.test.ts` (+3 ApiError — instanceof Error + message + {status,body} preserved).
+
+---
+
+## Step 05-05 — ui/ surfaces (login mode-discovery + onboarding POST+report + app-shell gate)
+
+DELIVER via Outside-In TDD. Layer = `ui/` (thin React consumers of the 05-04 driver). Three surfaces:
+
+- **login.tsx** (§d mode discovery): on mount fetches the memoized `fetchAuthConfig()`; renders NO sign-in
+  affordance until the mode resolves (neutral waiting surface — no flash of a dev button in workos mode).
+  `mode==='dev'` → "Sign in (dev)"; `mode==='workos'` → plain "Sign in". Both call the UNCHANGED `login()`.
+  `hasSession()` → `Navigate("/")` short-circuit preserved.
+- **onboarding.tsx** (POST+report; DISPLAY RULE): `OrgNameForm` submit drives the REAL POST `/api/orgs` via the
+  driver (`reportOrgCreateResult`), in-flight UI is LOCAL `useState(busy)` (DR-1 — the document never shows an
+  in-flight org state). `ProjectNameForm` DELETED (+ its `create_project_submitted` post). Phase D is AUTOMATIC:
+  a ref-latched effect fires `driver.createDefaultProjectAndReport()` ONCE on entering the project phase
+  awaiting a scope report; the project surface is a progress view. The `project_selected → refreshOrgGlobal()
+  → navigate("/")` (f) effect is byte-preserved.
+- **app-shell.tsx** (§e.4/§f gate): `ONBOARDING_ACTIVE_STATES = {needs_org, error_recoverable}`; the
+  `phase==='rejected'` branch DELETED (closed-union crash-class model retired it); waits on
+  `awaiting_org_report` (also the anonymous zero state); on `awaiting_org_report` fires the driver's Phase-B
+  probe (`probeAndReportOrg`); `no_projects → /onboarding` routing kept (the driver auto-creates from there).
+
+### BINDING DISPLAY RULE (ratification amendment 2) — evidence
+
+The shipped `ErrorSurface` rendering `<p>Cause: {cause}</p>` was THE anti-pattern; it is RETIRED. No raw cause
+tag (`org_name_taken` / `org_name_invalid` / `org_create_failed` / `project_create_failed`) renders anywhere a
+failure is shown:
+
+- **Re-edit causes** (`org_name_taken` / `org_name_invalid`) → friendly, server-owned inline helper copy on the
+  org form, rendered from `regions.onboarding.context.org_validation_error.message` (e.g. "That organization
+  name is already in use — try another"). The user stays on the form to re-edit.
+- **Retry class** (`org_create_failed` / `project_create_failed` → `error_recoverable`) → a distinct
+  "Something went wrong on our end" surface with a "Try again" control (org → `driver.probeAndReportOrg()`
+  probe-first; project → `driver.retryProject()`).
+
+Acceptance assertions (RED-first on `onboarding.test.tsx`): the 409/422 paths post `org_create_failed{cause}`
+to the wire (`posted[]`) AND assert `screen.queryByText(<rawTag>)` is null; the `error_recoverable` surfaces
+assert `/something went wrong on our end/i` is present and the raw tag + `/Cause:/` are absent. Litmus held:
+reverting `onboarding.tsx` leaves these RED (the old `Cause: {cause}` render trips the "no raw tag" assertion).
+
+### Audit trail
+
+Raw machine cause tags live in the driver's `createLogger('onboarding-driver')` audit entries ONLY (each POSTed
+outcome event + region state). The surfaces narrate via `createLogger` (never `console.*`):
+`onboarding.org_create.submit`, `onboarding.project.auto_create.start`, `onboarding.project_selected.entering_app`,
+`login.config.failed`. Confirmed in the vitest stdout (e.g. `[onboarding-driver] onboarding-driver.org_create_failed.reported`).
+
+### Environment note (node_modules symlink)
+
+`@dashboard-chat/ui-state-wire` resolves through the workspace symlink to the MAIN checkout's
+`shared/ui-state-wire`, where `anonymousStateDocument().regions.onboarding.state` is still `verifying` (the
+`awaiting_org_report` zero-state from CDO-S1 lives on this worktree's source but is not the resolved package).
+Tests therefore construct `awaiting_org_report` documents EXPLICITLY rather than relying on the package default;
+the app-shell gate treats `verifying` and `awaiting_org_report` identically as the waiting surface, so the
+pre-first-frame behavior degrades gracefully. No runtime impact — the real ui-state service emits
+`awaiting_org_report` independently of this type-only default.
+
+### Out-of-scope test touched
+
+`routing.test.tsx` ("renders the sign-in button at /login") is NOT in files_to_modify but broke on the §d
+contract (login no longer renders a button before config resolves). Updated minimally: a `vi.mock` stub of
+`fetchAuthConfig → { mode: "dev" }` so the route surfaces the dev button. This is a requirement-change update
+(ADR-050 §d, user-ratified), not a gamed assertion — the asserted behavior ("sign-in available at /login") is
+preserved.
+
+### Verification
+
+`cd ui && npx vitest run` → 22 files, 247 passed. `cd ui && npm run typecheck` → clean.
+Reworked: `onboarding.test.tsx` (DISPLAY RULE + POST+report + Phase-D auto + (f) effect), `login.test.tsx`
+(mode discovery), `app-shell.test.tsx` (gate: `{needs_org, error_recoverable}`, no rejected branch,
+`awaiting_org_report` wait, Phase-B probe fires).

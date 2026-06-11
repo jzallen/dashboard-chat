@@ -1,55 +1,76 @@
-/* /onboarding — the org-onboarding surface (D6). A TOP-LEVEL route OUTSIDE the
-   app-shell layout: no Topbar, no overlays — just the onboarding region.
+/* /onboarding — the client-driven org-onboarding surface (CDO-S5; ADR-050
+   §c/§d/§e.4/§f). A TOP-LEVEL route OUTSIDE the app-shell layout: no Topbar, no
+   overlays — just the onboarding region.
 
-   Flow (ADR-046): unauthenticated → /login and nowhere else. Authenticated →
-   ensureBootstrap() (the ORD-4 once-latch; session_begin cold-starts the server
-   actor) and render reactively from regions.onboarding via useSelector:
+   This surface is a THIN consumer of the 05-04 onboarding-driver (the flow
+   POLICY): it drives the REAL POST /api/orgs through the driver, then the driver
+   posts the past-tense outcome report via proxy.postEvent. The in-flight UI is
+   the surface's LOCAL concern (DR-1: the document NEVER shows an in-flight org
+   state). Phase D (the default project) is AUTOMATIC — on entering the project
+   phase the surface triggers the driver's createDefaultProjectAndReport ONCE.
 
-     verifying          → waiting surface
-     needs_org          → org-name form (principal identity + inline
-                          org_validation_error — the SERVER decides validity)
-     creating_org       → progress surface
-     error_recoverable /
-     session_rejected   → honest error surface (state name + cause, no fallback)
-     anything else      → neutral "continuing…" placeholder
+   BINDING DISPLAY RULE (ratification amendment 2): the UI NEVER renders a raw
+   cause tag. Re-edit causes (org_name_taken / org_name_invalid) → friendly inline
+   helper copy the client owns, from regions.onboarding.context.org_validation_error.
+   The retry class (org_create_failed / project_create_failed → error_recoverable)
+   → a distinct "something went wrong on our end" surface with a retry control.
+   Raw tags belong in the driver's console-log audit trail ONLY.
 
-   S4 completion (02-05): once the phase has ADVANCED past onboarding
-   (project_context | chat) this surface dispatches on regions.projectContext:
+   Flow (ADR-046/050): unauthenticated → /login and nowhere else. Authenticated →
+   ensureBootstrap() (the ORD-4 once-latch) and render reactively from
+   regions.onboarding via useSelector:
 
-     no_projects            → default-project name form (+ inline
-                              project_validation_error — the SERVER decides)
-     creating_project       → progress surface
-     project_selected       → navigate("/", {replace:true}) — the home redirect
-                              + 02-04 shell gate take over
-     error_recoverable      → honest error surface (state name + cause)
-     anything else          → waiting surface until the region settles
-                              (covers resolving_initial_scope)
+     verifying / awaiting_org_report → waiting surface
+     needs_org                       → org-name form (drives the POST + friendly
+                                       inline org_validation_error)
+     error_recoverable               → the generic retry surface
 
-   While onboarding is the active phase the server accepts ONLY
-   org_form_submitted (Decision 3 closed vocabulary) — posting
-   create_project_submitted then would 400 against the ADR-046 ACL, so the
-   project form renders only after the phase has advanced. */
+   Phase advanced past onboarding (project_context | chat) dispatches on
+   regions.projectContext:
+
+     awaiting_scope_report / resolving_initial_scope / creating_project
+                              → progress surface (Phase D auto-creates)
+     project_selected         → navigate("/", {replace:true}) — the (f) home
+                                redirect after refreshOrgGlobal()
+     error_recoverable        → the generic retry surface */
 import {
   type ReducedContext,
   type RegionView,
 } from "@dashboard-chat/ui-state-wire";
 import { useSelector } from "@xstate/react";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router";
 
 import { hasSession } from "../auth/tokenStorage";
+import { apiGet, apiPost } from "../catalog/dataSources/backendClient";
 import { refreshOrgGlobal } from "../components/useCatalog";
 import { createLogger } from "../lib/log";
-import { type StateProxy } from "../lib/state-proxy";
+import {
+  createOnboardingDriver,
+  type OnboardingClient,
+  type OnboardingDriver,
+} from "../lib/onboarding-driver";
 import { useStateProxy } from "../lib/StateProxyProvider";
 
 const log = createLogger("onboarding");
 
 /** The server-declared inline validation shape (the wire SSOT's
- *  org_validation_error / project_validation_error fields share it). */
+ *  org_validation_error field). */
 type ValidationError = ReducedContext["org_validation_error"];
 
-export default function OnboardingRoute() {
+/** The default backend client adapter — the real HTTP port the driver consumes
+ *  (mirrors the catalog backendClient contract: ApiError on non-2xx). */
+const defaultClient: OnboardingClient = {
+  get: (path) => apiGet(path),
+  post: (path, body) => apiPost(path, body),
+};
+
+export default function OnboardingRoute({
+  client = defaultClient,
+}: {
+  /** Test seam: inject the driver's HTTP port; defaults to the real backend. */
+  client?: OnboardingClient;
+}) {
   const authenticated = hasSession();
   const navigate = useNavigate();
   const { proxy, ensureBootstrap } = useStateProxy();
@@ -60,16 +81,41 @@ export default function OnboardingRoute() {
     (doc) => doc.regions.projectContext,
   );
 
+  const driver = useMemo(
+    () =>
+      createOnboardingDriver({
+        client,
+        report: (event) => proxy.postEvent(event),
+        log: createLogger("onboarding-driver"),
+      }),
+    [client, proxy],
+  );
+
   useEffect(() => {
     if (authenticated) void ensureBootstrap();
   }, [authenticated, ensureBootstrap]);
 
-  // Onboarding complete — enter the app. Also covers landing on /onboarding
-  // ALREADY project_selected: navigate away immediately. The app-shell's
-  // org-global catalog was loaded BEFORE this org/project existed
-  // (shouldRevalidate false by design), so refresh it FIRST — otherwise the
-  // user lands on a stale "No projects yet" shell. A failed refresh must not
-  // trap the user here: log it and navigate anyway (a reload recovers).
+  // Phase D is AUTOMATIC: on entering the project phase awaiting a scope report,
+  // create the default project ONCE through the driver. The ref latches so a
+  // re-render (or a transient settle) never double-POSTs.
+  const projectAutoStarted = useRef(false);
+  const projectAwaiting =
+    (phase === "project_context" || phase === "chat") &&
+    projectContext.state === "awaiting_scope_report";
+  useEffect(() => {
+    if (authenticated && projectAwaiting && !projectAutoStarted.current) {
+      projectAutoStarted.current = true;
+      log.info("onboarding.project.auto_create.start", {});
+      void driver.createDefaultProjectAndReport();
+    }
+  }, [authenticated, projectAwaiting, driver]);
+
+  // Onboarding complete — enter the app (the (f) contract, byte-preserved). Also
+  // covers landing on /onboarding ALREADY project_selected: navigate away. The
+  // app-shell's org-global catalog was loaded BEFORE this org/project existed
+  // (shouldRevalidate false), so refresh it FIRST — otherwise the user lands on a
+  // stale "No projects yet" shell. A failed refresh must not trap the user here:
+  // log it and navigate anyway (a reload recovers).
   const projectSelected = projectContext.state === "project_selected";
   useEffect(() => {
     if (authenticated && projectSelected) {
@@ -89,136 +135,71 @@ export default function OnboardingRoute() {
 
   if (!authenticated) return <Navigate to="/login" replace />;
 
-  // Phase advanced past onboarding — the default-project step (02-05).
+  // Phase advanced past onboarding — the default-project step (auto).
   if (phase === "project_context" || phase === "chat") {
-    return <ProjectPhaseSurface proxy={proxy} region={projectContext} />;
+    return (
+      <ProjectPhaseSurface driver={driver} region={projectContext} />
+    );
   }
 
   switch (onboarding.state) {
-    case "verifying":
-      return <Surface title="Checking your session…" />;
     case "needs_org":
-      return <OrgNameForm proxy={proxy} context={onboarding.context} />;
-    case "creating_org":
-      return <Surface title="Creating your organization…" />;
-    case "error_recoverable":
-    case "session_rejected":
       return (
-        <ErrorSurface
-          state={onboarding.state}
-          cause={onboarding.context.underlying_cause_tag}
+        <OrgNameForm
+          driver={driver}
+          context={onboarding.context}
         />
       );
+    case "error_recoverable":
+      return <RetrySurface onRetry={() => driver.probeAndReportOrg()} />;
     default:
-      // The region settled (e.g. ready) but the phase has not advanced yet —
-      // stay minimal and honest until the document catches up.
-      return <Surface title="Continuing…" />;
+      // verifying / awaiting_org_report (and any transient) — wait honestly.
+      return <Surface title="Checking your session…" />;
   }
 }
 
 function ProjectPhaseSurface({
-  proxy,
+  driver,
   region,
 }: {
-  proxy: StateProxy;
+  driver: OnboardingDriver;
   region: RegionView;
 }) {
   switch (region.state) {
-    case "no_projects":
-      return (
-        <ProjectNameForm
-          proxy={proxy}
-          validationError={region.context.project_validation_error}
-        />
-      );
-    case "creating_project":
-      return <Surface title="Creating your project…" />;
     case "project_selected":
       // The navigation effect is taking us into the app.
       return <Surface title="Entering the app…" />;
     case "error_recoverable":
-      return (
-        <ErrorSurface
-          state={region.state}
-          cause={region.context.underlying_cause_tag}
-        />
-      );
+      return <RetrySurface onRetry={() => driver.retryProject()} />;
     default:
-      // resolving_initial_scope (and other transients) — wait until it settles.
+      // awaiting_scope_report (Phase D auto-creating), creating_project,
+      // resolving_initial_scope and other transients — a single progress view.
       return <Surface title="Setting up your workspace…" />;
   }
 }
 
-function ProjectNameForm({
-  proxy,
-  validationError,
-}: {
-  proxy: StateProxy;
-  validationError: ValidationError;
-}) {
-  const [projectName, setProjectName] = useState("");
-
-  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    log.info("onboarding.create_project_submitted", {
-      project_name: projectName,
-    });
-    // UI-1 quirk: the wire field is `org_name` but it carries the PROJECT
-    // name — historical machine-side misnomer; project-context's
-    // capturePendingProjectName + projectNameValid guard read event.org_name
-    // (docs/feature/org-onboarding/distill/upstream-issues.md, UI-1).
-    proxy
-      .postEvent({
-        type: "create_project_submitted",
-        payload: { org_name: projectName },
-      })
-      .catch((error: unknown) => {
-        log.error("onboarding.create_project_submit.failed", {
-          error: String(error),
-        });
-      });
-  };
-
-  return (
-    <main style={surfaceStyle}>
-      <h1>Name your first project</h1>
-      <form onSubmit={onSubmit}>
-        <label htmlFor="project-name">Project name</label>{" "}
-        <input
-          id="project-name"
-          name="project-name"
-          value={projectName}
-          onChange={(e) => setProjectName(e.target.value)}
-        />{" "}
-        <button type="submit">Create project</button>
-        {validationError ? (
-          <p role="alert">{validationError.message}</p>
-        ) : null}
-      </form>
-    </main>
-  );
-}
-
 function OrgNameForm({
-  proxy,
+  driver,
   context,
 }: {
-  proxy: StateProxy;
+  driver: OnboardingDriver;
   context: ReducedContext;
 }) {
   const [orgName, setOrgName] = useState("");
+  const [busy, setBusy] = useState(false);
   const { user, org_validation_error: validationError } = context;
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    log.info("onboarding.org_form_submitted", { org_name: orgName });
-    proxy
-      .postEvent({ type: "org_form_submitted", payload: { org_name: orgName } })
-      .catch((error: unknown) => {
-        log.error("onboarding.org_form_submit.failed", {
-          error: String(error),
-        });
-      });
+    log.info("onboarding.org_create.submit", { org_name: orgName });
+    setBusy(true);
+    void (async () => {
+      try {
+        await driver.reportOrgCreateResult(orgName);
+      } finally {
+        setBusy(false);
+      }
+    })();
   };
 
   return (
@@ -236,13 +217,22 @@ function OrgNameForm({
           value={orgName}
           onChange={(e) => setOrgName(e.target.value)}
         />{" "}
-        <button type="submit">Create organization</button>
-        {validationError ? (
-          <p role="alert">{validationError.message}</p>
-        ) : null}
+        <button type="submit" disabled={busy}>
+          {busy ? "Creating…" : "Create organization"}
+        </button>
+        {/* DISPLAY RULE: friendly, server-owned inline copy for the re-edit
+            causes (org_name_taken / org_name_invalid) — never a raw cause tag. */}
+        <FriendlyValidation error={validationError} />
       </form>
     </main>
   );
+}
+
+/** Renders the server-owned friendly message for a re-edit validation error.
+ *  Never a raw machine tag — the message text is the client-owned copy. */
+function FriendlyValidation({ error }: { error: ValidationError }) {
+  if (!error) return null;
+  return <p role="alert">{error.message}</p>;
 }
 
 function Surface({ title }: { title: string }) {
@@ -253,12 +243,22 @@ function Surface({ title }: { title: string }) {
   );
 }
 
-function ErrorSurface({ state, cause }: { state: string; cause: string | null }) {
+/** The retry class generic surface (DISPLAY RULE): a distinct "our end" message
+ *  with a retry control. NO raw cause tag — the machine cause stays in the audit
+ *  log, never on screen. */
+function RetrySurface({ onRetry }: { onRetry: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const retry = () => {
+    setBusy(true);
+    void Promise.resolve(onRetry()).finally(() => setBusy(false));
+  };
   return (
     <main style={surfaceStyle}>
-      <h1>Onboarding hit a problem</h1>
-      <p>State: {state}</p>
-      <p>Cause: {cause ?? "unknown"}</p>
+      <h1>Something went wrong on our end</h1>
+      <p>We couldn’t finish setting things up. Please try again.</p>
+      <button type="button" onClick={retry} disabled={busy}>
+        {busy ? "Retrying…" : "Try again"}
+      </button>
     </main>
   );
 }
