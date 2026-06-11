@@ -14,6 +14,34 @@
  * stays free of app-auth dependencies.
  */
 
+/**
+ * A non-2xx HTTP failure carrying the response `status` and the parsed error
+ * `body` (or `null` when the body is not JSON). Extends `Error` and KEEPS the
+ * original message text, so the catalog's existing call sites — which read
+ * `err.message` and rely on `instanceof Error` — keep working unchanged. New
+ * callers (the onboarding driver) read `.status`/`.body` to map a definitive
+ * HTTP answer to a closed-union outcome cause.
+ */
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly body: unknown,
+    message?: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+/** Read the error body as JSON, tolerant of a non-JSON (or empty) body → null. */
+async function parseErrorBody(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
 /** Flatten a JSON:API resource `{ type, id, attributes }` into `{ id, ...attributes }`. */
 function unwrapResource(item: unknown): unknown {
   if (
@@ -46,7 +74,11 @@ export async function apiGet<T>(
     credentials: "include",
   });
   if (!response.ok) {
-    throw new Error(`GET ${path} failed with status ${response.status}`);
+    throw new ApiError(
+      response.status,
+      await parseErrorBody(response),
+      `GET ${path} failed with status ${response.status}`,
+    );
   }
 
   const json = await response.json();
@@ -83,7 +115,11 @@ export async function apiPatch(
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`PATCH ${path} failed with status ${response.status}`);
+    throw new ApiError(
+      response.status,
+      await parseErrorBody(response),
+      `PATCH ${path} failed with status ${response.status}`,
+    );
   }
 }
 
@@ -110,7 +146,11 @@ export async function apiPost<T>(
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`POST ${path} failed with status ${response.status}`);
+    throw new ApiError(
+      response.status,
+      await parseErrorBody(response),
+      `POST ${path} failed with status ${response.status}`,
+    );
   }
   return response.json() as Promise<T>;
 }
@@ -134,7 +174,11 @@ export async function apiUpload<T>(
     body: form,
   });
   if (!response.ok) {
-    throw new Error(`POST ${path} failed with status ${response.status}`);
+    throw new ApiError(
+      response.status,
+      await parseErrorBody(response),
+      `POST ${path} failed with status ${response.status}`,
+    );
   }
   return response.json() as Promise<T>;
 }

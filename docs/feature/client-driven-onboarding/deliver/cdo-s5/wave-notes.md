@@ -205,3 +205,51 @@ an assertion weakening.
 ### Verification
 `cd auth-proxy && SKIP_DOCKER_ACCEPTANCE=1 npx vitest run` → 16 files, 276 passed, 5 skipped
 (the multi-replica docker suite skips: no `dashboard-chat/auth-proxy:bazel` image + the flag).
+
+## Step 05-04 — ui/ driver foundation (onboarding-driver + ApiError + fetchAuthConfig)
+
+The relocated client-driven onboarding flow POLICY now lives in `ui/app/lib/onboarding-driver.ts`
+as a PURE, collaborator-injected module (no DOM/React/network). The surfaces (05-05) consume it;
+in-flight UI is the surface's local concern (DR-1).
+
+### Layer 1 — status-carrying client error (`backendClient.ts`)
+- `ApiError extends Error { status, body }` — thrown on every non-2xx by apiGet/apiPatch/apiPost/
+  apiUpload INSTEAD of a plain `Error`. The original message text is preserved (`"<VERB> <path>
+  failed with status N"`) and it stays `instanceof Error`, so the catalog's existing call sites
+  (read `err.message`, fall back to fixtures) are untouched. `body` = the parsed JSON error body,
+  or `null` when the body is not JSON-parseable.
+
+### Layer 2 — mode discovery (`bootstrap.ts`)
+- `fetchAuthConfig(): Promise<{ mode: "dev" | "workos" }>` — GET `/api/auth/config`, Zod-validated
+  at the boundary (`z.object({ mode: z.enum(["dev","workos"]) }).passthrough()` — unknown future
+  fields ignored), and the resolved promise MEMOIZED at module level (fetched at most once per app
+  load). `login()/handleCallback()/extractCode()` unchanged.
+
+### Layer 3 — the flow policy (`onboarding-driver.ts`)
+`createOnboardingDriver({ client, report, log })` returns async methods that each probe/POST, map
+the outcome, POST the past-tense report (the StateProxy.postEvent sink), and log an audit entry.
+
+- **Status → cause (ADR-050 §c)** — org-create: `201 {id,name}`→`org_created`; `409`→
+  `org_create_failed{org_name_taken, org_name}`; `400|422`→`org_create_failed{org_name_invalid,
+  org_name}`; any-other / network / timeout→`org_create_failed{org_create_failed}`; `401`→auth
+  gate (NO report). Default project: `201`→`project_created`; `401`→auth gate; else→
+  `project_create_failed`.
+- **Definitive-answers-only (INV-PCO / earned-trust)** — the Phase-B probe `GET /api/orgs/me`
+  reports ONLY `200`→`org_found` and `404`→`org_not_found`. Transport errors (5xx / network /
+  timeout) → NO report; the document stays awaiting and the surface re-probes. `401` → auth gate.
+- **Probe-first convergence (lost-201 dedup)** — `retryProject()` re-probes `GET /api/projects`
+  BEFORE re-POSTing: a non-empty list → `scope_resolved` with NO duplicate POST (a prior 201 was
+  actually persisted); an empty list → re-POST → `project_created`/`project_create_failed`.
+- **Initial-scope resolution** (ported `resolveInitialScopeFn`) — probe `GET /api/projects`; a
+  resolvable project → `scope_resolved`; empty → `no_projects_found`.
+- **Audit trail (ratification amendment 3)** — each posted event logs `info("onboarding-driver.
+  <type>.reported", { event, region_state })` via the injected `createLogger('onboarding-driver')`.
+  NEVER `console.*`. `region_state` = `onboarding` for org_* events, `projectContext` otherwise.
+- The injected `client` port mirrors the catalog contract (non-2xx → throws `ApiError`; 2xx →
+  unwrapped JSON:API body; network/timeout → plain non-ApiError throw), so the whole matrix is
+  unit-testable. Wire event shapes reuse `@dashboard-chat/ui-state-wire` (the closed union).
+
+### Verification
+`cd ui && npx vitest run` → 22 files, 249 passed. `cd ui && npm run typecheck` → clean.
+New: `onboarding-driver.test.ts` (21 tests). Extended: `bootstrap.test.ts` (+4 fetchAuthConfig),
+`backendClient.test.ts` (+3 ApiError — instanceof Error + message + {status,body} preserved).

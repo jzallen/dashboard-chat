@@ -11,8 +11,37 @@
 //                     response, so there is nothing to read from the body — the
 //                     caller just navigates into the app.
 
+import { z } from "zod";
+
 interface LoginResponse {
   url: string;
+}
+
+// ───────────────────────────── auth-mode discovery (CDO-S5; ADR-050 §d) ─────────────────────────────
+//
+// GET /api/auth/config → { mode: "dev" | "workos" }. Side-effect-free; the
+// untrusted body is Zod-validated at the ui/ boundary (unknown future fields are
+// ignored via passthrough) and the resolved promise is MEMOIZED at module level,
+// so the config is fetched at most once per app load.
+
+const authConfigSchema = z
+  .object({ mode: z.enum(["dev", "workos"]) })
+  .passthrough();
+
+export type AuthConfig = { mode: "dev" | "workos" };
+
+let authConfigPromise: Promise<AuthConfig> | null = null;
+
+export function fetchAuthConfig(): Promise<AuthConfig> {
+  if (!authConfigPromise) {
+    authConfigPromise = (async () => {
+      const res = await fetch("/api/auth/config");
+      if (!res.ok) throw new Error(`auth config failed: ${res.status}`);
+      const parsed = authConfigSchema.parse(await res.json());
+      return { mode: parsed.mode };
+    })();
+  }
+  return authConfigPromise;
 }
 
 export async function login(): Promise<void> {
