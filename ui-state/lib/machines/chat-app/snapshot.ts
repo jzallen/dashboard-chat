@@ -58,12 +58,11 @@ const TRANSIENT_CHILD_STATES: Readonly<
   // project_selected all SETTLE immediately (no invoke). Only the retained
   // switching_project (US-207 switch invoke) is transient.
   "project-context": new Set(["switching_project"]),
-  "session-chat": new Set([
-    "loading_session_list",
-    "resuming_session",
-    "switching_dataset_context",
-    "creating_session",
-  ]),
+  // Report-driven session-chat (ADR-050 §e.5 / DR-8/AR-8) invokes NO actors —
+  // every state (including awaiting_session_list_report) SETTLES the instant it
+  // is reached, so the transient set is empty (the four retired invoke states
+  // no longer exist).
+  "session-chat": new Set<string>(),
 };
 
 /** Capture the JSON-serializable persisted snapshot of a live ChatApp actor

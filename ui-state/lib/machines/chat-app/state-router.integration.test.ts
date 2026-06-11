@@ -63,19 +63,8 @@ function fakeChatAppDeps(): ChatAppDeps {
         },
       })),
     },
-    sessionChat: {
-      loadSessionList: fromPromise(async () => ({
-        items: [],
-        next_cursor: null,
-        has_more: false,
-        resume_target: null,
-      })),
-      resumeSession: fromPromise(async ({ input }) => ({
-        session_id: (input as { session_id: string }).session_id,
-        transcript: [],
-        active_dataset_id: null,
-      })),
-    },
+    // Report-driven session-chat (ADR-050 §e.5 / DR-8) invokes no actors.
+    sessionChat: {},
   } as unknown as ChatAppDeps;
 }
 
@@ -262,20 +251,39 @@ describe("ADR-046: POST /state/events returns the whole-actor document", () => {
       id: "proj-A",
       name: "Project A",
     });
-    expect(document.regions.sessionChat.state).toBe("session_list_loaded");
+    // Report-driven session-chat (ADR-050 §e.5 / DR-8): entering chat lands the
+    // region in awaiting_session_list_report (no egress). The client then POSTs
+    // the session_list_loaded report → session_list_loaded.
+    expect(document.regions.sessionChat.state).toBe(
+      "awaiting_session_list_report",
+    );
+
+    const afterList = await postStateEvent(
+      app,
+      {
+        type: "session_list_loaded",
+        payload: { sessions: [], next_cursor: null, has_more: false },
+      },
+      { userId: "u1", bearer: "tok-1" },
+    );
+    expect(afterList.status).toBe(200);
+    expect(afterList.document.regions.sessionChat.state).toBe(
+      "session_list_loaded",
+    );
 
     // active_scope is the deepest-resolved region's scope (org + project).
-    expect(document.active_scope).toEqual({
+    expect(afterList.document.active_scope).toEqual({
       org_id: "org-1",
       project_id: "proj-A",
       resource_type: null,
       resource_id: null,
     });
 
-    // The POST response IS the new state document — a follow-up GET /state agrees.
+    // The POST response IS the new state document — a follow-up GET /state agrees
+    // with the latest (post-list-report) document.
     const reread = await getState(app, "u1");
-    expect(reread.regions).toEqual(document.regions);
-    expect(reread.phase).toBe(document.phase);
+    expect(reread.regions).toEqual(afterList.document.regions);
+    expect(reread.phase).toBe(afterList.document.phase);
   });
 
   it("a client org report drives onboarding awaiting_org_report → needs_org → ready", async () => {

@@ -34,13 +34,7 @@ import type {
   SwitchProjectInput,
   SwitchProjectOutput,
 } from "../../project-context/index.ts";
-import type {
-  LoadSessionListInput,
-  LoadSessionListOutput,
-  ResumeSessionInput,
-  ResumeSessionOutput,
-  SessionSummary,
-} from "../../session-chat/index.ts";
+import type { SessionSummary } from "../../session-chat/index.ts";
 import { createChatApp } from "../index.ts";
 import type { ChatUserIntent, OnboardingInput } from "../setup/types.ts";
 import {
@@ -69,13 +63,11 @@ function session(id: string): SessionSummary {
 }
 
 interface Recorder {
-  loadCalls: string[];
-  resumeCalls: string[];
   switchCalls: string[];
 }
 
 function recorder(): Recorder {
-  return { loadCalls: [], resumeCalls: [], switchCalls: [] };
+  return { switchCalls: [] };
 }
 
 type Deferred = { promise: Promise<SwitchProjectOutput>; resolve: () => void };
@@ -90,7 +82,7 @@ function deferredSwitch(projectId: string): Deferred {
 
 function makeDeps(
   rec: Recorder,
-  sessions: SessionSummary[],
+  _sessions: SessionSummary[],
   slowSwitch?: Deferred,
 ) {
   return {
@@ -115,29 +107,8 @@ function makeDeps(
         },
       ),
     },
-    sessionChat: {
-      loadSessionList: fromPromise<LoadSessionListOutput, LoadSessionListInput>(
-        async ({ input }) => {
-          rec.loadCalls.push(input.project_id);
-          return {
-            items: sessions,
-            next_cursor: null,
-            has_more: false,
-            resume_target: input.pending_resume_session_id ?? null,
-          };
-        },
-      ),
-      resumeSession: fromPromise<ResumeSessionOutput, ResumeSessionInput>(
-        async ({ input }) => {
-          rec.resumeCalls.push(input.session_id);
-          return {
-            session_id: input.session_id,
-            transcript: [],
-            active_dataset_id: null,
-          };
-        },
-      ),
-    },
+    // Report-driven session-chat (ADR-050 §e.5 / DR-8) invokes no actors.
+    sessionChat: {},
   };
 }
 
@@ -239,6 +210,18 @@ async function arriveAtChat(
     (a) => childState(a, "project-context") === "awaiting_scope_report",
   );
   actor.send({ type: "scope_resolved", project: PROJECT_A });
+  await waitFor(
+    actor,
+    (a) => childState(a, "session-chat") === "awaiting_session_list_report",
+  );
+  // Report-driven session-chat (ADR-050 §e.5 / DR-8): the client reports the
+  // probed session list THROUGH THE PARENT (forwarded verbatim) → session_list_loaded.
+  actor.send({
+    type: "session_list_loaded",
+    sessions,
+    next_cursor: null,
+    has_more: false,
+  });
   await waitFor(
     actor,
     (a) => childState(a, "session-chat") === "session_list_loaded",
@@ -525,6 +508,9 @@ describe("ADR-046 gate — sessionChat=session_active (resumed)", () => {
       type: "session_clicked",
       session_id: "s1",
     } satisfies ChatUserIntent);
+    // Report-driven resume (ADR-050 §e.5 / DR-8): the client reports the resume
+    // outcome THROUGH THE PARENT → session_active.
+    actor.send({ type: "session_resumed", session_id: "s1", transcript: [] });
     await waitFor(
       actor,
       (a) => childState(a, "session-chat") === "session_active",

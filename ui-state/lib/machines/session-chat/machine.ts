@@ -5,20 +5,24 @@
 // session, and the chat-turn-emitting states. It owns the `resource_*` half of
 // `active_scope`.
 //
-// State surface:
-//   waiting_for_project (initial) ─→ loading_session_list           (project_ready)
-//   loading_session_list (invoke)  ─┬─→ session_list_loaded        (onDone, no pending_resume_session_id)
-//                                    ├─→ resuming_session            (onDone, pending_resume_session_id present)
-//                                    └─→ error_recoverable           (onError, transient)
-//   session_list_loaded          ─┬─→ resuming_session              (session_clicked)
-//                                    └─→ loading_session_list         (refresh_session_list)
-//   resuming_session (invoke)     ─┬─→ session_active                (onDone, found)
-//                                    ├─→ session_list_loaded         (onDone, session_not_found — silent)
-//                                    └─→ error_recoverable            (onError, transient)
-//   session_active                (active session)
-//   session_welcome               (new-session lifecycle via createSessionEagerly)
-//   switching_dataset_context     (dataset attachment within the session)
-//   error_recoverable             ─→ last_live_state                  (retry_clicked)
+// State surface (REPORT-DRIVEN — ADR-049 §4 / ADR-050 §e.5, DR-8/AR-8): zero
+// egress. The machine invokes NO server-side actors; each surviving UI intent
+// SETTLES in a no-invoke state until the matching CLIENT-REPORTED past-tense
+// OUTCOME arrives, which it transitions on.
+//
+//   waiting_for_project (initial)      ─→ awaiting_session_list_report (project_ready)
+//   awaiting_session_list_report       ─┬─→ session_list_loaded   (session_list_loaded report)
+//                                        └─→ error_recoverable     (session_list_failed report)
+//   session_list_loaded                ─┬─→ session_active         (session_resumed ← session_clicked)
+//                                        ├─→ error_recoverable      (session_resume_failed)
+//                                        ├─→ session_welcome        (new_session_clicked)
+//                                        └─→ awaiting_session_list_report (refresh_session_list)
+//   session_welcome                    ─┬─→ session_active         (session_created ← first_message_sent)
+//                                        └─→ error_recoverable      (session_create_failed)
+//   session_active                     ─┬─→ session_active         (dataset_context_switched ← dataset pick)
+//                                        └─→ error_recoverable      (dataset_context_switch_failed)
+//   error_recoverable                  ─→ session_list_loaded / awaiting_session_list_report
+//                                          (session_list_loaded report / refresh_session_list)
 //
 // Cross-machine isolation invariant: this file does NOT import from
 // `project-context.ts` or `login-and-org-setup.ts`. The orchestrator mediates
@@ -28,7 +32,8 @@
 //
 // This file is MAPPING ONLY: it wires the setup pieces and lays out the state
 // transitions. The pieces live under ./setup/ —
-//   - actors.ts   — the resolvers + `buildActors(deps)` (external-service I/O)
+//   - actors.ts   — the (now empty) `buildActors(deps)` seam — report-driven
+//                   session-chat invokes NO actors (egress retired, DR-8)
 //   - guards.ts   — the `guards` bundle (transition predicates)
 //   - actions.ts  — the bare assign closures (every context write)
 //   - types.ts    — context / event / state / summary / transcript / cause-tag / input types
@@ -59,17 +64,14 @@ import {
   captureIntendedResource,
   capturePendingFirstMessage,
   capturePendingResumeIntent,
-  clearErrorAndBumpRetries,
   clearPendingFirstMessage,
-  clearResumeTarget,
   enterWelcomeReset,
   recordStaleSessionClicked,
   resetForProjectSwitch,
-  tagDatasetDeniedClearPick,
-  tagListDegraded,
-  tagTransientCreating,
-  tagTransientResuming,
-  tagTransientSwitching,
+  tagCreateFailed,
+  tagListFailed,
+  tagResumeFailed,
+  tagSwitchFailed,
 } from "./setup/actions.ts";
 import { buildActors, type SessionChatMachineDeps } from "./setup/actors.ts";
 import { guards } from "./setup/guards.ts";
@@ -99,16 +101,13 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
       captureIntendedResource: assign(captureIntendedResource),
       assignSessionList: assign(assignSessionList),
       enterWelcomeReset: assign(enterWelcomeReset),
-      clearResumeTarget: assign(clearResumeTarget),
       assignResumedSession: assign(assignResumedSession),
-      tagDatasetDeniedClearPick: assign(tagDatasetDeniedClearPick),
       assignSwitchedDataset: assign(assignSwitchedDataset),
       assignCreatedSession: assign(assignCreatedSession),
-      tagListDegraded: assign(tagListDegraded),
-      tagTransientResuming: assign(tagTransientResuming),
-      tagTransientSwitching: assign(tagTransientSwitching),
-      tagTransientCreating: assign(tagTransientCreating),
-      clearErrorAndBumpRetries: assign(clearErrorAndBumpRetries),
+      tagListFailed: assign(tagListFailed),
+      tagResumeFailed: assign(tagResumeFailed),
+      tagCreateFailed: assign(tagCreateFailed),
+      tagSwitchFailed: assign(tagSwitchFailed),
     },
   }).createMachine({
     id: "session-chat",
@@ -141,55 +140,31 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
       waiting_for_project: {
         on: {
           project_ready: {
-            target: "loading_session_list",
+            target: "awaiting_session_list_report",
             actions: "applyProjectReady",
           },
         },
       },
-      loading_session_list: {
+      // No-invoke WAITING state (the report-driven successor to the retired
+      // loading_session_list invoke). The client probes GET /sessions and
+      // reports session_list_loaded / session_list_failed; the machine settles
+      // here until one arrives (zero egress).
+      awaiting_session_list_report: {
         on: {
-          // Re-broadcast from the orchestrator on project switch. Declaring
-          // the handler here keeps the contract stable even when the only
-          // project_ready path is the initial spawn.
+          session_list_loaded: {
+            target: "session_list_loaded",
+            actions: "assignSessionList",
+          },
+          session_list_failed: {
+            target: "error_recoverable",
+            actions: "tagListFailed",
+          },
+          // Re-broadcast from the orchestrator on project switch. Declaring the
+          // handler here keeps the contract stable while waiting for the report.
           project_ready: {
-            target: "loading_session_list",
+            target: "awaiting_session_list_report",
             reenter: true,
             actions: ["resetForProjectSwitch", "captureDeeplinkResume"],
-          },
-        },
-        invoke: {
-          src: "loadSessionList",
-          // LEAF-C: `pending_resume_session_id` rides INTO the actor's input
-          // so the actor can echo it OUT as `resume_target`. The onDone branch
-          // then reads from `event.output.resume_target` — branch data flows
-          // through the actor's output channel, not via a context field set
-          // before the invoke (Direction F).
-          input: ({ context }) => ({
-            project_id: context.project?.id ?? "",
-            principal_id: context.principal_id,
-            page_size: 30,
-            pending_resume_session_id: context.pending_resume_session_id,
-          }),
-          onDone: [
-            {
-              // Deep-link continuation: the actor surfaces the forwarded
-              // target via `event.output.resume_target`. The list still
-              // loads (so the FE renders the sidebar) but the machine
-              // settles in resuming_session. `resuming_session.invoke.input`
-              // reads `context.pending_resume_session_id` (still populated
-              // by the `project_ready` handler).
-              guard: "hasResumeTarget",
-              target: "resuming_session",
-              actions: "assignSessionList",
-            },
-            {
-              target: "session_list_loaded",
-              actions: "assignSessionList",
-            },
-          ],
-          onError: {
-            target: "error_recoverable",
-            actions: "tagListDegraded",
           },
         },
       },
@@ -204,237 +179,157 @@ export function createSessionChatMachine(deps: SessionChatMachineDeps) {
               actions: "recordStaleSessionClicked",
             },
             {
-              target: "resuming_session",
+              // SETTLE waiting for the client's session_resumed report.
               actions: "capturePendingResumeIntent",
             },
           ],
+          // The client reports the resume outcome (zero egress).
+          session_resumed: {
+            // Atomic materialization per IC-J002-3 — see assignResumedSession.
+            target: "session_active",
+            actions: "assignResumedSession",
+          },
+          session_resume_failed: {
+            target: "error_recoverable",
+            actions: "tagResumeFailed",
+          },
           new_session_clicked: {
             // US-206 / DWD-10: lazy-creation. Enter the welcome state with
-            // session_id null; no backend write fires until `first_message_sent`.
+            // session_id null; no session row exists until session_created.
             target: "session_welcome",
             actions: "enterWelcomeReset",
           },
           refresh_session_list: {
-            target: "loading_session_list",
+            target: "awaiting_session_list_report",
             reenter: true,
           },
           project_ready: [
             {
               guard: "isDifferentProject",
-              target: "loading_session_list",
+              target: "awaiting_session_list_report",
               actions: ["resetForProjectSwitch", "captureDeeplinkResume"],
             },
-            // Same project_id — idempotent no-op (the existing actor ignores
-            // the re-emission).
+            // Same project_id — idempotent no-op.
           ],
-        },
-      },
-      resuming_session: {
-        invoke: {
-          src: "resumeSession",
-          input: ({ context }) => ({
-            session_id:
-              context.pending_resume_session_id ?? context.session_id ?? "",
-            project_id: context.project?.id ?? "",
-            principal_id: context.principal_id,
-          }),
-          onDone: [
-            {
-              guard: "isSessionNotFound",
-              target: "session_list_loaded",
-              actions: "clearResumeTarget",
-            },
-            {
-              // Atomic materialization per IC-J002-3 — see assignResumedSession.
-              target: "session_active",
-              actions: "assignResumedSession",
-            },
-          ],
-          onError: {
-            target: "error_recoverable",
-            actions: "tagTransientResuming",
-          },
         },
       },
       session_active: {
         on: {
           session_clicked: [
             {
-              // DWD-7 stale-intent: a session_clicked targeting a session
-              // absent from the current list (e.g. a replayed post-THAW click)
-              // is silent-dropped — observability only. See isStaleSessionClick.
               guard: "isStaleSessionClick",
               actions: "recordStaleSessionClicked",
             },
             {
-              target: "resuming_session",
+              // SETTLE waiting for the client's session_resumed report.
               actions: "capturePendingResumeIntent",
             },
           ],
+          session_resumed: {
+            target: "session_active",
+            actions: "assignResumedSession",
+          },
+          session_resume_failed: {
+            target: "error_recoverable",
+            actions: "tagResumeFailed",
+          },
           refresh_session_list: {
-            target: "loading_session_list",
+            target: "awaiting_session_list_report",
             reenter: true,
           },
-          // US-209 — a dataset pick (via the agent's resolve_dataset
-          // tool-return path OR direct UI selection) moves the machine into
-          // `switching_dataset_context`. Same payload shape for both; the
-          // capture action records the pick for the invoke input.
+          // US-209 — a dataset pick (agent resolve_dataset tool-return OR direct
+          // UI selection) captures the pick and SETTLES waiting for the client's
+          // dataset_context_switched report.
           dataset_resolved_by_agent: {
-            target: "switching_dataset_context",
             actions: "captureIntendedResource",
           },
           dataset_picked_directly: {
-            target: "switching_dataset_context",
             actions: "captureIntendedResource",
+          },
+          dataset_context_switched: {
+            // Validated + persisted by the client; retarget context.resource
+            // (single atomic assign per IC-J002-5) — see assignSwitchedDataset.
+            target: "session_active",
+            actions: "assignSwitchedDataset",
+          },
+          dataset_context_switch_failed: {
+            target: "error_recoverable",
+            actions: "tagSwitchFailed",
           },
           project_ready: [
             {
               guard: "isDifferentProject",
-              target: "loading_session_list",
+              target: "awaiting_session_list_report",
               actions: "resetForProjectSwitch",
             },
           ],
         },
       },
-      switching_dataset_context: {
-        // Entry — orchestrator-side emission of
-        // `switching_dataset_context_started` happens in orchestrator.ts
-        // (the pre-settle branch, mirroring `switching_project_started`). The
-        // `switchDatasetContext` invoke performs GET /api/datasets/:id
-        // (ScopeResolver invariant 4 — cross-tenant + cross-project) then, on
-        // pass, PATCH /api/projects/:pid/sessions/:sid { active_dataset_id }
-        // (DWD-2 persist via the existing update_session allowlist).
-        invoke: {
-          src: "switchDatasetContext",
-          input: ({ context }) => ({
-            session_id: context.session_id ?? "",
-            project_id: context.project?.id ?? "",
-            principal_id: context.principal_id,
-            intended_resource_id: context.intended_resource_id ?? "",
-            intended_resource_type:
-              context.intended_resource_type ?? ("dataset" as const),
-            prior_resource: {
-              type: context.resource.type,
-              id: context.resource.id,
-            },
-          }),
-          onDone: [
-            {
-              // ScopeResolver invariant 4 rejection (403 / 404 / cross-project):
-              // leave `context.resource` UNCHANGED — see tagDatasetDeniedClearPick.
-              guard: "isDatasetAccessDenied",
-              target: "session_active",
-              actions: "tagDatasetDeniedClearPick",
-            },
-            {
-              // Validated + persisted: retarget `context.resource` (single
-              // atomic assign per IC-J002-5) — see assignSwitchedDataset.
-              target: "session_active",
-              actions: "assignSwitchedDataset",
-            },
-          ],
-          onError: {
-            target: "error_recoverable",
-            actions: "tagTransientSwitching",
-          },
-        },
-      },
       session_welcome: {
         // US-206: the welcome state. Composer text lives in component-local
-        // state on the FE AND in `pending_first_message` on the machine for
-        // the error_recoverable → retry boundary.
+        // state on the FE AND in `pending_first_message` on the machine for the
+        // error_recoverable boundary.
         on: {
-          // Idempotent — clicking "+ New Session" again from the welcome
-          // state is a no-op (the FE button is the same; the machine
-          // already has session_id=null).
+          // Idempotent — clicking "+ New Session" again from the welcome state
+          // is a no-op (the machine already has session_id=null).
           new_session_clicked: {
             target: "session_welcome",
             reenter: false,
           },
-          // Clicking an existing session from the welcome state cancels
-          // the new-session intent and resumes the clicked session.
+          // Clicking an existing session cancels the new-session intent and
+          // SETTLES waiting for the client's session_resumed report.
           session_clicked: [
             {
-              // DWD-7 stale-intent: a session_clicked targeting a session
-              // absent from the current list (e.g. a replayed post-THAW click)
-              // is silent-dropped — observability only. See isStaleSessionClick.
               guard: "isStaleSessionClick",
               actions: "recordStaleSessionClicked",
             },
             {
-              target: "resuming_session",
               actions: "capturePendingResumeIntent",
             },
           ],
-          // Eager create on first message. The actor POSTs the session
-          // row + PATCHes the title; on settle we transition to session_active.
+          session_resumed: {
+            target: "session_active",
+            actions: "assignResumedSession",
+          },
+          // First message preserves the composer text and SETTLES waiting for
+          // the client's session_created report.
           first_message_sent: {
-            target: "creating_session",
             actions: "capturePendingFirstMessage",
           },
-          // Switching project from the welcome state navigates away —
-          // re-enters loading_session_list for the new project. NO
-          // session row was ever created (the no-ghost-row invariant).
-          project_ready: [
-            {
-              guard: "isDifferentProject",
-              target: "loading_session_list",
-              actions: ["resetForProjectSwitch", "clearPendingFirstMessage"],
-            },
-            // Same project_id — idempotent no-op (project_ready re-emission).
-          ],
-        },
-      },
-      creating_session: {
-        invoke: {
-          src: "createSessionEagerly",
-          input: ({ context }) => ({
-            project_id: context.project?.id ?? "",
-            principal_id: context.principal_id,
-            first_message: context.pending_first_message,
-          }),
-          onDone: {
+          session_created: {
             target: "session_active",
             actions: "assignCreatedSession",
           },
-          onError: {
+          session_create_failed: {
             target: "error_recoverable",
-            actions: "tagTransientCreating",
+            actions: "tagCreateFailed",
           },
+          // Switching project from the welcome state navigates away —
+          // re-enters the awaiting state for the new project. NO session row
+          // was ever created (the no-ghost-row invariant).
+          project_ready: [
+            {
+              guard: "isDifferentProject",
+              target: "awaiting_session_list_report",
+              actions: ["resetForProjectSwitch", "clearPendingFirstMessage"],
+            },
+            // Same project_id — idempotent no-op.
+          ],
         },
       },
       error_recoverable: {
         on: {
-          retry_clicked: [
-            {
-              guard: "wasLoadingList",
-              target: "loading_session_list",
-              reenter: true,
-              actions: "clearErrorAndBumpRetries",
-            },
-            {
-              guard: "wasResuming",
-              target: "resuming_session",
-              reenter: true,
-              actions: "clearErrorAndBumpRetries",
-            },
-            {
-              // US-206: retry from a failed eager-create returns to the
-              // welcome state with `pending_first_message` intact (the
-              // composer-state preservation contract).
-              guard: "wasWelcome",
-              target: "session_welcome",
-              actions: "clearErrorAndBumpRetries",
-            },
-            {
-              // US-209: retry from a transient switchDatasetContext failure
-              // re-enters the switch with the captured pick still in ctx.
-              guard: "wasSwitchingDataset",
-              target: "switching_dataset_context",
-              reenter: true,
-              actions: "clearErrorAndBumpRetries",
-            },
-          ],
+          // Report-driven recovery: the client re-probes and reports. A fresh
+          // session-list report converges the recoverable error back to the
+          // list; a refresh intent re-enters the awaiting state.
+          session_list_loaded: {
+            target: "session_list_loaded",
+            actions: "assignSessionList",
+          },
+          refresh_session_list: {
+            target: "awaiting_session_list_report",
+            reenter: true,
+          },
         },
       },
     },

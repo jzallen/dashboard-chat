@@ -1,13 +1,16 @@
 // Snapshot restart-recovery tests on the REAL wired ChatApp.
 //
-// These drive a real wired ChatApp actor through the ChatAppSnapshotStore
-// (noop tier — exercises the JSON round-trip) and rehydrate a FRESH wired
-// machine from the loaded snapshot, asserting:
+// REPORT-DRIVEN session-chat (ADR-050 §e.5 / DR-8/AR-8): the four egress
+// invokes (loadSessionList / resumeSession / createSessionEagerly /
+// switchDatasetContext) were DELETED — the region now SETTLES the instant it is
+// reached and transitions on client-reported outcomes. So the old R3 self-heal
+// tests that captured a snapshot MID-resuming_session (a transient invoke that
+// no longer exists) are retired with the egress they exercised. What remains:
 //   - settled-state round-trip restores the lifecycle value + child states
-//     (the happy hot-restart), with NO spurious re-fire of settled reads;
-//   - the R3 self-heal: a snapshot taken MID-INVOKE rehydrates and re-fires the
-//     in-flight child invoke automatically, settling without recovery code;
-//   - the saveChatAppSnapshot settled-state guard SKIPS a mid-transient save.
+//     (the happy hot-restart);
+//   - the new invariant: a session-chat region in any state is ALWAYS settled
+//     (no transient invoke survives), so saveChatAppSnapshot never skips on its
+//     account.
 
 import { describe, expect, it } from "vitest";
 import {
@@ -25,19 +28,12 @@ import type {
   ResolveInitialScopeInput,
   ResolveInitialScopeOutput,
 } from "../project-context/index.ts";
-import type {
-  LoadSessionListInput,
-  LoadSessionListOutput,
-  ResumeSessionInput,
-  ResumeSessionOutput,
-  SessionSummary,
-} from "../session-chat/index.ts";
+import type { SessionSummary } from "../session-chat/index.ts";
 import { createChatApp } from "./index.ts";
 import type { OnboardingInput } from "./setup/types.ts";
 import {
   isSettledForSnapshot,
   loadChatAppSnapshot,
-  persistChatApp,
   rehydrateChatApp,
   saveChatAppSnapshot,
 } from "./snapshot.ts";
@@ -54,28 +50,13 @@ function session(id: string): SessionSummary {
 }
 
 interface Recorder {
-  loadCalls: string[];
-  resumeCalls: string[];
+  switchCalls: string[];
 }
 function recorder(): Recorder {
-  return { loadCalls: [], resumeCalls: [] };
+  return { switchCalls: [] };
 }
 
-/** A hand-resolved resume promise so a test can park session-chat in
- *  `resuming_session` (a transient invoke state) at snapshot time. */
-function heldResume() {
-  let resolve!: (out: ResumeSessionOutput) => void;
-  const promise = new Promise<ResumeSessionOutput>((res) => {
-    resolve = res;
-  });
-  return { promise, resolve };
-}
-
-function makeDeps(
-  rec: Recorder,
-  sessions: SessionSummary[],
-  held?: { promise: Promise<ResumeSessionOutput> },
-) {
+function makeDeps(_rec: Recorder, _sessions: SessionSummary[]) {
   return {
     projectContext: {
       resolveInitialScope: fromPromise<ResolveInitialScopeOutput, ResolveInitialScopeInput>(
@@ -83,26 +64,8 @@ function makeDeps(
       ),
       createProject: fromPromise<ProjectSummary, CreateProjectInput>(async () => PROJECT_A),
     },
-    sessionChat: {
-      loadSessionList: fromPromise<LoadSessionListOutput, LoadSessionListInput>(
-        async ({ input }) => {
-          rec.loadCalls.push(input.project_id);
-          return {
-            items: sessions,
-            next_cursor: null,
-            has_more: false,
-            resume_target: input.pending_resume_session_id ?? null,
-          };
-        },
-      ),
-      resumeSession: fromPromise<ResumeSessionOutput, ResumeSessionInput>(
-        async ({ input }) => {
-          rec.resumeCalls.push(input.session_id);
-          if (held) return held.promise;
-          return { session_id: input.session_id, transcript: [], active_dataset_id: null };
-        },
-      ),
-    },
+    // Report-driven session-chat (ADR-050 §e.5 / DR-8) invokes no actors.
+    sessionChat: {},
   };
 }
 
@@ -143,12 +106,9 @@ async function waitFor(actor: Actor, pred: () => boolean, timeoutMs = 2000): Pro
   });
 }
 
-async function arriveAtChat(
-  sessions: SessionSummary[] = [session("s1")],
-  held?: { promise: Promise<ResumeSessionOutput> },
-) {
+async function arriveAtChat(sessions: SessionSummary[] = [session("s1")]) {
   const rec = recorder();
-  const actor = createActor(createChatApp(makeDeps(rec, sessions, held)), {
+  const actor = createActor(createChatApp(makeDeps(rec, sessions)), {
     input: makeInput(),
   }).start();
   // Client-reported model + phase-gated routing (CDO-S3): report the returning
@@ -159,6 +119,10 @@ async function arriveAtChat(
   // to project-context → project_selected → engaged.chat.
   await waitFor(actor, () => childState(actor, "project-context") === "awaiting_scope_report");
   actor.send({ type: "scope_resolved", project: PROJECT_A });
+  await waitFor(actor, () => childState(actor, "session-chat") === "awaiting_session_list_report");
+  // Report-driven session-chat (ADR-050 §e.5 / DR-8): the client reports the
+  // probed list THROUGH THE PARENT → session_list_loaded.
+  actor.send({ type: "session_list_loaded", sessions, next_cursor: null, has_more: false });
   await waitFor(actor, () => childState(actor, "session-chat") === "session_list_loaded");
   return { actor, rec };
 }
@@ -192,62 +156,59 @@ describe("ChatApp snapshot — settled-state hot restart", () => {
       (restored.getSnapshot().context as { onboarding_result: { state: string } | null })
         .onboarding_result?.state,
     ).toBe("ready");
-    // A SETTLED child is NOT re-invoked on rehydration (R3 E4) — no read re-fires.
-    expect(rec2.loadCalls).toEqual([]);
+    // The restored session-chat region carries the reported list (no egress
+    // re-fires on a settled rehydration).
+    expect(
+      (restored.getSnapshot().children as Record<string, AnyActorRef>)["session-chat"]
+        .getSnapshot().context.session_list,
+    ).toEqual([session("s1")]);
 
     restored.stop();
   });
 });
 
-// ═════════════════════════ R3 self-heal (mid-invoke) ═════════════════════════
+// ═════════════════════════ report-driven settle invariant ═════════════════════════
+// The R3 self-heal tests that snapshotted MID-resuming_session are retired: under
+// the report-driven model (DR-8) session-chat invokes nothing, so there is no
+// transient invoke state to capture mid-flight. The replacement invariant proves
+// that the report-driven waiting state is ALWAYS settled — a snapshot taken there
+// is safe to persist (saveChatAppSnapshot never skips on session-chat's account).
 
-describe("ChatApp snapshot — R3 self-heal of an in-flight child invoke", () => {
-  it("skips a mid-transient save (settled-state guard)", async () => {
-    const heldP = heldResume();
-    const { actor } = await arriveAtChat([session("s1")], heldP);
-    actor.send({ type: "session_clicked", session_id: "s1" });
-    await waitFor(actor, () => childState(actor, "session-chat") === "resuming_session");
+describe("ChatApp snapshot — report-driven session-chat always settles", () => {
+  it("awaiting_session_list_report is a SETTLED state — a snapshot there persists (no transient invoke)", async () => {
+    const rec = recorder();
+    const actor = createActor(createChatApp(makeDeps(rec, [session("s1")])), {
+      input: makeInput(),
+    }).start();
+    actor.send({ type: "org_found", org: ORG });
+    await waitFor(actor, () => childState(actor, "project-context") === "awaiting_scope_report");
+    actor.send({ type: "scope_resolved", project: PROJECT_A });
+    // Park session-chat in the report-waiting state WITHOUT reporting the list.
+    await waitFor(actor, () => childState(actor, "session-chat") === "awaiting_session_list_report");
 
-    expect(isSettledForSnapshot(actor.getSnapshot())).toBe(false);
+    // No transient invoke is in flight — the actor is settled and persists.
+    expect(isSettledForSnapshot(actor.getSnapshot())).toBe(true);
     const store = createNoopChatAppSnapshotStore();
-    expect(await saveChatAppSnapshot(store, PRINCIPAL, actor)).toBe(false);
-    expect(await loadChatAppSnapshot(store, PRINCIPAL)).toBeNull();
-
-    heldP.resolve({ session_id: "s1", transcript: [], active_dataset_id: null });
+    expect(await saveChatAppSnapshot(store, PRINCIPAL, actor)).toBe(true);
     actor.stop();
-  });
 
-  it("rehydrates a snapshot taken mid-resuming_session and SELF-HEALS to session_active", async () => {
-    const heldP = heldResume();
-    const { actor, rec } = await arriveAtChat([session("s1")], heldP);
-    actor.send({ type: "session_clicked", session_id: "s1" });
-    await waitFor(actor, () => childState(actor, "session-chat") === "resuming_session");
-    expect(rec.resumeCalls).toEqual(["s1"]); // live invoke fired once
-
-    // Deliberately capture the snapshot MID-INVOKE (a crash mid-transition) and
-    // round-trip it through the store's JSON path.
-    const store = createNoopChatAppSnapshotStore();
-    await store.save(PRINCIPAL, persistChatApp(actor));
-    actor.stop(); // abandon the live (still-pending) resume promise
-
-    // Fresh process with a NON-held resumeSession: the re-fired invoke settles.
+    // Rehydration restores the waiting state directly — nothing re-fires, and a
+    // subsequent client report drives it forward.
     const rec2 = recorder();
     const loaded = await loadChatAppSnapshot(store, PRINCIPAL);
+    expect(loaded).not.toBeNull();
     const restored = rehydrateChatApp(
       createChatApp(makeDeps(rec2, [session("s1")])) as AnyStateMachine,
       loaded,
     );
+    expect(childState(restored, "session-chat")).toBe("awaiting_session_list_report");
 
-    // Restored mid-flight...
-    expect(childState(restored, "session-chat")).toBe("resuming_session");
-    // ...and the invoke RE-FIRES on rehydration (R3) — resumeSession runs again,
-    // reading the persisted pending_resume_session_id, and self-heals.
-    await waitFor(restored, () => childState(restored, "session-chat") === "session_active");
-    expect(rec2.resumeCalls).toEqual(["s1"]); // re-fired on the fresh process
+    restored.send({ type: "session_list_loaded", sessions: [session("s1")], next_cursor: null, has_more: false });
+    await waitFor(restored, () => childState(restored, "session-chat") === "session_list_loaded");
     expect(
       (restored.getSnapshot().children as Record<string, AnyActorRef>)["session-chat"]
-        .getSnapshot().context.session_id,
-    ).toBe("s1");
+        .getSnapshot().context.session_list,
+    ).toEqual([session("s1")]);
 
     restored.stop();
   });

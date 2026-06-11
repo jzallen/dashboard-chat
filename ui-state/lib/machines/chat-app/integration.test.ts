@@ -28,10 +28,6 @@ import type {
   SwitchProjectOutput,
 } from "../project-context/index.ts";
 import type {
-  LoadSessionListInput,
-  LoadSessionListOutput,
-  ResumeSessionInput,
-  ResumeSessionOutput,
   SessionChatMachineContext,
   SessionSummary,
 } from "../session-chat/index.ts";
@@ -50,21 +46,22 @@ function session(id: string): SessionSummary {
 }
 
 /** A recorder for what the (real) children's mocked ports actually received —
- *  the in-process analog of the orchestrator tests' projection assertions. */
+ *  the in-process analog of the orchestrator tests' projection assertions.
+ *  Report-driven session-chat (ADR-050 §e.5 / DR-8) invokes NO actors, so its
+ *  list/resume egress is no longer recorded — the test instead asserts the
+ *  region's observable state after the client reports the outcome. Only the
+ *  still-invoke project-context switch is recorded. */
 interface Recorder {
-  loadCalls: string[]; // project_id per loadSessionList invoke
-  resumeCalls: string[]; // session_id per resumeSession invoke
   switchCalls: string[]; // new_project_id per switchProject invoke
 }
 
 /**
- * Build the ChatAppDeps with `fromPromise` fakes at every child port. The
- * project-context + session-chat actors are construction-time deps; the
- * onboarding child's I/O is the begin envelope (see makeInput), so it is NOT a
- * construction dep. Explicit `fromPromise<Out, In>` generics keep each fake's
- * output assignable to the union the child's deps slot expects.
+ * Build the ChatAppDeps with `fromPromise` fakes at the still-invoke child
+ * ports. The project-context actors are construction-time deps; the onboarding
+ * child's I/O is the begin envelope (see makeInput). Report-driven session-chat
+ * invokes nothing, so its deps surface is empty.
  */
-function makeDeps(rec: Recorder, sessions: SessionSummary[]) {
+function makeDeps(rec: Recorder, _sessions: SessionSummary[]) {
   return {
     projectContext: {
       resolveInitialScope: fromPromise<ResolveInitialScopeOutput, ResolveInitialScopeInput>(
@@ -80,25 +77,7 @@ function makeDeps(rec: Recorder, sessions: SessionSummary[]) {
         },
       ),
     },
-    sessionChat: {
-      loadSessionList: fromPromise<LoadSessionListOutput, LoadSessionListInput>(
-        async ({ input }) => {
-          rec.loadCalls.push(input.project_id);
-          return {
-            items: sessions,
-            next_cursor: null,
-            has_more: false,
-            resume_target: input.pending_resume_session_id ?? null,
-          };
-        },
-      ),
-      resumeSession: fromPromise<ResumeSessionOutput, ResumeSessionInput>(
-        async ({ input }) => {
-          rec.resumeCalls.push(input.session_id);
-          return { session_id: input.session_id, transcript: [], active_dataset_id: null };
-        },
-      ),
-    },
+    sessionChat: {},
   };
 }
 
@@ -179,7 +158,7 @@ async function waitFor(
 /** Drive the full forward cycle to a settled session-chat list (the common
  *  arrange step). Returns the started actor + its recorder. */
 async function arriveAtChat(sessions: SessionSummary[] = [session("s1")]) {
-  const rec: Recorder = { loadCalls: [], resumeCalls: [], switchCalls: [] };
+  const rec: Recorder = { switchCalls: [] };
   const actor = createActor(createChatApp(makeDeps(rec, sessions)), {
     input: makeInput(),
   }).start();
@@ -193,11 +172,28 @@ async function arriveAtChat(sessions: SessionSummary[] = [session("s1")]) {
   // The project-context child now waits in awaiting_scope_report (no server-side
   // resolve). Report the resolved scope THROUGH THE PARENT — engaged.on forwards
   // { type:"scope_resolved", project:{id,name} } verbatim → project_selected →
-  // parent advances to engaged.chat → session-chat loads.
+  // parent advances to engaged.chat → session-chat enters
+  // awaiting_session_list_report (no egress — DR-8).
   await waitFor(actor, (a) => childState(a, "project-context") === "awaiting_scope_report");
   actor.send({ type: "scope_resolved", project: PROJECT_A });
+  await waitFor(actor, (a) => childState(a, "session-chat") === "awaiting_session_list_report");
+  // Report-driven session-chat (ADR-050 §e.5 / DR-8): the client probes
+  // GET /sessions and REPORTS session_list_loaded; the parent forwards it
+  // verbatim → session_list_loaded.
+  reportSessionList(actor, sessions);
   await waitFor(actor, (a) => childState(a, "session-chat") === "session_list_loaded");
   return { actor, rec };
+}
+
+/** Report a client-observed session list THROUGH THE PARENT (the parent forwards
+ *  it verbatim to the live session-chat child). */
+function reportSessionList(actor: ChatActor, sessions: SessionSummary[]) {
+  actor.send({
+    type: "session_list_loaded",
+    sessions,
+    next_cursor: null,
+    has_more: false,
+  });
 }
 
 // ─────────────────────────── scenario 1 ───────────────────────────
@@ -228,16 +224,16 @@ describe("ChatApp Phase 2 — happy forward cycle (login → project → chat)",
     expect(childContext<SessionChatMachineContext>(actor, "session-chat")!.org_id).toBe("org-acme");
     expect(childContext<SessionChatMachineContext>(actor, "session-chat")!.project.id).toBe("proj-A");
 
-    // project_ready forwarded EXACTLY once for proj-A: the single
-    // scope_resolved report settles project_selected once, and the parent's
-    // isInitialProjectSelected guard forwards project_ready a single time, so
-    // loading_session_list runs once and pushes one "proj-A".
-    expect(rec.loadCalls).toEqual(["proj-A"]);
+    // The session list the client reported landed in the session-chat region.
+    expect(childContext<SessionChatMachineContext>(actor, "session-chat")!.session_list).toEqual([
+      session("s1"),
+    ]);
 
-    // A live user intent reaches the active child and drives it to session_active.
+    // A live user intent reaches the active child; the client then reports the
+    // resume outcome THROUGH THE PARENT (zero egress), driving session_active.
     userIntent(actor, { type: "session_clicked", session_id: "s1" });
+    actor.send({ type: "session_resumed", session_id: "s1", transcript: [] });
     await waitFor(actor, (a) => childState(a, "session-chat") === "session_active");
-    expect(rec.resumeCalls).toEqual(["s1"]);
     expect(childContext<SessionChatMachineContext>(actor, "session-chat")!.session_id).toBe("s1");
   });
 });
@@ -246,14 +242,15 @@ describe("ChatApp Phase 2 — happy forward cycle (login → project → chat)",
 
 describe("ChatApp Phase 2 — report-only project switch while in chat", () => {
   it("re-lands project-context and re-forwards project_ready in place for a NEW project", async () => {
-    const { actor, rec } = await arriveAtChat();
-    expect(rec.loadCalls).toEqual(["proj-A"]);
+    const { actor } = await arriveAtChat();
+    expect(childState(actor, "session-chat")).toBe("session_list_loaded");
 
     // REPORT-ONLY switch (CDO-S3 / ADR-049 §4): the client reports the new
     // project it probed. engaged.on forwards `project_switched` verbatim to
     // project-context (alive even while session-chat is the active sub-child) →
     // project_selected re-enters on proj-B → shouldSwitchProject re-forwards
-    // project_ready → session-chat reloads for proj-B.
+    // project_ready → session-chat re-enters awaiting_session_list_report for
+    // proj-B (report-driven — no egress).
     actor.send({
       type: "project_switched",
       project: { id: "proj-B", name: "Project B" },
@@ -262,25 +259,30 @@ describe("ChatApp Phase 2 — report-only project switch while in chat", () => {
     await waitFor(actor, (a) => childContext<SessionChatMachineContext>(a, "session-chat")?.project.id === "proj-B");
     expect(lifecycle(actor)).toEqual({ engaged: "chat" }); // re-forward in place
     expect(childContext<ProjectContextMachineContext>(actor, "project-context")!.project.id).toBe("proj-B");
-    expect(rec.loadCalls).toEqual(["proj-A", "proj-B"]);
+    // The re-forwarded project_ready reset session-chat into the awaiting state
+    // for the new project (the no-egress successor to a list reload).
+    expect(childState(actor, "session-chat")).toBe("awaiting_session_list_report");
     expect(lastForwardedProject(actor)).toBe("proj-B");
   });
 
   it("is idempotent on a same-id switch report (no re-forward, no session-chat reload)", async () => {
-    const { actor, rec } = await arriveAtChat();
+    const { actor } = await arriveAtChat();
 
-    // First switch report to proj-B reloads session-chat once.
+    // First switch report to proj-B re-enters session-chat awaiting for proj-B.
     actor.send({
       type: "project_switched",
       project: { id: "proj-B", name: "Project B" },
     });
     await waitFor(actor, (a) => childContext<SessionChatMachineContext>(a, "session-chat")?.project.id === "proj-B");
-    expect(rec.loadCalls).toEqual(["proj-A", "proj-B"]);
+    expect(childState(actor, "session-chat")).toBe("awaiting_session_list_report");
+    // Re-settle the list so a redundant same-id switch can be proven a no-op.
+    reportSessionList(actor, [session("s1")]);
+    await waitFor(actor, (a) => childState(a, "session-chat") === "session_list_loaded");
 
     // A redundant switch report to the SAME project: project-context re-enters
     // project_selected (settling on proj-B again), but the parent's
     // shouldSwitchProject guard sees the unchanged id and blocks the re-forward,
-    // so session-chat does NOT reload.
+    // so session-chat does NOT reset back to awaiting.
     actor.send({
       type: "project_switched",
       project: { id: "proj-B", name: "Project B" },
@@ -291,7 +293,7 @@ describe("ChatApp Phase 2 — report-only project switch while in chat", () => {
         (childContext<ProjectContextMachineContext>(a, "project-context")!
           .scope_reconciled_count ?? 0) === 2,
     );
-    expect(rec.loadCalls).toEqual(["proj-A", "proj-B"]); // unchanged — no reload
+    expect(childState(actor, "session-chat")).toBe("session_list_loaded"); // unchanged — no reset
     expect(lastForwardedProject(actor)).toBe("proj-B");
   });
 });

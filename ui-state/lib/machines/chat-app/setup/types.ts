@@ -254,7 +254,45 @@ export type ChatAppEvent =
   | { type: "dataset_resolved_by_agent"; resource_id: string; resource_type: ResourceType }
   | { type: "dataset_picked_directly"; resource_id: string; resource_type: ResourceType }
   | { type: "suggestion_chip_clicked_upload" }
-  | { type: "suggestion_chip_clicked_browse_projects" };
+  | { type: "suggestion_chip_clicked_browse_projects" }
+  // ── client-reported session-chat OUTCOME members (ADR-050 §e.5 / DR-8/AR-8):
+  //    report-driven session-chat transitions on these; the parent forwards them
+  //    verbatim to the live child on engaged.chat. ──
+  | {
+      type: "session_list_loaded";
+      sessions: SessionSummaryEvent[];
+      next_cursor: string | null;
+      has_more: boolean;
+    }
+  | { type: "session_list_failed"; cause: string }
+  | {
+      type: "session_resumed";
+      session_id: string;
+      transcript: TranscriptMessageEvent[];
+      resource?: { type: ResourceType | null; id: string | null };
+      session_dataset_unavailable?: boolean;
+    }
+  | { type: "session_resume_failed"; cause: string }
+  | { type: "session_created"; session: { session_id: string } }
+  | { type: "session_create_failed"; cause: string }
+  | { type: "dataset_context_switched"; resource: { type: ResourceType | null; id: string | null } }
+  | { type: "dataset_context_switch_failed"; cause: string };
+
+/** Display-data row shapes the session-chat OUTCOME reports carry (mirrors the
+ *  session-chat machine's SessionSummary / TranscriptMessage; declared locally so
+ *  the parent's event union stays decoupled from the child's internals). */
+export interface SessionSummaryEvent {
+  id: string;
+  title: string | null;
+  last_active_at: string;
+  active_dataset_id: string | null;
+}
+export interface TranscriptMessageEvent {
+  id: string;
+  role: "user" | "assistant" | "tool";
+  content: string;
+  ts: string;
+}
 
 // ─────────────────── Per-child machine-input contracts ───────────────────
 // Each child slot pins its OWN input shape — what the parent's `invoke.input`

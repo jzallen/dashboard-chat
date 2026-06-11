@@ -46,12 +46,6 @@ import {
   resolveInitialScopeActor,
   switchProjectActor,
 } from "./lib/machines/project-context/index.ts";
-import {
-  createSessionEagerlyActor,
-  loadSessionListActor,
-  resumeSessionActor,
-  switchDatasetContextActor,
-} from "./lib/machines/session-chat/index.ts";
 import type { RequestClient } from "./lib/machines/onboarding/index.ts";
 import {
   type ChatAppSnapshotStore,
@@ -123,12 +117,10 @@ function buildChatAppDeps(config: Config): ChatAppDeps {
       createProject: createProjectActor(backendUrl, headers),
       switchProject: switchProjectActor(backendUrl, headers),
     },
-    sessionChat: {
-      loadSessionList: loadSessionListActor(backendUrl, headers),
-      resumeSession: resumeSessionActor(backendUrl, headers),
-      createSessionEagerly: createSessionEagerlyActor(backendUrl, headers),
-      switchDatasetContext: switchDatasetContextActor(backendUrl, headers),
-    },
+    // Report-driven session-chat (ADR-050 §e.5 / DR-8/AR-8) invokes NO actors —
+    // it transitions on client-reported outcomes, so no egress resolvers are
+    // wired here (the four `*Actor` factories were deleted at CDO-S5 step 05-01).
+    sessionChat: {},
   };
 }
 

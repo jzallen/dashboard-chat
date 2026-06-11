@@ -144,18 +144,17 @@ const PROJECT_CONTEXT_STATE_MAP: Readonly<Record<string, string>> = {
 };
 
 const SESSION_CHAT_STATE_MAP: Readonly<Record<string, string>> = {
+  // Report-driven (ADR-050 §e.5 / DR-8/AR-8): the four invoke states
+  // (loading_session_list / resuming_session / creating_session /
+  // switching_dataset_context) are RETIRED. `awaiting_session_list_report` is
+  // the no-invoke successor to loading_session_list; resume / create /
+  // dataset-switch settle in their originating live state until the client's
+  // outcome report transitions them — so no transient invoke state survives.
   waiting_for_project: "waiting_for_project",
-  loading_session_list: "loading_session_list",
+  awaiting_session_list_report: "awaiting_session_list_report",
   session_list_loaded: "session_list_loaded",
-  resuming_session: "resuming_session",
   session_welcome: "session_welcome",
-  // `creating_session` is a transient invoke state (US-206 eager create) with
-  // NO log-fold projection state — the log fold shows `session_welcome` until
-  // `session_active_reached` settles. Never persisted (settled-states only);
-  // passed through verbatim if derived mid-transient. Not a contract state.
-  creating_session: "creating_session",
   session_active: "session_active",
-  switching_dataset_context: "switching_dataset_context",
   error_recoverable: "error_recoverable",
 };
 

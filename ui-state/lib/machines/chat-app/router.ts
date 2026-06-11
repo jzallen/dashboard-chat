@@ -305,7 +305,58 @@ type ChatAppWireEvent =
       payload: { resource_id: string; resource_type: string };
     }
   | { type: "suggestion_chip_clicked_upload" }
-  | { type: "suggestion_chip_clicked_browse_projects" };
+  | { type: "suggestion_chip_clicked_browse_projects" }
+  // ── client-reported session-chat OUTCOME members (ADR-050 §e.5 / DR-8/AR-8) —
+  //    the report-driven half of ui-state's zero egress. Well-formedness only. ──
+  | {
+      type: "session_list_loaded";
+      payload: {
+        sessions: Array<{
+          id: string;
+          title: string | null;
+          last_active_at: string;
+          active_dataset_id: string | null;
+        }>;
+        next_cursor: string | null;
+        has_more: boolean;
+      };
+    }
+  | { type: "session_list_failed"; payload: { cause: SessionChatFailureCause } }
+  | {
+      type: "session_resumed";
+      payload: {
+        session_id: string;
+        transcript: Array<{
+          id: string;
+          role: "user" | "assistant" | "tool";
+          content: string;
+          ts: string;
+        }>;
+        resource?: { type: "dataset" | null; id: string | null };
+        session_dataset_unavailable?: boolean;
+      };
+    }
+  | { type: "session_resume_failed"; payload: { cause: SessionChatFailureCause } }
+  | { type: "session_created"; payload: { session: { session_id: string } } }
+  | { type: "session_create_failed"; payload: { cause: SessionChatFailureCause } }
+  | {
+      type: "dataset_context_switched";
+      payload: { resource: { type: "dataset" | null; id: string | null } };
+    }
+  | {
+      type: "dataset_context_switch_failed";
+      payload: { cause: SessionChatFailureCause };
+    };
+
+/** Why a client-reported session-chat outcome failed (ADR-050 §e.5). Mirrors
+ *  the shared `SessionChatFailureCause` (string-literal unions with equal
+ *  members are assignable). */
+type SessionChatFailureCause =
+  | "list_sessions_degraded"
+  | "session_resume_failed"
+  | "session_create_failed"
+  | "dataset_access_denied"
+  | "dataset_context_switch_failed";
 
 const causeTag = z.string().refine(isUnderlyingCauseTag, {
   message: "tag must be a known UnderlyingCauseTag",
@@ -327,6 +378,32 @@ const scopeMismatchCause = z.enum([
   "access_revoked",
 ]);
 const resourceType = z.string();
+const sessionChatFailureCause = z.enum([
+  "list_sessions_degraded",
+  "session_resume_failed",
+  "session_create_failed",
+  "dataset_access_denied",
+  "dataset_context_switch_failed",
+]);
+const sessionSummary = z
+  .object({
+    id: z.string(),
+    title: z.string().nullable(),
+    last_active_at: z.string(),
+    active_dataset_id: z.string().nullable(),
+  })
+  .passthrough();
+const transcriptMessage = z
+  .object({
+    id: z.string(),
+    role: z.enum(["user", "assistant", "tool"]),
+    content: z.string(),
+    ts: z.string(),
+  })
+  .passthrough();
+const resourceRef = z
+  .object({ type: z.string().nullable(), id: z.string().nullable() })
+  .passthrough();
 
 /** The closed wire vocabulary the StateProxy may POST. Pinned to the shared
  *  `ChatAppWireEvent` union (ADR-050 §e.2) — every closed-union member has an arm
@@ -390,6 +467,54 @@ const chatAppWireEventSchema = z.discriminatedUnion(
     }),
     z.object({ type: z.literal("suggestion_chip_clicked_upload") }),
     z.object({ type: z.literal("suggestion_chip_clicked_browse_projects") }),
+    // ── client-reported session-chat OUTCOME members (ADR-050 §e.5 / DR-8) ──
+    z.object({
+      type: z.literal("session_list_loaded"),
+      payload: z
+        .object({
+          sessions: z.array(sessionSummary),
+          next_cursor: z.string().nullable(),
+          has_more: z.boolean(),
+        })
+        .passthrough(),
+    }),
+    z.object({
+      type: z.literal("session_list_failed"),
+      payload: z.object({ cause: sessionChatFailureCause }).passthrough(),
+    }),
+    z.object({
+      type: z.literal("session_resumed"),
+      payload: z
+        .object({
+          session_id: z.string(),
+          transcript: z.array(transcriptMessage),
+          resource: resourceRef.optional(),
+          session_dataset_unavailable: z.boolean().optional(),
+        })
+        .passthrough(),
+    }),
+    z.object({
+      type: z.literal("session_resume_failed"),
+      payload: z.object({ cause: sessionChatFailureCause }).passthrough(),
+    }),
+    z.object({
+      type: z.literal("session_created"),
+      payload: z
+        .object({ session: z.object({ session_id: z.string() }).passthrough() })
+        .passthrough(),
+    }),
+    z.object({
+      type: z.literal("session_create_failed"),
+      payload: z.object({ cause: sessionChatFailureCause }).passthrough(),
+    }),
+    z.object({
+      type: z.literal("dataset_context_switched"),
+      payload: z.object({ resource: resourceRef }).passthrough(),
+    }),
+    z.object({
+      type: z.literal("dataset_context_switch_failed"),
+      payload: z.object({ cause: sessionChatFailureCause }).passthrough(),
+    }),
   ],
 );
 

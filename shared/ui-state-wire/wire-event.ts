@@ -55,6 +55,98 @@ export type ScopeMismatchCause =
   | "project_not_found"
   | "access_revoked";
 
+/** Why a client-reported session-chat outcome failed (ADR-050 §e.5 / DR-8).
+ *  The members mirror the retired-egress failure surface verbatim — the client
+ *  narrates the past-tense failure it observed at the session SSOT; ui-state has
+ *  zero egress and transitions on the report. */
+export type SessionChatFailureCause =
+  | "list_sessions_degraded"
+  | "session_resume_failed"
+  | "session_create_failed"
+  | "dataset_access_denied"
+  | "dataset_context_switch_failed";
+
+// ───────────────────────────── session-chat outcome display data (ADR-050 §e.5) ─────────────────────────────
+// The display-data shapes the client-reported session-chat outcomes carry —
+// LIFTED VERBATIM from the retired invoke OUTPUT types (INV-PCO: the client
+// narrates the data it observed at the session SSOT; ui-state transitions on the
+// report and never re-probes).
+
+/** One session summary row (← the retired LoadSessionListOutput item shape). */
+export type SessionSummaryWire = {
+  id: string;
+  title: string | null;
+  last_active_at: string;
+  active_dataset_id: string | null;
+};
+
+/** One transcript message (← the retired ResumeSessionOutput transcript shape). */
+export type TranscriptMessageWire = {
+  id: string;
+  role: "user" | "assistant" | "tool";
+  content: string;
+  ts: string;
+};
+
+/** The active resource (dataset) a resume / switch outcome carries. */
+export type ResourceRefWire = { type: ResourceType | null; id: string | null };
+
+/** The created-session display data (← the retired CreateSessionEagerlyOutput). */
+export type CreatedSessionWire = { session_id: string };
+
+/** The session-chat client-reported OUTCOME members (ADR-050 §e.5 / DR-8/AR-8).
+ *  ui-state's session-chat machine is report-driven: each surviving UI intent
+ *  SETTLES waiting for one of these past-tense outcome reports, which it
+ *  transitions on (zero egress). The payload field lists are the retired invoke
+ *  OUTPUT types verbatim. Each happy member has a `*_failed` partner carrying a
+ *  {@link SessionChatFailureCause}. */
+export type SessionChatWireEvent =
+  // loadSessionList → ← refresh_session_list / project_ready entry
+  | {
+      type: "session_list_loaded";
+      payload: {
+        sessions: SessionSummaryWire[];
+        next_cursor: string | null;
+        has_more: boolean;
+      };
+    }
+  | {
+      type: "session_list_failed";
+      payload: { cause: SessionChatFailureCause };
+    }
+  // resumeSession → ← session_clicked
+  | {
+      type: "session_resumed";
+      payload: {
+        session_id: string;
+        transcript: TranscriptMessageWire[];
+        resource?: ResourceRefWire;
+        session_dataset_unavailable?: boolean;
+      };
+    }
+  | {
+      type: "session_resume_failed";
+      payload: { cause: SessionChatFailureCause };
+    }
+  // createSessionEagerly → ← first_message_sent
+  | {
+      type: "session_created";
+      payload: { session: CreatedSessionWire };
+    }
+  | {
+      type: "session_create_failed";
+      payload: { cause: SessionChatFailureCause };
+    }
+  // switchDatasetContext → ← dataset_resolved_by_agent / dataset_picked_directly
+  | {
+      type: "dataset_context_switched";
+      payload: { resource: ResourceRefWire };
+    }
+  | {
+      type: "dataset_context_switch_failed";
+      payload: { cause: SessionChatFailureCause };
+    };
+
 export type ChatAppWireEvent =
   // ── client-reported onboarding outcomes (ADR-049/050) — the client probes the
   //    org SSOT and narrates the past-tense result; ui-state transitions on the
@@ -128,4 +220,9 @@ export type ChatAppWireEvent =
       payload: { resource_id: string; resource_type: ResourceType };
     }
   | { type: "suggestion_chip_clicked_upload" }
-  | { type: "suggestion_chip_clicked_browse_projects" };
+  | { type: "suggestion_chip_clicked_browse_projects" }
+  // ── client-reported session-chat OUTCOME members (ADR-050 §e.5 / DR-8/AR-8) —
+  //    the report-driven half of ui-state's zero-egress mandate. The machine
+  //    SETTLES on each surviving intent (above) and transitions on the matching
+  //    outcome report below. ──
+  | SessionChatWireEvent;

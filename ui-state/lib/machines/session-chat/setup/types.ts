@@ -19,15 +19,20 @@ import type { ResourceType } from "../../../domain/active-scope.ts";
 // wire literal from one place without each reaching into ../../../domain.
 export type { ResourceType };
 
+// REPORT-DRIVEN state surface (ADR-050 §e.5 / DR-8/AR-8): no invoke states. The
+// retired invoke states (loading_session_list / resuming_session /
+// creating_session / switching_dataset_context) collapse — the surviving UI
+// intents now SETTLE in a non-invoke waiting state until the matching client
+// OUTCOME report arrives. `awaiting_session_list_report` is the no-invoke
+// successor to `loading_session_list`; resume / create / dataset-switch SETTLE
+// in their originating live state (session_list_loaded / session_welcome /
+// session_active) until the report transitions them.
 export type SessionChatState =
   | "waiting_for_project"
-  | "loading_session_list"
+  | "awaiting_session_list_report"
   | "session_list_loaded"
-  | "resuming_session"
   | "session_welcome"
-  | "creating_session"
   | "session_active"
-  | "switching_dataset_context"
   | "error_recoverable";
 
 export interface SessionSummary {
@@ -44,12 +49,19 @@ export interface TranscriptMessage {
   ts: string;
 }
 
+// The cause surfaced on `underlying_cause_tag`. The report-driven `*_failed`
+// members carry a `SessionChatFailureCause` (the wire SSOT in
+// shared/ui-state-wire/wire-event.ts) verbatim into this tag; `dataset_not_found`
+// is the machine-internal tag for a resumed session whose dataset 404'd
+// (session_dataset_unavailable). string-literal unions with equal members are
+// assignable, so the machine-local copy need not import the shared type.
 export type SessionChatCauseTag =
-  | "transient"
   | "list_sessions_degraded"
-  | "session_not_found"
-  | "dataset_not_found"
-  | "dataset_access_denied";
+  | "session_resume_failed"
+  | "session_create_failed"
+  | "dataset_access_denied"
+  | "dataset_context_switch_failed"
+  | "dataset_not_found";
 
 export interface SessionChatMachineContext {
   request_id: string;
@@ -118,17 +130,54 @@ export interface SessionChatMachineContext {
   last_stale_intent: { intent_type: string; target_id: string } | null;
 }
 
+/** The failure cause a `*_failed` outcome report carries. Mirrors the shared
+ *  `SessionChatFailureCause` (string-literal unions with equal members are
+ *  assignable, so the machine-local copy avoids a shared import). */
+export type SessionChatFailureCause =
+  | "list_sessions_degraded"
+  | "session_resume_failed"
+  | "session_create_failed"
+  | "dataset_access_denied"
+  | "dataset_context_switch_failed";
+
 export type SessionChatEvent =
-  // External (FE-emitted):
+  // ── surviving UI intents (FE-emitted) — each now SETTLES into a waiting
+  //    state and transitions on the matching OUTCOME report below: ──
   | { type: "session_clicked"; session_id: string }
   | { type: "new_session_clicked" }
   | { type: "first_message_sent"; content: string }
   | { type: "refresh_session_list" }
   | { type: "dataset_resolved_by_agent"; resource_id: string; resource_type: ResourceType }
   | { type: "dataset_picked_directly"; resource_id: string; resource_type: ResourceType }
-  | { type: "retry_clicked" }
   | { type: "suggestion_chip_clicked_upload" }
   | { type: "suggestion_chip_clicked_browse_projects" }
+  // ── client-reported OUTCOME members (ADR-050 §e.5 / DR-8/AR-8) — the
+  //    forwardToActor seam spreads the wire payload to top-level fields, so
+  //    these carry the display data directly (not under a `payload` key). The
+  //    machine transitions on them (zero egress). Payload field lists = the
+  //    retired invoke OUTPUT types verbatim. ──
+  | {
+      type: "session_list_loaded";
+      sessions: SessionSummary[];
+      next_cursor: string | null;
+      has_more: boolean;
+    }
+  | { type: "session_list_failed"; cause: SessionChatFailureCause }
+  | {
+      type: "session_resumed";
+      session_id: string;
+      transcript: TranscriptMessage[];
+      resource?: { type: ResourceType | null; id: string | null };
+      session_dataset_unavailable?: boolean;
+    }
+  | { type: "session_resume_failed"; cause: SessionChatFailureCause }
+  | { type: "session_created"; session: { session_id: string } }
+  | { type: "session_create_failed"; cause: SessionChatFailureCause }
+  | {
+      type: "dataset_context_switched";
+      resource: { type: ResourceType | null; id: string | null };
+    }
+  | { type: "dataset_context_switch_failed"; cause: SessionChatFailureCause }
   // Cross-machine (orchestrator-emitted; never FE-emitted):
   | {
       type: "project_ready";

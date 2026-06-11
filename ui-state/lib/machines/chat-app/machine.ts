@@ -159,6 +159,16 @@ export function createChatAppMachine() {
               suggestion_chip_clicked_browse_projects: {
                 actions: "forwardToSessionChat",
               },
+              // ── client-reported session-chat OUTCOME reports (ADR-050 §e.5 /
+              //    DR-8): forwarded verbatim to the report-driven child. ──
+              session_list_loaded: { actions: "forwardToSessionChat" },
+              session_list_failed: { actions: "forwardToSessionChat" },
+              session_resumed: { actions: "forwardToSessionChat" },
+              session_resume_failed: { actions: "forwardToSessionChat" },
+              session_created: { actions: "forwardToSessionChat" },
+              session_create_failed: { actions: "forwardToSessionChat" },
+              dataset_context_switched: { actions: "forwardToSessionChat" },
+              dataset_context_switch_failed: { actions: "forwardToSessionChat" },
             },
             invoke: {
               id: "session-chat",
