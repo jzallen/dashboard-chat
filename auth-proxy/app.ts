@@ -638,13 +638,12 @@ app.all("/ui-state/*", async (c) => {
     }
   }
 
-  // Capture the inbound event type BEFORE we consume the body for proxying.
-  // Per ADR-030 §SD4 the auth-proxy emits KPI K3 events on transitions:
-  //   - auth_retry_clicked: identified from the inbound event payload
-  //   - auth_recoverable_error_shown: identified from the upstream projection
-  //   - ready_reached: identified from the upstream projection
-  const inboundEventType = await peekInboundEventType(c.req.raw);
-
+  // Per ADR-030 §SD4 the auth-proxy emits KPI K3 events on transitions, both
+  // read from the upstream /state projection:
+  //   - auth_recoverable_error_shown: state === error_recoverable
+  //   - ready_reached: state === ready
+  // (The inbound-keyed auth_retry_clicked trigger was retired in CDO-S4 once
+  // `retry_clicked` left the closed wire union in CDO-S3.)
   const response = await proxyToUpstream(
     c,
     UI_STATE_URL,
@@ -659,32 +658,13 @@ app.all("/ui-state/*", async (c) => {
   // caller (matters for test spies and for tail-and-ship log pipelines
   // that batch on response close).
   try {
-    await emitKpiEventsForResponse(response.clone(), inboundEventType);
+    await emitKpiEventsForResponse(response.clone());
   } catch {
     // Silent — KPI emission is best-effort and must not break the proxy.
   }
 
   return response;
 });
-
-/**
- * Read the inbound JSON body (if any) and return the event `type` for
- * `POST /ui-state/state/events` requests. Returns null for non-JSON or
- * type-less bodies. Cloning is necessary because Hono's downstream
- * `proxyToUpstream` reads `c.req.raw.body` too — a stream can only be consumed
- * once. We tee via `Request.clone()`.
- */
-async function peekInboundEventType(req: Request): Promise<string | null> {
-  try {
-    const cloned = req.clone();
-    const contentType = (cloned.headers.get("content-type") || "").toLowerCase();
-    if (!contentType.includes("application/json")) return null;
-    const json = (await cloned.json()) as { type?: unknown };
-    return typeof json?.type === "string" ? json.type : null;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Inspect the upstream response and emit any matching KPI K3 events to
@@ -696,11 +676,9 @@ async function peekInboundEventType(req: Request): Promise<string | null> {
  * Events:
  *   - onboarding state === "error_recoverable"  → auth_recoverable_error_shown
  *   - onboarding state === "ready"              → ready_reached
- *   - inbound type === "retry_clicked"          → auth_retry_clicked
  */
 async function emitKpiEventsForResponse(
   response: Response,
-  inboundEventType: string | null,
 ): Promise<void> {
   const contentType = (response.headers.get("content-type") || "").toLowerCase();
   if (!contentType.includes("application/json")) return;
@@ -712,13 +690,6 @@ async function emitKpiEventsForResponse(
   }
   const { requestId, state, tag } = readOnboardingSignal(body);
 
-  if (inboundEventType === "retry_clicked") {
-    emitKpiEvent({
-      event: "auth_retry_clicked",
-      request_id: requestId,
-      underlying_cause_tag: tag,
-    });
-  }
   if (state === "error_recoverable") {
     emitKpiEvent({
       event: "auth_recoverable_error_shown",

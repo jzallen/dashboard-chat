@@ -5,7 +5,7 @@
  *
  * | # | Group | Scenario |
  * |---|---|---|
- * | 1 | KPI K3 | emits `auth_retry_clicked` when caller forwards a `retry_clicked` event |
+ * | 1 | KPI K3 | emits `auth_recoverable_error_shown` / `ready_reached` from the `/state` document onboarding region |
  * | 2 | test-mirror | captures the most-recent `Authorization` header on `/ui-state/*` and returns it via `GET /test/last-seen-authorization` |
  * | 3 | test-mirror | returns 404 from `GET /test/last-seen-authorization` when `AUTH_MODE=production` |
  * | 4 | SLOW_MODE | delays `/ui-state/*` responses by `SLOW_MODE_DELAY_MS` when set |
@@ -16,12 +16,16 @@
  * - Behavior budget for this file (B4): 1 behavior × 2 = 2 tests max per behavior. Variations of the same behavior are parametrized.
  */
 
-// Per ADR-030 §SD4 the auth-proxy emits three JSON events to stdout when it
-// observes ui-state transitions:
+// Per ADR-030 §SD4 the auth-proxy emits JSON events to stdout when it
+// observes ui-state transitions. Both surviving K3 events read the UPSTREAM
+// /state projection:
 //
 //   - auth_recoverable_error_shown  — upstream returned state=error_recoverable
-//   - auth_retry_clicked            — caller forwarded a retry_clicked event
 //   - ready_reached                 — upstream returned state=ready
+//
+// (The inbound-keyed auth_retry_clicked trigger was retired in CDO-S4 once
+// `retry_clicked` was removed from the closed wire union in CDO-S3; the retry
+// funnel re-derives from `org_create.intercepted` per ADR-048 §5.)
 //
 // Each event carries the request_id from the projection envelope and
 // the underlying_cause_tag where relevant.
@@ -176,41 +180,10 @@ describe("KPI K3 event emission on /ui-state/* (B4)", () => {
     },
   );
 
-  it("emits auth_retry_clicked when caller forwards a retry_clicked event", async () => {
-    mockFetch.mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          phase: "onboarding",
-          request_id: "R-7a4f-901c",
-          regions: {
-            onboarding: { state: "creating_org", context: {} },
-            projectContext: { state: "verifying", context: {} },
-            sessionChat: { state: "verifying", context: {} },
-          },
-        }),
-        {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        },
-      ),
-    );
-
-    const capture = captureStdout();
-    try {
-      const res = await makeRequest("/ui-state/state/events", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ type: "retry_clicked" }),
-      });
-      expect(res.status).toBe(200);
-    } finally {
-      capture.restore();
-    }
-
-    const matching = capture.events.find((e) => e.event === "auth_retry_clicked");
-    expect(matching).toBeDefined();
-    expect(matching?.request_id).toBe("R-7a4f-901c");
-  });
+  // The `auth_retry_clicked` inbound trigger test was removed in CDO-S4: the
+  // `retry_clicked` wire event no longer exists (retired from the closed union
+  // in CDO-S3), so its emitter is unreachable dead code. The surviving emitters
+  // above key off the upstream /state projection, not the inbound event.
 });
 
 // ----------------------------------------------------------------------------
