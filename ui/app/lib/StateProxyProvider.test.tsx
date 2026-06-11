@@ -21,7 +21,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { dropSessionFlag, giveSessionFlag } from "./_stateProxyTestKit";
 import { createStateProxy } from "./state-proxy";
-import { StateProxyProvider, type StateProxyApi, useStateProxy } from "./StateProxyProvider";
+import { type StateProxyApi, StateProxyProvider, useStateProxy } from "./StateProxyProvider";
 
 // ── test doubles (at the proxy's transport port) ─────────────────────────────
 
