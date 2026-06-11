@@ -5,19 +5,16 @@
 // deep-link entry path. It owns the `org_id` + `project_id` halves of
 // `active_scope`.
 //
-// State surface:
+// State surface (CLIENT-REPORT-DRIVEN — ADR-049 §3 / ADR-050 §f, CDO-S1):
 //
-//   resolving_initial_scope (initial) ─┬─→ project_selected
-//                                       ├─→ no_projects
-//                                       └─→ scope_mismatch_terminal
-//   no_projects                        ─→ creating_project (valid name)
-//                                      ─→ self                (empty name; inline error)
-//   creating_project (invoke)          ─┬─→ project_selected   (onDone)
-//                                       └─→ error_recoverable  (onError; transient)
-//   project_selected                   (entry assigns context.project; emits project_selected)
-//   scope_mismatch_terminal            ─→ resolving_initial_scope (back_to_projects_clicked)
-//   error_recoverable                  ─→ creating_project        (retry_clicked; preserves pending_project_name)
-//   switching_project                  — atomic mid-flow project switch.
+//   awaiting_scope_report (initial) ─┬─→ project_selected  (scope_resolved)
+//                                     ├─→ project_selected  (project_created — Phase D)
+//                                     └─→ no_projects       (no_projects_found)
+//   no_projects                      ─→ project_selected    (project_created — Phase D)
+//   project_selected                 (entry assigns context.project; emits project_selected)
+//   scope_mismatch_terminal          ─→ awaiting_scope_report (back_to_projects_clicked)
+//   error_recoverable                ─→ awaiting_scope_report (retry_clicked)
+//   switching_project (invoke)       — atomic mid-flow project switch (US-207; CDO-S3 reworks).
 //
 // Cross-machine isolation invariant: this file does NOT import from
 // `session-chat.ts` or `login-and-org-setup.ts`. The orchestrator mediates all
@@ -50,13 +47,10 @@ import {
   assignCreatedProject,
   assignResolvedScope,
   assignSwitchedProject,
-  capturePendingProjectName,
   captureDeepLinkWish,
   captureSwitchTarget,
   clearErrorAndBumpRetries,
-  clearProjectValidationError,
   clearScopeMismatch,
-  recordProjectValidationError,
   tagCause,
 } from "./setup/actions.ts";
 import { buildActors, type ProjectContextMachineDeps } from "./setup/actors.ts";
@@ -86,22 +80,21 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
       clearScopeMismatch: assign(clearScopeMismatch),
       clearErrorAndBumpRetries: assign(clearErrorAndBumpRetries),
       tagCause: assign(tagCause),
-      recordProjectValidationError: assign(recordProjectValidationError),
-      clearProjectValidationError: assign(clearProjectValidationError),
-      capturePendingProjectName: assign(capturePendingProjectName),
     },
   }).createMachine({
     id: "project-context",
-    initial: "resolving_initial_scope",
+    initial: "awaiting_scope_report",
     // Root-level open_deep_link handler — available from ANY state. A cold
     // deep-link can arrive while the machine is in no_projects,
     // project_selected, or any other live state. The handler captures the URL
-    // wish into `deeplink_*` ctx and re-enters resolving_initial_scope so the
-    // resolver re-runs with the new wish.
+    // wish into `deeplink_*` ctx and re-enters awaiting_scope_report so the
+    // client can re-probe and report the resolution for the new wish (the
+    // cross_tenant / project_not_found discrimination of that wish is a client
+    // `scope_mismatch` report — CDO-S3).
     on: {
       open_deep_link: {
         actions: "captureDeepLinkWish",
-        target: ".resolving_initial_scope",
+        target: ".awaiting_scope_report",
         reenter: true,
       },
     },
@@ -124,7 +117,11 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
       last_used_degraded_project_ids: [],
     }),
     states: {
-      resolving_initial_scope: {
+      // Cold-start (no invoke). The parent forwards `auth_ready` on the advance
+      // to engaged, seeding org_id + first_name. The machine then waits for the
+      // CLIENT to probe the backend (GET /api/projects) and REPORT the
+      // resolution (ADR-049 §3 / ADR-050 §f) — it never resolves scope itself.
+      awaiting_scope_report: {
         on: {
           // Entry from J-001 — orchestrator broadcasts this when J-001
           // transitions into `ready`. The payload carries the inherited
@@ -132,81 +129,37 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
           // never re-fetches them from JWT / /api/orgs/me (DWD-6, F-5).
           auth_ready: {
             actions: "assignAuthReady",
-            // Stay in resolving_initial_scope — the invoke below fires.
-            target: "resolving_initial_scope",
+            target: "awaiting_scope_report",
             reenter: true,
           },
-          // Note: open_deep_link is handled at the machine root level so it
-          // can arrive from any live state (no_projects,
-          // project_selected, etc).
-        },
-        invoke: {
-          src: "resolveInitialScope",
-          input: ({ context }) => ({
-            org_id: context.org_id,
-            deeplink_project_id: context.deeplink_project_id,
-            principal_id: context.principal_id,
-          }),
-          onDone: [
-            {
-              guard: "isCrossTenant",
-              target: "scope_mismatch_terminal",
-              actions: { type: "tagCause", params: { tag: "cross_tenant" } },
-            },
-            {
-              guard: "isProjectNotFound",
-              target: "scope_mismatch_terminal",
-              actions: { type: "tagCause", params: { tag: "project_not_found" } },
-            },
-            {
-              guard: "isNoProjects",
-              target: "no_projects",
-            },
-            {
-              target: "project_selected",
-              actions: "assignResolvedScope",
-            },
-          ],
-          onError: {
-            target: "error_recoverable",
-            actions: { type: "tagCause", params: { tag: "transient" } },
+          // Client reports an existing project was picked → settle on it.
+          scope_resolved: {
+            target: "project_selected",
+            actions: "assignResolvedScope",
           },
+          // Phase D from a cold awaiting state: the (auto) default project was
+          // created and reported → settle on it.
+          project_created: {
+            target: "project_selected",
+            actions: "assignCreatedProject",
+          },
+          // Client reports the backend has no project yet → no_projects shell.
+          no_projects_found: {
+            target: "no_projects",
+          },
+          // Note: open_deep_link is handled at the machine root level so it
+          // can arrive from any live state (no_projects, project_selected, …).
         },
       },
       no_projects: {
         entry: { type: "tagCause", params: { tag: "no_projects" } },
         on: {
-          create_project_clicked: {
-            target: "creating_project",
-          },
-          create_project_submitted: [
-            {
-              guard: "projectNameValid",
-              target: "creating_project",
-              actions: ["clearProjectValidationError", "capturePendingProjectName"],
-            },
-            {
-              // Empty / invalid name — stay in this state with inline error.
-              actions: "recordProjectValidationError",
-            },
-          ],
-        },
-      },
-      creating_project: {
-        invoke: {
-          src: "createProject",
-          input: ({ context }) => ({
-            org_name: context.pending_project_name,
-            request_id: context.request_id,
-            principal_id: context.principal_id,
-          }),
-          onDone: {
+          // Phase D from the no_projects shell: the default project was created
+          // and reported → settle on it (Phase D accepts project_created from
+          // either awaiting_scope_report OR no_projects).
+          project_created: {
             target: "project_selected",
             actions: "assignCreatedProject",
-          },
-          onError: {
-            target: "error_recoverable",
-            actions: { type: "tagCause", params: { tag: "transient" } },
           },
         },
       },
@@ -266,15 +219,18 @@ export function createProjectContextMachine(deps: ProjectContextMachineDeps) {
       scope_mismatch_terminal: {
         on: {
           back_to_projects_clicked: {
-            target: "resolving_initial_scope",
+            target: "awaiting_scope_report",
             actions: "clearScopeMismatch",
           },
         },
       },
       error_recoverable: {
         on: {
+          // Recoverable failures (e.g. a transient switch) return to the
+          // report-waiting neutral so the client can re-probe + re-report.
+          // CDO-S3 reworks the full report-accepting error_recoverable.
           retry_clicked: {
-            target: "creating_project",
+            target: "awaiting_scope_report",
             actions: "clearErrorAndBumpRetries",
           },
         },

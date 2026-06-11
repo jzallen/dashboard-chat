@@ -72,26 +72,29 @@ export type SwitchProjectActor = ReturnType<
 >;
 
 export interface ProjectContextMachineDeps {
-  resolveInitialScope: ResolveInitialScopeActor;
-  createProject: CreateProjectActor;
-  /** Optional: atomic project switching. When omitted, the
-   *  `switching_project_intent` event is dropped (no-op). */
+  /** Atomic project switching (US-207). The ONLY invoke the report-driven
+   *  machine retains (CDO-S1). When omitted, the `switching_project_intent`
+   *  event drives a fallback actor that throws a named diagnostic. */
   switchProject?: SwitchProjectActor;
+  /** RETIRED in CDO-S1 (ADR-049 §3): the machine no longer invokes a
+   *  server-side initial-scope resolver or a create-project actor — scope is
+   *  client-reported (scope_resolved / project_created / no_projects_found).
+   *  Kept OPTIONAL so the production composition root + legacy test harnesses
+   *  may still pass them harmlessly until their wiring is pruned (CDO-S3). */
+  resolveInitialScope?: ResolveInitialScopeActor;
+  createProject?: CreateProjectActor;
 }
 
 /**
  * Build the machine's actor map from the injected `deps`. machine.ts threads the
- * return straight into `setup({ actors })` so the statechart only names actors
- * (`src: "resolveInitialScope"`), never wires them. A `fromPromise` fallback
- * stands in for the optional `switchProject` — it throws so test setups that
- * never wired it surface a named diagnostic rather than silently succeeding. The
- * fallback's generics stay precise so `ReturnType<typeof buildActors>` (and the
- * `ProjectContextActor` union derived from it) is exact.
+ * return straight into `setup({ actors })` so the statechart only names actors,
+ * never wires them. After the CDO-S1 report-driven realignment the only invoked
+ * actor is `switchProject` (US-207); a `fromPromise` fallback stands in when it
+ * is absent so a never-wired switch surfaces a named diagnostic rather than
+ * silently succeeding.
  */
 export function buildActors(deps: ProjectContextMachineDeps) {
   return {
-    resolveInitialScope: deps.resolveInitialScope,
-    createProject: deps.createProject,
     // fromPromise fallback when deps.switchProject is absent. The fallback
     // throws so test setups that never wired it surface a named diagnostic
     // rather than silently succeeding.

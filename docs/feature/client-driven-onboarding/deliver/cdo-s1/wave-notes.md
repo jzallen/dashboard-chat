@@ -108,3 +108,116 @@ acceptance checkpoints
 `test_org_absent_from_db_routes_to_onboarding`,
 `test_org_creation_persists_created_by`) are GREEN; the `walking_skeleton` +
 `default_project` cdo_s1 tests stay RED until 01-02 realigns project-context.
+
+---
+
+# CDO-S1 wave notes — step 01-02
+
+Project-context report-driven realignment — Phase D (slice CDO-S1, OOP / XState v5).
+
+## What landed (01-02)
+
+The ui-state project-context machine moved from invoke-driven
+(`resolveInitialScope` / `createProject` server I/O) to **client-report-driven**
+transitions, completing Phase D (the automatic default project) per ADR-049 §3 +
+ADR-050 §f.
+
+- `project-context/machine.ts` — initial state `awaiting_scope_report` (no
+  invoke; renamed from `resolving_initial_scope`). `awaiting_scope_report` on
+  `scope_resolved` → `project_selected` (assignResolvedScope), on
+  `project_created` → `project_selected` (assignCreatedProject — Phase D), on
+  `no_projects_found` → `no_projects`. `no_projects` on `project_created` →
+  `project_selected` (Phase D from either state). The `resolveInitialScope` &
+  `createProject` invokes + the `creating_project` state + the
+  `create_project_clicked` / `create_project_submitted` handlers retired. The
+  root `open_deep_link` re-enter target + `auth_ready` re-enter target +
+  `scope_mismatch_terminal` / `error_recoverable` recovery targets all repoint to
+  `awaiting_scope_report`. `switching_project` + `switchProject` invoke +
+  `scope_mismatch_terminal` UNTOUCHED (CDO-S3 reworks the switch + deep-link
+  discrimination).
+- `setup/types.ts` — `ProjectContextEvent` gained
+  `scope_resolved`/`project_created` (payload `{project:{id,name}}`) +
+  `no_projects_found` (`{}`); dropped `create_project_clicked` /
+  `create_project_submitted`. `ProjectContextState` drops
+  `resolving_initial_scope` / `creating_project`, adds `awaiting_scope_report`.
+- `setup/actions.ts` — `assignResolvedScope` / `assignCreatedProject` now read
+  `event.project.{id,name}` (the report payload) instead of `event.output.*`
+  (the retired invoke result). The unused
+  `recordProjectValidationError` / `clearProjectValidationError` /
+  `capturePendingProjectName` (create-form actions) removed.
+- The parent advance `engaged.project_context → engaged.chat` is **reused
+  verbatim**: the existing `isInitialProjectSelected` onSnapshot guard
+  (project-context child value === `project_selected` &&
+  `last_forwarded_project_id === null`) fires; only the *producer* of
+  `project_selected` changed (a client report instead of an invoke onDone). The
+  (f) triple (projectContext=project_selected, active_scope.project_id non-null,
+  phase=chat) is atomic on the `project_created` POST's own response document.
+
+## Reconciliations worth recording
+
+### Transport BYTE-untouched
+
+A posted `project_created {payload:{project}}` reaches the project-context child
+as `{type:"project_created", project:{id,name}}` because the parent's
+`forwardChildEventToActiveChild` spreads `payload` to the event top level —
+identical to the org-report transport 01-01 relied on. No router/parent change.
+
+### Optional retired deps (deps shape only)
+
+`ProjectContextMachineDeps.resolveInitialScope` / `.createProject` became
+**optional** (the machine no longer invokes them) so the production composition
+root (`ui-state/index.ts`, OUT OF SCOPE) + the chat-app test harnesses may keep
+passing them harmlessly until their wiring is pruned (CDO-S3). `buildActors` now
+wires only `switchProject` (the one retained invoke). The
+`resolveInitialScopeFn` / `createProjectFn` production factories + the
+`isCrossTenant` / `isProjectNotFound` / `isNoProjects` guards are RETAINED
+(unreferenced by the machine now) for the CDO-S3 deep-link `scope_mismatch`
+rework; only `projectNameValid` (which referenced the removed
+`create_project_submitted` event and could not compile) was dropped.
+
+### Projection + settle + zero states
+
+- `derive-state-document.ts` — `PROJECT_CONTEXT_STATE_MAP` keys realigned:
+  added `awaiting_scope_report`, dropped `resolving_initial_scope` /
+  `creating_project`, kept `switching_project`. (`deriveProjectContext`'s
+  no-child fallback was already `awaiting_scope_report` from 01-01.)
+- `snapshot.ts` — the project-context "transient/not-settled" set dropped
+  `resolving_initial_scope` / `creating_project` so `awaiting_scope_report` /
+  `no_projects` / `project_selected` settle immediately; only
+  `switching_project` stays transient. This is what makes the (f) triple atomic
+  on the POST response (settle no longer hangs waiting on a removed invoke).
+
+### Sanctioned test reworks (chat-app integration)
+
+The chat-app integration / contract / snapshot / state-router tests' `arriveAtChat`
+helpers drove project-context to `project_selected` via the removed
+`resolveInitialScope` auto-resolve. They now report the resolved scope THROUGH
+THE PARENT (`child_event {type:"scope_resolved", payload:{project}}`) — the same
+report-through-parent pattern 01-01 applied to `org_found`. Updated:
+`integration.test.ts`, `derive-state-document.contract.test.ts`,
+`snapshot.test.ts`, `state-router.integration.test.ts`. The state-router happy
+cascade test now pins the intermediate `project_context` + `awaiting_scope_report`
+pause before the `scope_resolved` POST completes the cascade to `chat`. The
+project-context `machine.test.ts` B1-B5 invoke tests were replaced with
+report-driven transition tests (SANCTIONED rework per ADR-049); the US-207
+switch tests' ARRANGE moved to a `scope_resolved` report (the switch PATH +
+assertions unchanged).
+
+### Contract test reconciliation (carried forward, still honest)
+
+The `derive-state-document.contract.test.ts` chat-reaching arms retain full
+three-region `buildProjection` log-fold equivalence (the live project-context
+reaches `project_selected`, which the log fold also yields from
+`project_selected`). The needs_org arm's un-invoked project-context region stays
+pinned directly to `awaiting_scope_report` (the out-of-scope `buildProjection`
+fold still cannot model it — flagged for CDO-S2, unchanged from 01-01).
+
+## Result
+
+ALL 5 cdo_s1 acceptance checkpoints GREEN
+(`test_default_project_is_created_automatically_and_completes`,
+`test_orgless_principal_completes_org_and_default_project`, + the 3 onboarding
+checkpoints from 01-01). Full ui-state vitest GREEN (177 tests; the net -3 vs
+01-01's 180 is the B1-B5/B6-B7 invoke tests replaced by the leaner report-driven
+set). The (f) triple is atomic on the `project_created` POST; the switch /
+deep-link paths remain green.

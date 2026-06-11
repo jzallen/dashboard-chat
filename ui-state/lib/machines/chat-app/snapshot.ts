@@ -54,11 +54,10 @@ const TRANSIENT_CHILD_STATES: Readonly<
   // onboarding state (awaiting_org_report/needs_org/ready/error_recoverable) is
   // settled the instant it is reached, so the set is empty.
   "onboarding": new Set<string>(),
-  "project-context": new Set([
-    "resolving_initial_scope",
-    "creating_project",
-    "switching_project",
-  ]),
+  // Client-reported model (ADR-049/050): awaiting_scope_report / no_projects /
+  // project_selected all SETTLE immediately (no invoke). Only the retained
+  // switching_project (US-207 switch invoke) is transient.
+  "project-context": new Set(["switching_project"]),
   "session-chat": new Set([
     "loading_session_list",
     "resuming_session",

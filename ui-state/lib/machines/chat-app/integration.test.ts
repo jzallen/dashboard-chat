@@ -184,10 +184,20 @@ async function arriveAtChat(sessions: SessionSummary[] = [session("s1")]) {
   // on start. Report the returning user's org THROUGH THE PARENT exactly as the
   // HTTP transport does — the parent's forwardChildEventToActiveChild spreads
   // `payload` to the event top-level and sendTo's the active child, so onboarding
-  // receives { type:"org_found", org:{id,name} } → ready → parent advances.
+  // receives { type:"org_found", org:{id,name} } → ready → parent advances to
+  // engaged.project_context.
   actor.send({
     type: "child_event",
     child_event: { type: "org_found", payload: { org: ORG } },
+  });
+  // The project-context child now waits in awaiting_scope_report (no server-side
+  // resolve). Report the resolved scope THROUGH THE PARENT — project-context
+  // receives { type:"scope_resolved", project:{id,name} } → project_selected →
+  // parent advances to engaged.chat → session-chat loads.
+  await waitFor(actor, (a) => childState(a, "project-context") === "awaiting_scope_report");
+  actor.send({
+    type: "child_event",
+    child_event: { type: "scope_resolved", payload: { project: PROJECT_A } },
   });
   await waitFor(actor, (a) => childState(a, "session-chat") === "session_list_loaded");
   return { actor, rec };
@@ -221,10 +231,10 @@ describe("ChatApp Phase 2 — happy forward cycle (login → project → chat)",
     expect(childContext<SessionChatMachineContext>(actor, "session-chat")!.org_id).toBe("org-acme");
     expect(childContext<SessionChatMachineContext>(actor, "session-chat")!.project.id).toBe("proj-A");
 
-    // Idempotent: project_ready forwarded EXACTLY once for proj-A even though
-    // project-context may emit project_selected more than once (initial invoke
-    // + the auth_ready re-resolve). A double-forward would reenter
-    // loading_session_list and push a 2nd "proj-A" — there is exactly one.
+    // project_ready forwarded EXACTLY once for proj-A: the single
+    // scope_resolved report settles project_selected once, and the parent's
+    // isInitialProjectSelected guard forwards project_ready a single time, so
+    // loading_session_list runs once and pushes one "proj-A".
     expect(rec.loadCalls).toEqual(["proj-A"]);
 
     // A live user intent reaches the active child and drives it to session_active.

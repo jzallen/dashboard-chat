@@ -208,10 +208,17 @@ async function arriveAtChat(
     input: makeInput(),
   }).start();
   // Client-reported model: report the returning user's org through the parent so
-  // onboarding advances awaiting_org_report → ready → the cascade reaches chat.
+  // onboarding advances awaiting_org_report → ready → engaged.project_context.
   actor.send({
     type: "child_event",
     child_event: { type: "org_found", payload: { org: ORG } },
+  });
+  // Then report the resolved project scope through the parent so project-context
+  // advances awaiting_scope_report → project_selected → engaged.chat.
+  await waitFor(actor, (a) => childState(a, "project-context") === "awaiting_scope_report");
+  actor.send({
+    type: "child_event",
+    child_event: { type: "scope_resolved", payload: { project: PROJECT_A } },
   });
   await waitFor(actor, (a) => childState(a, "session-chat") === "session_list_loaded");
   return { actor, rec };

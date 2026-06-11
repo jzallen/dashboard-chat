@@ -224,11 +224,28 @@ describe("ADR-046: POST /state/events returns the whole-actor document", () => {
     expect(begin.status).toBe(200);
     expect(begin.document.regions.onboarding.state).toBe("awaiting_org_report");
 
-    // The client reports the org it observed → onboarding ready → the cascade
-    // runs onboarding→project→chat. The POST response IS the cascaded document.
-    const { status, document } = await postStateEvent(
+    // The client reports the org it observed → onboarding ready → the parent
+    // advances to engaged.project_context. Under the client-reported model the
+    // project-context child then WAITS on the scope report (awaiting_scope_report);
+    // there is no server-side resolve, so the cascade pauses at project_context.
+    const afterOrg = await postStateEvent(
       app,
       { type: "org_found", payload: { org: { id: "org-1", name: "Acme Data" } } },
+      { userId: "u1", bearer: "tok-1" },
+    );
+    expect(afterOrg.status).toBe(200);
+    expect(afterOrg.document.phase).toBe("project_context");
+    expect(afterOrg.document.regions.onboarding.state).toBe("ready");
+    expect(afterOrg.document.regions.projectContext.state).toBe(
+      "awaiting_scope_report",
+    );
+
+    // The client probes the backend and reports the resolved project →
+    // project-context settles project_selected → the parent advances to
+    // engaged.chat. The POST response IS the cascaded document.
+    const { status, document } = await postStateEvent(
+      app,
+      { type: "scope_resolved", payload: { project: PROJECT_A } },
       { userId: "u1", bearer: "tok-1" },
     );
     expect(status).toBe(200);
@@ -476,11 +493,18 @@ describe("ADR-046: GET /state folds to the anonymous document pre-bootstrap", ()
   it("returns the live document once the principal has bootstrapped", async () => {
     const { app } = buildScenario({ requestClient: returningFetch() });
 
-    // Cold-start, then drive to chat via the client's org report.
+    // Cold-start, then drive to chat via the client's org + scope reports
+    // (client-reported model: onboarding advances on org_found, project-context
+    // advances on scope_resolved).
     await postStateEvent(app, { type: "session_begin" }, { userId: "u1", bearer: "tok-1" });
     await postStateEvent(
       app,
       { type: "org_found", payload: { org: { id: "org-1", name: "Acme Data" } } },
+      { userId: "u1", bearer: "tok-1" },
+    );
+    await postStateEvent(
+      app,
+      { type: "scope_resolved", payload: { project: PROJECT_A } },
       { userId: "u1", bearer: "tok-1" },
     );
 

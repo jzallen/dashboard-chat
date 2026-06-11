@@ -18,9 +18,8 @@ import type { ResourceType } from "../../../domain/active-scope.ts";
 import type { ProjectValidationError } from "./domain.ts";
 
 export type ProjectContextState =
-  | "resolving_initial_scope"
+  | "awaiting_scope_report"
   | "no_projects"
-  | "creating_project"
   | "project_selected"
   | "switching_project"
   | "scope_mismatch_terminal"
@@ -92,8 +91,16 @@ export interface ProjectContextMachineContext {
 
 export type ProjectContextEvent =
   | { type: "auth_ready"; org_id: string; user: { first_name: string } }
-  | { type: "create_project_clicked" }
-  | { type: "create_project_submitted"; org_name: string }
+  // Client-reported scope outcomes (ADR-049 §3 / ADR-050 §f). The client
+  // probes the backend (GET /api/projects) and REPORTS the resolution:
+  //   - scope_resolved  — an existing project was picked (carries {id,name}).
+  //   - project_created — the (auto / explicit) default project was created
+  //     and is reported (carries {id,name}); Phase D's settle trigger.
+  //   - no_projects_found — the backend has no project yet (carries {}).
+  // The project-bearing reports land their {id,name} on context.project.
+  | { type: "scope_resolved"; project: ProjectSummary }
+  | { type: "project_created"; project: ProjectSummary }
+  | { type: "no_projects_found" }
   | { type: "back_to_projects_clicked" }
   | { type: "retry_clicked" }
   // The `open_deep_link` event payload keys use the `intent_*` prefix — that's

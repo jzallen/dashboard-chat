@@ -128,9 +128,12 @@ const ONBOARDING_STATE_MAP: Readonly<Record<string, string>> = {
 };
 
 const PROJECT_CONTEXT_STATE_MAP: Readonly<Record<string, string>> = {
-  resolving_initial_scope: "resolving_initial_scope",
+  // Client-reported model (ADR-049/050): cold-start is awaiting_scope_report
+  // (no server-side resolveInitialScope). The retired resolving_initial_scope /
+  // creating_project invoke states are dropped. switching_project is retained
+  // (US-207 switch invoke; CDO-S3 reworks it).
+  awaiting_scope_report: "awaiting_scope_report",
   no_projects: "no_projects",
-  creating_project: "creating_project",
   project_selected: "project_selected",
   switching_project: "switching_project",
   scope_mismatch_terminal: "scope_mismatch_terminal",

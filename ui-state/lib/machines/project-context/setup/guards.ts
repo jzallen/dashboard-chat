@@ -13,16 +13,12 @@
 // annotates its arg with `GuardArgs` and is exported as one `guards` bundle the
 // machine threads into `setup({ guards })`.
 
-import { validateProjectName } from "./domain.ts";
 import type { GuardArgs } from "./types.ts";
 
-const projectNameValid = ({ event }: GuardArgs) => {
-  if (event.type !== "create_project_submitted") return false;
-  return validateProjectName(event.org_name) === null;
-};
-
 // resolveInitialScope onDone branch predicates — read the resolver verdict off
-// `event.output`.
+// `event.output`. RETIRED from the machine's transitions in CDO-S1 (the
+// initial-scope resolver invoke is gone — scope is client-reported); retained
+// here because the CDO-S3 deep-link `scope_mismatch` rework reuses them.
 const isCrossTenant = ({ event }: GuardArgs) =>
   (event as { output?: { cross_tenant?: true } }).output?.cross_tenant === true;
 
@@ -42,8 +38,9 @@ const isSwitchProjectNotFound = ({ event }: GuardArgs) =>
   true;
 
 // name → guard predicate index (keys referenced by string in ../machine.ts).
+// isCrossTenant/isProjectNotFound/isNoProjects are retained (CDO-S3 scope_mismatch
+// rework) but no longer referenced by the report-driven machine's transitions.
 export const guards = {
-  projectNameValid,
   isCrossTenant,
   isProjectNotFound,
   isNoProjects,

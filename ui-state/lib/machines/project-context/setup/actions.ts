@@ -12,7 +12,6 @@
 // `event.type`; done events from invoked actors are NOT members, so the
 // actor-result readers cast `event` to reach `.output`.
 
-import { validateProjectName } from "./domain.ts";
 import type {
   ActionArgs,
   ProjectContextCauseTag,
@@ -40,32 +39,22 @@ export const assignAuthReady = ({ event }: ActionArgs) => {
   };
 };
 
-/** resolveInitialScope onDone (settle): land the picked project plus the
- *  last-used observability payload (the most-recent-session map and the degraded
- *  set the orchestrator reads on settle). */
-export const assignResolvedScope = ({ event, context }: ActionArgs) => {
-  const out = (
-    event as unknown as {
-      output: {
-        project: ProjectSummary;
-        most_recent_session_per_project?: Record<string, string>;
-        degraded_project_ids?: string[];
-      };
-    }
-  ).output;
+/** scope_resolved report (settle): land the picked project the client reported.
+ *  The last-used observability payload (most_recent_session_per_project /
+ *  degraded set) is no longer resolved server-side — those defaults stay
+ *  untouched; their client-reported form is CDO-S3. */
+export const assignResolvedScope = ({ event }: ActionArgs) => {
+  if (event.type !== "scope_resolved") return {};
   return {
-    project: { id: out.project.id, name: out.project.name },
-    most_recent_session_per_project:
-      out.most_recent_session_per_project ??
-      context.most_recent_session_per_project,
-    last_used_degraded_project_ids: out.degraded_project_ids ?? [],
+    project: { id: event.project.id, name: event.project.name },
   };
 };
 
-/** createProject onDone: land the created project on context. */
+/** project_created report (Phase D settle): land the created project the client
+ *  reported on context. */
 export const assignCreatedProject = ({ event }: ActionArgs) => {
-  const out = (event as unknown as { output: ProjectSummary }).output;
-  return { project: { id: out.id, name: out.name } };
+  if (event.type !== "project_created") return {};
+  return { project: { id: event.project.id, name: event.project.name } };
 };
 
 /** project_selected → switching_project: capture the switch target as the
@@ -113,26 +102,3 @@ export const clearErrorAndBumpRetries = ({ context }: ActionArgs) => ({
 export const tagCause = (_: ActionArgs, params: { tag: ProjectContextCauseTag }) => ({
   underlying_cause_tag: params.tag,
 });
-
-/** Invalid create_project_submitted: record the inline validation error so the
- *  no_projects surface shows it. */
-export const recordProjectValidationError = ({ event }: ActionArgs) => {
-  if (event.type !== "create_project_submitted") {
-    return { project_validation_error: null };
-  }
-  return { project_validation_error: validateProjectName(event.org_name) };
-};
-
-/** Valid create_project_submitted: clear any prior inline error. */
-export const clearProjectValidationError = () => ({
-  project_validation_error: null,
-});
-
-/** Valid create_project_submitted: preserve the trimmed composer text across
- *  creating_project ↔ error_recoverable. */
-export const capturePendingProjectName = ({ event, context }: ActionArgs) => {
-  if (event.type !== "create_project_submitted") {
-    return { pending_project_name: context.pending_project_name };
-  }
-  return { pending_project_name: event.org_name.trim() };
-};
