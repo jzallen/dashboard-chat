@@ -21,6 +21,11 @@ export interface FlowEventLog {
   /** Drop the entire event stream for this flow. Used when `begin` resets a
    *  prior auth attempt — a fresh sign-in is a fresh flow. */
   reset(flow_id: string): Promise<void>;
+  /** Refresh the sliding TTL on this flow's stream WITHOUT writing an event — the
+   *  keep-alive bump (`POST /state/keepalive`). A no-op if the key has already
+   *  expired (EXPIRE on a missing key returns 0), so an expired flow stays expired
+   *  → the next read re-derives the anonymous (login) document. */
+  touch(flow_id: string): Promise<void>;
   /** Long-poll subscribe to a flow's event stream starting at `sinceId`
    *  (Redis stream id, or "$" for events arriving AFTER subscription).
    *
@@ -77,19 +82,25 @@ function deserialize(fields: string[]): FlowEventRecord {
   };
 }
 
-export function createRedisFlowEventLog(redisUrl: string): FlowEventLog {
-  const client = new Redis(redisUrl, {
-    lazyConnect: false,
-    maxRetriesPerRequest: 3,
-  });
+export function createRedisFlowEventLog(
+  redisUrl: string,
+  opts: { ttlSeconds?: number; client?: Redis } = {},
+): FlowEventLog {
+  const ttlSeconds = opts.ttlSeconds ?? 1800;
+  const client =
+    opts.client ??
+    new Redis(redisUrl, {
+      lazyConnect: false,
+      maxRetriesPerRequest: 3,
+    });
 
   return {
     async append(flow_id: string, event: FlowEvent): Promise<void> {
-      await client.xadd(
-        streamKey(flow_id),
-        "*",
-        ...serialize(event.createCacheSerialization()),
-      );
+      const key = streamKey(flow_id);
+      await client.xadd(key, "*", ...serialize(event.createCacheSerialization()));
+      // Sliding TTL: every append refreshes the window so an active flow never
+      // expires; an abandoned one lapses after ttlSeconds of no writes/keep-alive.
+      await client.expire(key, ttlSeconds);
     },
 
     async read(flow_id: string): Promise<FlowEvent[]> {
@@ -103,6 +114,10 @@ export function createRedisFlowEventLog(redisUrl: string): FlowEventLog {
 
     async reset(flow_id: string): Promise<void> {
       await client.del(streamKey(flow_id));
+    },
+
+    async touch(flow_id: string): Promise<void> {
+      await client.expire(streamKey(flow_id), ttlSeconds);
     },
 
     async *subscribe(
@@ -204,6 +219,10 @@ export function createNoopFlowEventLog(): FlowEventLog {
       store.delete(flow_id);
     },
 
+    async touch(_flow_id: string): Promise<void> {
+      // In-memory fallback has no TTL — nothing to refresh.
+    },
+
     async *subscribe(
       flow_id: string,
       _sinceId: string,
@@ -264,9 +283,12 @@ export function createNoopFlowEventLog(): FlowEventLog {
  * Capability-presence dispatch: REDIS_URL present → Redis tier; absent → noop
  * fallback.
  */
-export function selectFlowEventLog(redisUrl: string | undefined): FlowEventLog {
+export function selectFlowEventLog(
+  redisUrl: string | undefined,
+  ttlSeconds?: number,
+): FlowEventLog {
   if (redisUrl && redisUrl.length > 0) {
-    return createRedisFlowEventLog(redisUrl);
+    return createRedisFlowEventLog(redisUrl, { ttlSeconds });
   }
   return createNoopFlowEventLog();
 }

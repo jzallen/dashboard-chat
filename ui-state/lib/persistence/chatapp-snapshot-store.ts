@@ -39,6 +39,11 @@ export interface ChatAppSnapshotStore {
   load(principal_id: string): Promise<PersistedChatAppSnapshot | null>;
   /** Drop the principal's snapshot (e.g. a fresh `begin force_restart`). */
   reset(principal_id: string): Promise<void>;
+  /** Refresh the sliding TTL on the principal's snapshot WITHOUT rewriting it —
+   *  the keep-alive bump. A no-op once the key has expired (EXPIRE returns 0 on a
+   *  missing key), so an expired snapshot stays gone → the next load rehydrates
+   *  nothing → the actor cold-starts at `login`. */
+  touch(principal_id: string): Promise<void>;
   /** Health-check the backing store (round-trip on a probe key). HARD-fails at
    *  startup if the Redis tier is unreachable; a no-op for the noop tier. */
   probe(): Promise<void>;
@@ -54,18 +59,27 @@ export function snapshotKey(principal_id: string): string {
 
 export function createRedisChatAppSnapshotStore(
   redisUrl: string,
+  opts: { ttlSeconds?: number; client?: Redis } = {},
 ): ChatAppSnapshotStore {
-  const client = new Redis(redisUrl, {
-    lazyConnect: false,
-    maxRetriesPerRequest: 3,
-  });
+  const ttlSeconds = opts.ttlSeconds ?? 1800;
+  const client =
+    opts.client ??
+    new Redis(redisUrl, {
+      lazyConnect: false,
+      maxRetriesPerRequest: 3,
+    });
 
   return {
     async save(principal_id, snapshot) {
       // (de)serialization lives HERE at the driven-adapter boundary, mirroring
-      // redis.ts. A SET (string), not a stream XADD: the snapshot is a single
-      // overwriting record, not an append-only history.
-      await client.set(snapshotKey(principal_id), JSON.stringify(snapshot));
+      // redis.ts. A SET (string) with a sliding `EX` TTL: the snapshot is a single
+      // overwriting record, and every save refreshes the expiry window.
+      await client.set(
+        snapshotKey(principal_id),
+        JSON.stringify(snapshot),
+        "EX",
+        ttlSeconds,
+      );
     },
 
     async load(principal_id) {
@@ -75,6 +89,10 @@ export function createRedisChatAppSnapshotStore(
 
     async reset(principal_id) {
       await client.del(snapshotKey(principal_id));
+    },
+
+    async touch(principal_id) {
+      await client.expire(snapshotKey(principal_id), ttlSeconds);
     },
 
     async probe() {
@@ -119,6 +137,10 @@ export function createNoopChatAppSnapshotStore(): ChatAppSnapshotStore {
       store.delete(snapshotKey(principal_id));
     },
 
+    async touch(_principal_id) {
+      // In-memory fallback has no TTL — nothing to refresh.
+    },
+
     async probe() {
       // Noop has no external dependency to probe.
     },
@@ -135,9 +157,10 @@ export function createNoopChatAppSnapshotStore(): ChatAppSnapshotStore {
  */
 export function selectChatAppSnapshotStore(
   redisUrl: string | undefined,
+  ttlSeconds?: number,
 ): ChatAppSnapshotStore {
   if (redisUrl && redisUrl.length > 0) {
-    return createRedisChatAppSnapshotStore(redisUrl);
+    return createRedisChatAppSnapshotStore(redisUrl, { ttlSeconds });
   }
   return createNoopChatAppSnapshotStore();
 }

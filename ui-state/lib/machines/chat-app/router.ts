@@ -777,6 +777,49 @@ export function buildStateRouter(runtime: ChatAppRuntime): Hono {
     return stateDocumentResponse(c, runtime, principal_id);
   });
 
+  // POST /state/keepalive — refresh the sliding TTL on the principal's persisted
+  // keys (snapshot + the three canonical child event logs) WITHOUT mutating state
+  // or cold-starting (Decision 3a: a read-shaped touch). The client's idle tracker
+  // fires this debounced (~5-min cadence) so an active-but-idle session never
+  // lapses; when the user goes idle the touches stop and the keys expire, resetting
+  // the flow to `login` on next contact. Best-effort + always 204 (idempotent — a
+  // touch on an already-expired/absent key is a no-op).
+  router.post("/state/keepalive", async (c) => {
+    const principal_id = c.req.header("X-User-Id") ?? "";
+    if (!principal_id) return c.json({ error: "invalid_request" }, 400);
+    try {
+      await Promise.all([
+        runtime.snapshotStore.touch(principal_id),
+        ...CANONICAL_CHILDREN.map((child) =>
+          runtime.eventLog.touch(`${child}:${principal_id}`),
+        ),
+      ]);
+    } catch {
+      // Best-effort: a TTL refresh failure must never surface to the client; the
+      // next write (or the next keep-alive) re-establishes the window.
+    }
+    return c.body(null, 204);
+  });
+
+  // POST /state/logout — fully CLEAR a principal's flow on sign-out: stop the live
+  // actor and drop its persisted snapshot + all three canonical child event logs.
+  // The SPA calls this (while the cookie is still valid) before /api/auth/logout so
+  // a later login re-derives from the backend SSOT rather than resuming a stale
+  // `engaged` snapshot. Distinct from `session_begin{force_restart}` (which
+  // recycles AND cold-starts a fresh onboarding flow); this leaves NO actor.
+  router.post("/state/logout", async (c) => {
+    const principal_id = c.req.header("X-User-Id") ?? "";
+    if (!principal_id) return c.json({ error: "invalid_request" }, 400);
+    runtime.registry.recycle(principal_id);
+    await Promise.allSettled([
+      runtime.snapshotStore.reset(principal_id),
+      ...CANONICAL_CHILDREN.map((child) =>
+        runtime.eventLog.reset(`${child}:${principal_id}`),
+      ),
+    ]);
+    return c.body(null, 204);
+  });
+
   // GET /state/stream — .subscribe(): SSE of the whole-actor document. First frame
   // is the current document; each retained event on ANY of the three child logs
   // re-derives + emits a fresh document (the union-subscribed seam).

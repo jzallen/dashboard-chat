@@ -14,6 +14,15 @@ const envSchema = z.object({
   /** Redis backing for the flow event log — from `REDIS_URL`. Absent ⇒ the
    *  in-memory (noop) event log; this is an explicit mode, not a missing var. */
   redisUrl: z.string().optional(),
+  /** Sliding TTL (seconds) applied to every persisted ui-state key (snapshot +
+   *  per-flow event logs) — from `FLOW_TTL_SECONDS`. Each write refreshes it, and
+   *  the client keep-alive (`POST /state/keepalive`, debounce-driven by the idle
+   *  tracker) bumps it during active-but-idle use. When the window lapses the keys
+   *  expire and the next read re-derives the anonymous (`login`) document — so an
+   *  abandoned session resets to login. Optional here; the persistence adapters
+   *  apply the default (1800s / 30m) when it is unset — comfortably above the idle
+   *  tracker's 5-min keep-alive cadence, and ≈ its 20m+10m idle→logout window. */
+  flowTtlSeconds: z.coerce.number().int().positive().optional(),
 });
 
 export type Config = z.infer<typeof envSchema>;
@@ -26,5 +35,6 @@ export type Config = z.infer<typeof envSchema>;
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   return envSchema.parse({
     redisUrl: env.REDIS_URL,
+    flowTtlSeconds: env.FLOW_TTL_SECONDS,
   });
 }

@@ -123,8 +123,11 @@ function buildProductionApp(): {
   snapshotStore: ChatAppSnapshotStore;
 } {
   const config = loadConfig();
-  const eventLog = selectFlowEventLog(config.redisUrl);
-  const snapshotStore = selectChatAppSnapshotStore(config.redisUrl);
+  const eventLog = selectFlowEventLog(config.redisUrl, config.flowTtlSeconds);
+  const snapshotStore = selectChatAppSnapshotStore(
+    config.redisUrl,
+    config.flowTtlSeconds,
+  );
   const app = buildChatAppApp({
     eventLog,
     snapshotStore,
