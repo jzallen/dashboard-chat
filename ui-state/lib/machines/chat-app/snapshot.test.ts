@@ -112,6 +112,10 @@ function makeInput(): OnboardingInput {
     principal_id: PRINCIPAL,
     bearer_token: "tok-maya",
     config: makeTestConfig(),
+    // Identity seeded from input (INV-PCO single writer) — the onboarding child
+    // no longer re-verifies via fetch; it settles in awaiting_org_report and
+    // advances on the client's org report (see arriveAtChat).
+    user: { email: PROFILE.email, display_name: PROFILE.name, first_name: "Maya" },
     deps: { request_client: makeMockFetch({ profile: PROFILE, existingOrg: ORG }) },
   };
 }
@@ -147,6 +151,12 @@ async function arriveAtChat(
   const actor = createActor(createChatApp(makeDeps(rec, sessions, held)), {
     input: makeInput(),
   }).start();
+  // Client-reported model: report the returning user's org through the parent so
+  // onboarding advances awaiting_org_report → ready → the cascade reaches chat.
+  actor.send({
+    type: "child_event",
+    child_event: { type: "org_found", payload: { org: ORG } },
+  });
   await waitFor(actor, () => childState(actor, "session-chat") === "session_list_loaded");
   return { actor, rec };
 }

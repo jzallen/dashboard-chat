@@ -132,6 +132,7 @@ async function coldStart(
   principal_id: string,
   bearer_token: string,
   request_id: string,
+  user_email: string | null,
 ): Promise<AnyActorRef> {
   runtime.registry.recycle(principal_id);
   await runtime.snapshotStore.reset(principal_id);
@@ -147,6 +148,10 @@ async function coldStart(
     bearer_token,
     config: runtime.config,
     deps: { request_client: runtime.requestClient },
+    // Identity seed from the auth-proxy-verified X-User-Email header (DR-4 /
+    // INV-PCO): the SINGLE writer of the onboarding child's context.user.
+    // display_name/first_name stay null (auth-proxy injects no such header).
+    user: { email: user_email, display_name: null, first_name: null },
   };
   const actor = createActor(createChatApp(runtime.chatAppDeps), { input }).start();
   runtime.registry.set(principal_id, actor);
@@ -241,7 +246,26 @@ const causeTag = z.string().refine(isUnderlyingCauseTag, {
   message: "tag must be a known UnderlyingCauseTag",
 });
 
+/** The {id,name} display snapshot a client-reported org outcome carries
+ *  (ADR-050 §e.1). Well-formedness only — the org's existence is the client's
+ *  earned-trust assertion, never re-probed here (INV-PCO). */
+const orgSnapshot = z.object({ id: z.string(), name: z.string() }).passthrough();
+
 const onboardingEventSchema = z.discriminatedUnion("type", [
+  // ── client-reported outcomes (ADR-049/050) ──
+  z.object({
+    type: z.literal("org_found"),
+    payload: z.object({ org: orgSnapshot }).passthrough(),
+  }),
+  z.object({
+    type: z.literal("org_not_found"),
+    payload: z.object({}).passthrough(),
+  }),
+  z.object({
+    type: z.literal("org_created"),
+    payload: z.object({ org: orgSnapshot }).passthrough(),
+  }),
+  // ── legacy org-form submit (retires CDO-S3) ──
   z.object({
     type: z.literal("org_form_submitted"),
     payload: z.object({ org_name: z.string() }).passthrough(),
@@ -401,6 +425,9 @@ export function buildStateRouter(runtime: ChatAppRuntime): Hono {
     const type = body.type;
     const principal_id = c.req.header("X-User-Id") ?? "";
     const bearer = readBearerToken(c);
+    // Auth-proxy injects X-User-Email alongside X-User-Id; it is the identity
+    // seed the cold-start threads into the onboarding child (DR-4 / INV-PCO).
+    const user_email = c.req.header("X-User-Email") ?? null;
 
     const isSessionBegin = type === "session_begin";
     const forceRestart = isSessionBegin && body.payload?.force_restart === true;
@@ -411,7 +438,7 @@ export function buildStateRouter(runtime: ChatAppRuntime): Hono {
     // /begin's only load-bearing effects — re-verify the forwarded Bearer, cascade
     // onboarding → project-context → chat — happen identically here).
     if (!actor || forceRestart) {
-      actor = await coldStart(runtime, principal_id, bearer, request_id);
+      actor = await coldStart(runtime, principal_id, bearer, request_id, user_email);
       await settle(actor);
       await persist(runtime, principal_id, actor);
       await appendStateBookkeeping(

@@ -19,12 +19,10 @@ import type { OrgName, PrincipalId, UnderlyingCauseTag } from "./domain.ts";
 export type { UnderlyingCauseTag } from "./domain.ts";
 
 export type OnboardingState =
-  | "verifying"
+  | "awaiting_org_report"
   | "needs_org"
-  | "creating_org"
   | "ready"
-  | "error_recoverable"
-  | "session_rejected";
+  | "error_recoverable";
 
 export interface OrgValidationInlineError {
   kind: "empty" | "too_short" | "too_long" | "duplicate";
@@ -71,8 +69,14 @@ export interface OnboardingContext {
   org_validation_error: OrgValidationInlineError | null;
 }
 
+/** The {id,name} display snapshot a client-reported org outcome carries. The
+ *  transport spreads the wire payload to the event's top level (the parent's
+ *  forwardChildEventToActiveChild), so an `org_found`/`org_created` arrives at
+ *  this machine as `{ type, org: { id, name } }`. */
 export type OnboardingEvent =
-  | { type: "org_form_submitted"; org_name: string }
+  | { type: "org_found"; org: { id: string; name: string } }
+  | { type: "org_not_found" }
+  | { type: "org_created"; org: { id: string; name: string } }
   | { type: "__force_failure__"; tag: UnderlyingCauseTag };
 
 /** The raw machine input (the begin envelope before the context factory
@@ -83,6 +87,14 @@ export interface OnboardingInput {
   bearer_token?: string;
   config?: Config | null;
   deps?: OnboardingDeps | null;
+  /** Identity seeded at cold-start from the auth-proxy-verified headers
+   *  (X-User-Email). The SINGLE writer of `context.user` — no outcome event ever
+   *  touches identity (INV-PCO). display_name/first_name are null (no header). */
+  user?: {
+    email: string | null;
+    display_name: string | null;
+    first_name: string | null;
+  };
 }
 
 /**

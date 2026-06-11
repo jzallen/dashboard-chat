@@ -16,9 +16,31 @@
 //   docs/decisions/adr-046-*.md — Decision 3 (the event surface)
 //   ui-state/lib/machines/chat-app/router.ts — buildStateRouter (POST /state/events, forwardToActor)
 
+/** The {id,name} display snapshot a client-reported org-outcome carries
+ *  (ADR-050 §e.1). The client probes the org SSOT, then narrates the {id,name}
+ *  it observed — never machine internals. */
+export type OrgSnapshot = { id: string; name: string };
+
+/** The {id,name} display snapshot a client-reported project-outcome carries
+ *  (ADR-050 §e.1). */
+export type ProjectSnapshot = { id: string; name: string };
+
 export type ChatAppWireEvent =
+  // ── client-reported onboarding outcomes (ADR-049/050) — the client probes the
+  //    org SSOT and narrates the past-tense result; ui-state transitions on the
+  //    report (it has zero egress). Validated server-side while onboarding is the
+  //    active phase (Decision 3 ACL: well-formedness only).
+  | { type: "org_found"; payload: { org: OrgSnapshot } }
+  | { type: "org_not_found"; payload: Record<string, never> }
+  | { type: "org_created"; payload: { org: OrgSnapshot } }
+  // ── client-reported project-context outcomes (ADR-049/050; settled by CDO-S2) ──
+  | { type: "scope_resolved"; payload: { project: ProjectSnapshot } }
+  | { type: "no_projects_found"; payload: Record<string, never> }
+  | { type: "project_created"; payload: { project: ProjectSnapshot } }
   // onboarding closed vocabulary (validated server-side while onboarding is the
-  // active phase; unmodeled type → HTTP 400 — see Decision 3 ACL)
+  // active phase; unmodeled type → HTTP 400 — see Decision 3 ACL). LEGACY: the
+  // org-form submit retires in a later CDO slice (closure CDO-S3/S5); kept here
+  // so out-of-scope frontend/ + ui/ + acceptance consumers still type-check.
   | { type: "org_form_submitted"; payload: { org_name: string } }
   // default-project creation (project-context vocabulary — legal only once the
   // phase has ADVANCED past onboarding; forwarded verbatim as child_event).

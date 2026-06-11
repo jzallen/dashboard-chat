@@ -149,6 +149,15 @@ export interface ChatAppContext {
   // from input.
   /** The verified principal (auth-proxy X-User-Id) — every child's input. */
   principal_id: string;
+  /** Verified identity seeded at cold-start from the auth-proxy headers
+   *  (X-User-Email → email; display_name/first_name null, no header). Threaded
+   *  into the onboarding child's invoke input as its single identity seed
+   *  (INV-PCO: one writer). Mirrors OnboardingInput.user. */
+  user: {
+    email: string | null;
+    display_name: string | null;
+    first_name: string | null;
+  };
   /** The forwarded Bearer the onboarding child re-verifies against WorkOS. */
   bearer_token: string;
   /** Env config (workosUrl/backendUrl + dev header fixture) for the onboarding

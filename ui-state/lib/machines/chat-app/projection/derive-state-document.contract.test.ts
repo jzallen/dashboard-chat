@@ -42,7 +42,7 @@ import type {
   SessionSummary,
 } from "../../session-chat/index.ts";
 import { createChatApp } from "../index.ts";
-import type { OnboardingInput, ChatUserIntent } from "../setup/types.ts";
+import type { ChatUserIntent,OnboardingInput } from "../setup/types.ts";
 import {
   aggregateBookkeeping,
   bookkeepingFromLog,
@@ -137,18 +137,19 @@ function makeDeps(rec: Recorder, sessions: SessionSummary[], slowSwitch?: Deferr
   };
 }
 
-function makeInput(opts: { badToken?: boolean; newUser?: boolean } = {}): OnboardingInput {
-  const bearer_token = opts.badToken ? "tok-bad" : "tok-maya";
+function makeInput(opts: { newUser?: boolean } = {}): OnboardingInput {
   return {
     request_id: REQ,
     principal_id: PRINCIPAL,
-    bearer_token,
+    bearer_token: "tok-maya",
     config: makeTestConfig(),
+    // Identity now arrives via the seeded input (INV-PCO single writer), not a
+    // re-verify fetch round-trip. display_name/first_name mirror PROFILE.
+    user: { email: PROFILE.email, display_name: PROFILE.name, first_name: "Maya" },
     deps: {
       request_client: makeMockFetch({
         profile: PROFILE,
         ...(opts.newUser ? {} : { existingOrg: ORG }),
-        ...(opts.badToken ? { badToken: "tok-bad" } : {}),
       }),
     },
   };
@@ -206,6 +207,12 @@ async function arriveAtChat(
   const actor = createActor(createChatApp(makeDeps(rec, sessions, slowSwitch)), {
     input: makeInput(),
   }).start();
+  // Client-reported model: report the returning user's org through the parent so
+  // onboarding advances awaiting_org_report → ready → the cascade reaches chat.
+  actor.send({
+    type: "child_event",
+    child_event: { type: "org_found", payload: { org: ORG } },
+  });
   await waitFor(actor, (a) => childState(a, "session-chat") === "session_list_loaded");
   return { actor, rec };
 }
@@ -370,15 +377,45 @@ describe("ADR-046 gate — onboarding=needs_org (new user, child live)", () => {
     const actor = createActor(createChatApp(makeDeps(rec, [session("s1")])), {
       input: makeInput({ newUser: true }),
     }).start();
+    // Client-reported model: report org_not_found through the parent to drive
+    // onboarding awaiting_org_report → needs_org.
+    actor.send({
+      type: "child_event",
+      child_event: { type: "org_not_found", payload: {} },
+    });
     await waitFor(actor, (a) => childState(a, "onboarding") === "needs_org");
 
+    // The golden log fold still reaches needs_org via session_started{org:null}
+    // (a state shared by the old and new models); only the live driver changed.
     const onboardingLog = [
       ev(LOGIN_LOG, "session_started", {
         user: { email: PROFILE.email, display_name: PROFILE.name, first_name: "Maya" },
         org: null,
       }),
     ];
-    const doc = assertEquivalence(actor, { onboarding: onboardingLog });
+
+    // The ONBOARDING region (the region under test) is pinned BYTE-EQUIVALENT to
+    // its canonical log fold — the contract that matters for this arm. The other
+    // two regions are NOT yet invoked (parent still in `login`), so their live
+    // no-child fallbacks are the client-reported zero states
+    // (awaiting_scope_report / verifying). The out-of-scope `buildProjection`
+    // log fold zero-state is `verifying` for every region and cannot model the
+    // project-context region's new `awaiting_scope_report` zero — so those two
+    // un-invoked regions are pinned directly to the new production zero states
+    // rather than against the (now-divergent) empty log fold.
+    const onbBk = bookkeepingFromLog(onboardingLog);
+    const doc = deriveStateDocument(
+      view(actor),
+      aggregateBookkeeping([onbBk]),
+    );
+    const goldenOnb = buildProjection(LOGIN_LOG, onboardingLog);
+    expect(doc.regions.onboarding).toEqual({
+      state: goldenOnb.state,
+      context: goldenOnb.context,
+    });
+    // Un-invoked regions: the client-reported cold-start zero states (DR-4).
+    expect(doc.regions.projectContext.state).toBe("awaiting_scope_report");
+    expect(doc.regions.sessionChat.state).toBe("verifying");
 
     expect(doc.phase).toBe("onboarding");
     expect(doc.regions.onboarding.state).toBe("needs_org");
@@ -457,22 +494,4 @@ describe("ADR-046 gate — sessionChat=session_active (resumed)", () => {
 });
 
 // ═════════════════════════ Scenario 7 — session_rejected (re-verify failure) ═════════════════════════
-
-describe("ADR-046 gate — onboarding=session_rejected (re-verify failed)", () => {
-  it("onboarding region equivalent with the cause; phase=rejected", async () => {
-    const rec = recorder();
-    const actor = createActor(createChatApp(makeDeps(rec, [session("s1")])), {
-      input: makeInput({ badToken: true }),
-    }).start();
-    await waitFor(actor, (a) => lifecycle(a) === "user_rejected");
-    expect(childRef(actor, "onboarding")).toBeUndefined();
-
-    // The 401 re-verify throw is untagged → causeOf defaults to "transient".
-    const onboardingLog = [ev(LOGIN_LOG, "session_rejected", { reason: "transient" })];
-    const doc = assertEquivalence(actor, { onboarding: onboardingLog });
-
-    expect(doc.phase).toBe("rejected");
-    expect(doc.regions.onboarding.state).toBe("session_rejected");
-    expect(doc.regions.onboarding.context.underlying_cause_tag).toBe("transient");
-  });
-});
+// (session_rejected retired under client-reported onboarding — CDO-S3.)

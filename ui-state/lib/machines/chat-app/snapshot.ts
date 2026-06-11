@@ -50,7 +50,10 @@ interface ChildrenView {
 const TRANSIENT_CHILD_STATES: Readonly<
   Record<ChatAppChildId, ReadonlySet<string>>
 > = {
-  "onboarding": new Set(["verifying", "creating_org"]),
+  // Client-reported onboarding (ADR-049/050) has NO invoke states — every
+  // onboarding state (awaiting_org_report/needs_org/ready/error_recoverable) is
+  // settled the instant it is reached, so the set is empty.
+  "onboarding": new Set<string>(),
   "project-context": new Set([
     "resolving_initial_scope",
     "creating_project",

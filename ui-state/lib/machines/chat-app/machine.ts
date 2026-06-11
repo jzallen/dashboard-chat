@@ -63,6 +63,9 @@ export function createChatAppMachine() {
       bearer_token: input.bearer_token ?? "",
       config: input.config ?? null,
       deps: input.deps ?? null,
+      // Identity seeded once from the cold-start input (the verified header);
+      // threaded into the onboarding child's invoke input below.
+      user: input.user ?? { email: null, display_name: null, first_name: null },
       active_child_id: "onboarding",
       auth_handoff: null,
       project_handoff: null,
@@ -85,6 +88,9 @@ export function createChatAppMachine() {
             bearer_token: context.bearer_token,
             config: context.config,
             deps: context.deps,
+            // Cold-start identity seed (INV-PCO: the onboarding child's single
+            // writer of context.user).
+            user: context.user,
           }),
           onSnapshot: [
             {

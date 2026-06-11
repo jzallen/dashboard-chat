@@ -19,44 +19,35 @@
 // transition references it. Done/error events from invoked actors are NOT
 // members, so the actor-result readers cast `event` to reach `.output` / `.error`.
 
-import type {
-  Org,
-  OrgName,
-  UnderlyingCauseTag,
-  VerifiedSession,
-} from "./domain.ts";
-import { causeOf, constructOrgName } from "./domain.ts";
+import type { UnderlyingCauseTag } from "./domain.ts";
+import { constructOrgName } from "./domain.ts";
 import type { ActionArgs } from "./types.ts";
 
-export const assignVerifiedUser = ({ event }: ActionArgs) => {
-  // The verifying resolver returns a VerifiedSession; its `user` is a
-  // VerifiedUser with first_name already derived at the boundary.
-  const { user } = (event as unknown as { output: VerifiedSession }).output;
-  return {
-    user: {
-      email: user.email,
-      display_name: user.display_name,
-      first_name: user.first_name,
-    },
-  };
-};
+/** awaiting_org_report → ready (returning user) AND needs_org → ready
+ *  (convergence): land the client-reported org on context. The wire payload's
+ *  `org` ({id,name}) is spread to the event top level by the parent transport,
+ *  so it reads `event.org` directly. */
 export const assignResolvedOrg = ({ event }: ActionArgs) => {
-  const { org } = (event as unknown as { output: VerifiedSession }).output;
-  return {
-    org: org ? { id: org.id, name: org.name } : { id: null, name: null },
-  };
+  if (event.type !== "org_found") return {};
+  return { org: { id: event.org.id, name: event.org.name } };
 };
-export const tagSessionRejected = ({ event }: ActionArgs) => ({
-  // The verifying actor branded its failure with a cause (./domain.ts
-  // `failWithCause`); read it straight off the onError event. Untagged /
-  // foreign throws default to "transient".
-  underlying_cause_tag: causeOf((event as { error?: unknown }).error),
-});
+/** needs_org → ready: land the client-reported freshly-created org. Reads the
+ *  spread `event.org` payload, same shape as assignResolvedOrg's. */
+export const assignCreatedOrg = ({ event }: ActionArgs) => {
+  if (event.type !== "org_created") return {};
+  return { org: { id: event.org.id, name: event.org.name } };
+};
+// ── org-name validation recorders (CDO-S3 rewires these to the org-submit
+//    event; retained now so their value-object re-derivation + UI copy do not
+//    have to be reconstructed). They are event-agnostic in CDO-S1: the submitted
+//    name arrives as an optional `org_name` field once an org-submit event is
+//    reintroduced. ──
 export const recordOrgValidationError = ({ event }: ActionArgs) => {
-  if (event.type !== "org_form_submitted") {
+  const orgName = (event as { org_name?: string }).org_name;
+  if (typeof orgName !== "string") {
     return { org_validation_error: null };
   }
-  const rejection = constructOrgName(event.org_name).getError();
+  const rejection = constructOrgName(orgName).getError();
   if (rejection === null) return { org_validation_error: null };
   // kind → UI copy is a PRESENTATION mapping, so it lives here in the action,
   // not on the value object (the domain doesn't know UI strings).
@@ -85,16 +76,3 @@ export const clearOrgValidationError = () => ({
 export const tagCause = (_: ActionArgs, params: { tag: UnderlyingCauseTag }) => ({
   underlying_cause_tag: params.tag,
 });
-
-/** needs_org → creating_org: preserve the submitted name across retries. The
- *  guard (isOrgNameValid) already validated it, so brand the raw name directly
- *  — re-running the constructor just to read `.value` would be redundant. */
-export const assignPendingOrgName = ({ event }: ActionArgs) => {
-  if (event.type !== "org_form_submitted") return {};
-  return { pending_org_name: event.org_name as OrgName };
-};
-/** creating_org onDone: land the created Org on context. */
-export const assignCreatedOrg = ({ event }: ActionArgs) => {
-  const createdOrg = (event as unknown as { output: Org }).output;
-  return { org: { id: createdOrg.id, name: createdOrg.name } };
-};

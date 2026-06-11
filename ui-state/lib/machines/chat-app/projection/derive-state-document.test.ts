@@ -63,9 +63,9 @@ describe("bookkeepingFromLog (the log-sourced envelope fields)", () => {
 // ───────────────────────────── onboarding region ─────────────────────────────
 
 describe("deriveOnboarding (regions.onboarding slice)", () => {
-  it("yields the full zero-event ReducedContext + verifying when neither child nor outcome exist", () => {
+  it("yields the full zero-event ReducedContext + awaiting_org_report when neither child nor outcome exist", () => {
     const out = deriveOnboarding(snap({}));
-    expect(out.state).toBe("verifying");
+    expect(out.state).toBe("awaiting_org_report");
     // The context is the COMPLETE ReducedContext shape with every default — so
     // any field the mapper does not populate matches the log fold byte-for-byte.
     expect(out.context).toEqual(initialContext());
@@ -139,8 +139,8 @@ describe("deriveProjectContext (regions.projectContext slice)", () => {
       ...over,
     });
 
-  it("falls back to verifying (empty-log equivalent) before the child is invoked", () => {
-    expect(deriveProjectContext(snap({})).state).toBe("verifying");
+  it("falls back to awaiting_scope_report (empty-log equivalent) before the child is invoked", () => {
+    expect(deriveProjectContext(snap({})).state).toBe("awaiting_scope_report");
   });
 
   it("maps project_selected with project+org scope and a NULL org name (log never carries it)", () => {

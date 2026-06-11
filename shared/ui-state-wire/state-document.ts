@@ -224,8 +224,12 @@ export function anonymousStateDocument(): ChatAppStateDocument {
     last_event_at: "",
     request_id: "",
     regions: {
-      onboarding: { state: "verifying", context: initialReducedContext() },
-      projectContext: { state: "verifying", context: initialReducedContext() },
+      // Client-reported model (ADR-049/050): the zero state is the cold-start
+      // "waiting for the client's outcome report" state, NOT a server-probe
+      // "verifying". sessionChat keeps its zero unchanged (CDO-S1 realigns only
+      // onboarding + project-context).
+      onboarding: { state: "awaiting_org_report", context: initialReducedContext() },
+      projectContext: { state: "awaiting_scope_report", context: initialReducedContext() },
       sessionChat: { state: "verifying", context: initialReducedContext() },
     },
   };

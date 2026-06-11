@@ -118,12 +118,13 @@ interface SessionChatChildContext {
 // below; they are transient and never the persisted (settled) state.
 
 const ONBOARDING_STATE_MAP: Readonly<Record<string, string>> = {
-  verifying: "verifying",
+  // Client-reported model (ADR-049/050): the cold-start state is
+  // awaiting_org_report (no server-probe `verifying`). The retired
+  // verifying/creating_org/session_rejected states are dropped.
+  awaiting_org_report: "awaiting_org_report",
   needs_org: "needs_org",
-  creating_org: "creating_org",
   ready: "ready",
   error_recoverable: "error_recoverable",
-  session_rejected: "session_rejected",
 };
 
 const PROJECT_CONTEXT_STATE_MAP: Readonly<Record<string, string>> = {
@@ -200,8 +201,8 @@ export function deriveOnboarding(
 
   // Neither a live child nor a retained outcome → zero-event projection. (Not
   // reachable in normal flow: onboarding is invoked from t=0 and its outcome is
-  // retained on exit.)
-  return { state: "verifying", context };
+  // retained on exit.) The client-reported zero state is awaiting_org_report.
+  return { state: "awaiting_org_report", context };
 }
 
 /** projectContext region ← project-context child. */
@@ -211,10 +212,11 @@ export function deriveProjectContext(
   const context = initialContext();
   const child = readChild(snapshot, "project-context");
 
-  // Not yet engaged (still onboarding) OR torn down (terminal) → the per-region
-  // event log is empty, which buildProjection folds to the initial `verifying`.
+  // Not yet engaged (still onboarding) OR torn down (terminal) → the
+  // client-reported zero state is awaiting_scope_report (the project-context
+  // region's cold-start "waiting for the client's scope report").
   if (!child) {
-    return { state: "verifying", context };
+    return { state: "awaiting_scope_report", context };
   }
 
   const c = child.context as ProjectContextChildContext;

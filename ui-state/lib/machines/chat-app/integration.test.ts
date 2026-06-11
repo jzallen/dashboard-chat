@@ -36,7 +36,7 @@ import type {
   SessionSummary,
 } from "../session-chat/index.ts";
 import { createChatApp } from "./index.ts";
-import type { OnboardingInput, ChatUserIntent } from "./setup/types.ts";
+import type { ChatUserIntent,OnboardingInput } from "./setup/types.ts";
 
 // ───────────────────────────── fixtures ─────────────────────────────
 
@@ -102,22 +102,23 @@ function makeDeps(rec: Recorder, sessions: SessionSummary[]) {
   };
 }
 
-/** Begin envelope for a RETURNING user (org present → onboarding lands `ready`
- *  directly). `deps.request_client` is the mock fetch the onboarding resolvers
- *  call. Pass `badToken` to drive the re-verify 401 → session_rejected path. */
-function makeInput(opts: { badToken?: boolean } = {}): OnboardingInput {
-  const bearer_token = opts.badToken ? "tok-bad" : "tok-maya";
+/** Begin envelope for a RETURNING user. Under the client-reported model
+ *  (ADR-049/050) the onboarding child no longer probes the server — it settles
+ *  in awaiting_org_report and advances only when the CLIENT reports org_found /
+ *  org_created (see arriveAtChat). Identity comes from the seeded `user` input
+ *  (the single writer of context.user — INV-PCO), not a fetch round-trip. The
+ *  `deps.request_client` is kept to preserve the OnboardingInput shape (the
+ *  onboarding machine still declares loadSession/createOrg actor defaults); it is
+ *  no longer load-bearing for these tests. */
+function makeInput(): OnboardingInput {
   return {
     request_id: "R-int-1",
     principal_id: PRINCIPAL,
-    bearer_token,
+    bearer_token: "tok-maya",
     config: makeTestConfig(),
+    user: { email: PROFILE.email, display_name: PROFILE.name, first_name: "Maya" },
     deps: {
-      request_client: makeMockFetch({
-        profile: PROFILE,
-        existingOrg: ORG,
-        ...(opts.badToken ? { badToken: "tok-bad" } : {}),
-      }),
+      request_client: makeMockFetch({ profile: PROFILE, existingOrg: ORG }),
     },
   };
 }
@@ -179,6 +180,15 @@ async function arriveAtChat(sessions: SessionSummary[] = [session("s1")]) {
   const actor = createActor(createChatApp(makeDeps(rec, sessions)), {
     input: makeInput(),
   }).start();
+  // Client-reported model: the onboarding child settles in awaiting_org_report
+  // on start. Report the returning user's org THROUGH THE PARENT exactly as the
+  // HTTP transport does — the parent's forwardChildEventToActiveChild spreads
+  // `payload` to the event top-level and sendTo's the active child, so onboarding
+  // receives { type:"org_found", org:{id,name} } → ready → parent advances.
+  actor.send({
+    type: "child_event",
+    child_event: { type: "org_found", payload: { org: ORG } },
+  });
   await waitFor(actor, (a) => childState(a, "session-chat") === "session_list_loaded");
   return { actor, rec };
 }
@@ -263,21 +273,4 @@ describe("ChatApp Phase 2 — project switch while in chat", () => {
 });
 
 // ─────────────────────────── scenario 3 ───────────────────────────
-
-describe("ChatApp Phase 2 — onboarding re-verify failure", () => {
-  it("rejects the user when re-verify fails, no advance to engaged", async () => {
-    const rec: Recorder = { loadCalls: [], resumeCalls: [], switchCalls: [] };
-    const actor = createActor(createChatApp(makeDeps(rec, [session("s1")])), {
-      input: makeInput({ badToken: true }),
-    }).start();
-
-    await waitFor(actor, (a) => lifecycle(a) === "user_rejected");
-
-    expect(lifecycle(actor)).toBe("user_rejected");
-    // The engaged region was never entered → no project-context / session-chat
-    // child, and no downstream port was ever touched.
-    expect(childRef(actor, "project-context")).toBeUndefined();
-    expect(childRef(actor, "session-chat")).toBeUndefined();
-    expect(rec.loadCalls).toEqual([]);
-  });
-});
+// (re-verify failure / session_rejected retired under the client-reported model — CDO-S3 owns the new rejection path.)

@@ -38,17 +38,7 @@
 
 import { assign, setup } from "xstate";
 
-import {
-  assignCreatedOrg,
-  assignPendingOrgName,
-  assignResolvedOrg,
-  assignVerifiedUser,
-  clearOrgValidationError,
-  recordOrgNameTaken,
-  recordOrgValidationError,
-  tagCause,
-  tagSessionRejected,
-} from "./setup/actions.ts";
+import { assignCreatedOrg, assignResolvedOrg, tagCause } from "./setup/actions.ts";
 import { actors } from "./setup/actors.ts";
 import type { PrincipalId } from "./setup/domain.ts";
 import { guards } from "./setup/guards.ts";
@@ -68,19 +58,16 @@ export function createOnboardingMachine() {
     actors,
     guards,
     actions: {
-      assignVerifiedUser: assign(assignVerifiedUser),
       assignResolvedOrg: assign(assignResolvedOrg),
-      tagSessionRejected: assign(tagSessionRejected),
-      recordOrgValidationError: assign(recordOrgValidationError),
-      recordOrgNameTaken: assign(recordOrgNameTaken),
-      clearOrgValidationError: assign(clearOrgValidationError),
-      tagCause: assign(tagCause),
-      assignPendingOrgName: assign(assignPendingOrgName),
       assignCreatedOrg: assign(assignCreatedOrg),
+      tagCause: assign(tagCause),
     },
   }).createMachine({
     id: "onboarding",
-    initial: "verifying",
+    // Client-reported model (ADR-049/050): NO server probe on arrival. The
+    // machine settles immediately in awaiting_org_report and waits for the
+    // client to report the outcome it observed (org_found / org_not_found).
+    initial: "awaiting_org_report",
     context: ({ input }) => ({
       params: {
         request_id: input.request_id,
@@ -89,55 +76,33 @@ export function createOnboardingMachine() {
         config: input.config ?? null,
         deps: input.deps ?? null,
       },
-      user: { email: null, display_name: null, first_name: null },
+      // Identity has EXACTLY ONE writer: this cold-start seed from the verified
+      // header (input.user). No outcome event ever touches user (INV-PCO).
+      user: input.user ?? { email: null, display_name: null, first_name: null },
       org: { id: null, name: null },
       pending_org_name: null,
       underlying_cause_tag: null,
       org_validation_error: null,
     }),
     states: {
-      verifying: {
-        invoke: {
-          src: "loadSession",
-          input: ({ context }) => ({
-            bearer_token: context.params.bearer_token,
-            request_id: context.params.request_id,
-            config: context.params.config,
-            deps: context.params.deps,
-          }),
-          onDone: [
-            {
-              guard: "hasOrg",
-              target: "ready",
-              actions: ["assignVerifiedUser", "assignResolvedOrg"],
-            },
-            {
-              target: "needs_org",
-              actions: "assignVerifiedUser",
-            },
-          ],
-          onError: {
-            target: "session_rejected",
-            actions: "tagSessionRejected",
-          },
+      // Waiting for the client's existence report. org_found → ready (returning
+      // user fast path); org_not_found → needs_org.
+      awaiting_org_report: {
+        on: {
+          org_found: { target: "ready", actions: "assignResolvedOrg" },
+          org_not_found: { target: "needs_org" },
         },
       },
       needs_org: {
         on: {
-          org_form_submitted: [
-            {
-              guard: "isOrgNameValid",
-              target: "creating_org",
-              actions: ["clearOrgValidationError", "assignPendingOrgName"],
-            },
-            {
-              actions: "recordOrgValidationError",
-            },
-          ],
-          // Harness-only side-channel: force the machine into
-          // error_recoverable carrying the supplied cause tag. Gated at the
-          // HTTP layer (router.ts) by the failure-simulation gate so
-          // production builds never see this event.
+          // The client created the org and reported it → ready.
+          org_created: { target: "ready", actions: "assignCreatedOrg" },
+          // Convergence: an org_found arriving here (the client raced a probe
+          // after landing on setup) also settles ready.
+          org_found: { target: "ready", actions: "assignResolvedOrg" },
+          // Harness-only side-channel: force the machine into error_recoverable
+          // carrying the supplied cause tag. Gated at the HTTP layer (router.ts)
+          // by the failure-simulation gate so production builds never see it.
           __force_failure__: {
             target: "error_recoverable",
             actions: {
@@ -147,49 +112,10 @@ export function createOnboardingMachine() {
           },
         },
       },
-      creating_org: {
-        // TODO: sync WorkOS Organizations with the app-level backend orgs.
-        // When a backend org is created/changed here, propagate it to WorkOS so
-        // the two stores stay consistent. This machine is a natural home — it
-        // already holds a WorkOS handle (the re-verify call) and is event-driven,
-        // so org create/membership transitions can fan out to WorkOS.
-        invoke: {
-          src: "createOrg",
-          input: ({ context }) => {
-            return {
-              org_name: context.pending_org_name,
-              principal_id: context.params.principal_id,
-              request_id: context.params.request_id,
-              config: context.params.config,
-              deps: context.params.deps,
-            };
-          },
-          onDone: {
-            target: "ready",
-            actions: "assignCreatedOrg",
-          },
-          onError: [
-            {
-              guard: "isOrgNameTaken",
-              target: "needs_org",
-              actions: "recordOrgNameTaken",
-            },
-            // A genuine org-create failure (not a duplicate name) is an ordinary
-            // upstream error — surface it on the recoverable-error screen. There
-            // is no retry loop: auth-proxy mints the org-scoped token on the
-            // org-create response, so there is no reissue step to retry.
-            {
-              target: "error_recoverable",
-              actions: { type: "tagCause", params: { tag: "partial-setup" } },
-            },
-          ],
-        },
-      },
       ready: {},
-      // Terminal-ish error landing: reached by a genuine org-create failure or
-      // the __force_failure__ harness jump. No retry transition.
+      // Recoverable-error landing: reached by the __force_failure__ harness jump
+      // (empty in CDO-S1; genuine org-create failures route here in CDO-S3).
       error_recoverable: {},
-      session_rejected: {},
     },
   });
 }
