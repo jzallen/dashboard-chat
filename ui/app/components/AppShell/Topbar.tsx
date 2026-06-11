@@ -7,6 +7,7 @@ import { useLocation, useNavigate, useParams } from "react-router";
 
 import { useNavIntents } from "../../../app/lib/nav";
 import { useProjectId } from "../../../app/lib/useProjectId";
+import { logout } from "../../auth/session";
 import type { LineageNode } from "../../catalog";
 import { ModelPicker, ProjectPicker } from "../Breadcrumb";
 import type { ColdStorageApi } from "../ColdStorage";
@@ -142,6 +143,14 @@ export function Topbar({
             >
               <Icon name="fridge" />
               {coldCount > 0 && <span className="cold-count">{coldCount}</span>}
+            </button>
+            <button
+              className="icon-btn"
+              title="Log out"
+              aria-label="Log out"
+              onClick={() => void logout()}
+            >
+              <Icon name="logout" />
             </button>
           </div>
         </div>

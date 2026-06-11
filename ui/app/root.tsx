@@ -16,6 +16,7 @@ import { Links, Meta, Outlet, Scripts, ScrollRestoration } from "react-router";
 import { ThemeProvider } from "./components/AppShell";
 import { FlashedNodeProvider } from "./components/FlashedNodeProvider";
 import { initCatalog } from "./components/useCatalog";
+import { SessionLifecycleProvider } from "./lib/SessionLifecycleProvider";
 import { StateProxyProvider } from "./lib/StateProxyProvider";
 
 export function Layout({ children }: { children: ReactNode }) {
@@ -72,7 +73,9 @@ export default function Root() {
     <ThemeProvider>
       <FlashedNodeProvider>
         <StateProxyProvider>
-          <Outlet />
+          <SessionLifecycleProvider>
+            <Outlet />
+          </SessionLifecycleProvider>
         </StateProxyProvider>
       </FlashedNodeProvider>
     </ThemeProvider>

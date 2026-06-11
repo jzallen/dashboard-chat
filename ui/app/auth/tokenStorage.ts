@@ -16,3 +16,32 @@ export function hasSession(): boolean {
     .map((pair) => pair.trim())
     .some((pair) => pair === "session=1");
 }
+
+/** Drop the JS-readable `session=1` flag so hasSession() reads false. Used when a
+ *  401 reveals the credential cookie has lapsed even though the flag lingered —
+ *  otherwise /login would bounce a "still signed in" principal straight back into
+ *  the app and loop. (The httpOnly auth_token is cleared server-side on logout.) */
+export function clearSessionFlag(): void {
+  document.cookie = "session=; path=/; max-age=0";
+}
+
+// ── last-activity tracking (ported from frontend/src/core/auth) ──
+// The idle tracker stamps the wall-clock of the last *debounced* real input here
+// (localStorage → per-origin + cross-tab, so activity in one tab keeps every tab
+// alive). It drives both the keep-alive beat and the inactivity auto-logout.
+const ACTIVITY_KEY = "last_activity_ts";
+
+export function getLastActivity(): number | null {
+  const raw = localStorage.getItem(ACTIVITY_KEY);
+  if (raw === null) return null;
+  const ts = Number.parseInt(raw, 10);
+  return Number.isFinite(ts) ? ts : null;
+}
+
+export function setLastActivity(ts: number): void {
+  localStorage.setItem(ACTIVITY_KEY, String(ts));
+}
+
+export function clearLastActivity(): void {
+  localStorage.removeItem(ACTIVITY_KEY);
+}

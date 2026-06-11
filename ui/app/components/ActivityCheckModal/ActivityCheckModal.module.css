@@ -1,0 +1,53 @@
+/* "Are you still there?" inactivity modal — neobrutalist, matching the rest of
+   the UI (theme tokens: #111 borders, hard offset shadow, Archivo serif heading).
+   Buttons reuse the global .btn / .btn.primary primitives. */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(17, 17, 17, 0.45);
+}
+
+.card {
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 26px 28px 24px;
+  background: var(--surface);
+  border: 2.5px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+  color: var(--text-900);
+}
+
+.description {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-500);
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+.actions .btn {
+  flex: 1;
+  justify-content: center;
+  font-weight: 700;
+}
