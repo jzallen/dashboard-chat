@@ -1031,3 +1031,46 @@ describe("ui-cookie-session: POST /api/auth/logout teardown (C2, D5)", () => {
     expect(setCookie(res, COOKIE_SESSION_FLAG)?.maxAge).toBe("0");
   });
 });
+
+describe("mode discovery: GET /api/auth/config (ADR-050 §d)", () => {
+  const originalAuthMode = process.env.AUTH_MODE;
+
+  afterEach(() => {
+    if (originalAuthMode === undefined) delete process.env.AUTH_MODE;
+    else process.env.AUTH_MODE = originalAuthMode;
+  });
+
+  it("returns 200 {mode:'dev'} with Cache-Control max-age when AUTH_MODE=dev", async () => {
+    process.env.AUTH_MODE = "dev";
+    const res = await makeRequest("/api/auth/config");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ mode: "dev" });
+    expect(res.headers.get("Cache-Control")).toContain("max-age=300");
+  });
+
+  it("returns 200 {mode:'workos'} when AUTH_MODE=workos", async () => {
+    process.env.AUTH_MODE = "workos";
+    const res = await makeRequest("/api/auth/config");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ mode: "workos" });
+  });
+
+  it("requires no credential — a bare request returns 200, not 401", async () => {
+    process.env.AUTH_MODE = "dev";
+    const res = await makeRequest("/api/auth/config");
+    expect(res.status).toBe(200);
+    expect(res.status).not.toBe(401);
+  });
+
+  it("is side-effect-free — two consecutive calls return identical bodies and mint no login state cookie", async () => {
+    process.env.AUTH_MODE = "dev";
+    const first = await makeRequest("/api/auth/config");
+    const second = await makeRequest("/api/auth/config");
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(await first.json()).toEqual(await second.json());
+    // §d: config mints no CSRF login state — it sets no Set-Cookie.
+    expect(first.headers.getSetCookie()).toEqual([]);
+    expect(second.headers.getSetCookie()).toEqual([]);
+  });
+});

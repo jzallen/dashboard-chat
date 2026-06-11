@@ -297,6 +297,18 @@ app.get("/api/auth/me", async (c) => {
   }
 });
 
+// Mode discovery (ADR-050 §d). auth-proxy is the SOLE AUTH_MODE reader; the
+// login surface calls this before any sign-in affordance, so it is pre-auth
+// (no credential, never 401). Side-effect-free — unlike GET /api/auth/login it
+// mints NO CSRF login state, which is exactly why §d keeps the two separate.
+// Cacheable for 5 min. Registered BEFORE the catch-all app.all('*') (same
+// mechanism as GET /api/auth/me) so it is served locally and never proxied.
+app.get("/api/auth/config", (c) => {
+  const mode = (process.env.AUTH_MODE || "dev") === "dev" ? "dev" : "workos";
+  c.header("Cache-Control", "public, max-age=300");
+  return c.json({ mode });
+});
+
 /**
  * Construct the right `UserAuthProvider` for the current request based on
  * `AUTH_MODE`. Built per-request so each call observes the live env; the
