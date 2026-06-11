@@ -73,12 +73,7 @@ class Settings(BaseSettings):
     # Auth
     trust_proxy_headers: bool = False  # Trust X-User-Id/X-Org-Id/X-User-Email from auth proxy
     dev_no_org: bool = False  # Ignore org claims (header/contextvar); resolve org from DB by created_by
-    auth_mode: str = "dev"  # "dev" or "workos"
     auto_provision_org: bool = False  # auto-create org + project on login (dev/SQLite only)
-    workos_api_key: str = ""
-    workos_api_url: str = "https://api.workos.com"
-    workos_client_id: str = ""
-    workos_redirect_uri: str = "http://localhost:5173/auth/callback"
 
     # Mirth Connect - HL7v2 to FHIR conversion
     mirth_connect_url: str = ""

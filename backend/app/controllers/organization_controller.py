@@ -40,14 +40,10 @@ class OrganizationController:
         result = await _uc().create_organization(name=name, user=user)
         match result:
             case Success(data):
-                # The use case returns {"org_id", "org_name"(, "requires_reauth")};
-                # map it to the JSON:API resource shape (id, attributes.name, and
-                # requires_reauth kept as an attribute when present — the workos
-                # frontend flow reads it to re-trigger login). See DUI-3.
+                # The use case returns {"org_id", "org_name"}; map it to the
+                # JSON:API resource shape (id, attributes.name). See DUI-3.
                 org_id = data["org_id"]
                 organization = {"id": org_id, "name": data["org_name"]}
-                if "requires_reauth" in data:
-                    organization["requires_reauth"] = data["requires_reauth"]
                 return (
                     wrap_jsonapi_single("organizations", organization, f"/api/organizations/{org_id}"),
                     201,

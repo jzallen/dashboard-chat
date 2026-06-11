@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, patch
 from returns.result import Failure, Success
 
 from app.controllers.http_controller import HTTPController
-from app.use_cases.organization.exceptions import ExternalServiceError
+from app.use_cases.organization.exceptions import OrganizationNameTakenError
 
 # ---------------------------------------------------------------------------
 # post_organization (L326-333)
@@ -29,11 +29,11 @@ class TestPostOrganizationCharacterization:
 
     The original pins mocked a fictional `_Model` that serialized to
     {"id", "name"} — a shape `create_organization` NEVER returns. The real use
-    case returns {"org_id", "org_name"(, "requires_reauth")}, so the pinned 201
-    path was unreachable over real HTTP (it always 500'd on KeyError). That was
-    testing theater (L2 of the test-refactoring catalog); these tests now feed
-    the controller the real use-case dict end to end and assert the JSON:API
-    envelope the ingress consumers actually receive.
+    case returns {"org_id", "org_name"}, so the pinned 201 path was unreachable
+    over real HTTP (it always 500'd on KeyError). That was testing theater (L2
+    of the test-refactoring catalog); these tests now feed the controller the
+    real use-case dict end to end and assert the JSON:API envelope the ingress
+    consumers actually receive.
     """
 
     @patch("app.controllers.http_controller.organization_use_cases")
@@ -44,19 +44,10 @@ class TestPostOrganizationCharacterization:
         assert body["data"]["type"] == "organizations"
         assert body["data"]["id"] == "org-1"
         assert body["data"]["attributes"]["name"] == "Acme"
-        # Dev path: the use case omits requires_reauth — the envelope must too.
+        # The backend is a pure resource store (ADR-048 §2): the envelope carries
+        # only id + name, never a requires_reauth attribute.
         assert "requires_reauth" not in body["data"]["attributes"]
         assert body["links"]["self"] == "/api/organizations/org-1"
-
-    @patch("app.controllers.http_controller.organization_use_cases")
-    async def test_workos_requires_reauth_surfaces_as_attribute(self, mock_uc):
-        mock_uc.create_organization = AsyncMock(
-            return_value=Success({"org_id": "org-2", "org_name": "Acme", "requires_reauth": True})
-        )
-        body, status = await HTTPController.post_organization("Acme", user="USER_SENTINEL")
-        assert status == 201
-        assert body["data"]["id"] == "org-2"
-        assert body["data"]["attributes"]["requires_reauth"] is True
 
     @patch("app.controllers.http_controller.organization_use_cases")
     async def test_forwards_name_and_user(self, mock_uc):
@@ -66,9 +57,9 @@ class TestPostOrganizationCharacterization:
 
     @patch("app.controllers.http_controller.organization_use_cases")
     async def test_failure_returns_mapped_status(self, mock_uc):
-        mock_uc.create_organization = AsyncMock(return_value=Failure(ExternalServiceError("workos down")))
+        mock_uc.create_organization = AsyncMock(return_value=Failure(OrganizationNameTakenError("X taken")))
         _, status = await HTTPController.post_organization("X", user="U")
-        assert status == 502
+        assert status == 409
 
 
 # ---------------------------------------------------------------------------
@@ -98,9 +89,9 @@ class TestGetMyOrganizationCharacterization:
 
     @patch("app.controllers.http_controller.organization_use_cases")
     async def test_failure_routes_through_error_response(self, mock_uc):
-        mock_uc.get_organization = AsyncMock(return_value=Failure(ExternalServiceError("upstream")))
+        mock_uc.get_organization = AsyncMock(return_value=Failure(OrganizationNameTakenError("upstream")))
         _, status = await HTTPController.get_my_organization(user="U")
-        assert status == 502
+        assert status == 409
 
     @patch("app.controllers.http_controller.organization_use_cases")
     async def test_forwards_user(self, mock_uc):

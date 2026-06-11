@@ -28,7 +28,6 @@ from app.use_cases.dataset.exceptions import (
     PreviewNotSupported,
 )
 from app.use_cases.exceptions import DomainException
-from app.use_cases.organization.exceptions import ExternalServiceError
 from app.use_cases.project.exceptions import (
     ProjectHasNoDatasets,
     ProjectNotFound,
@@ -139,7 +138,6 @@ class TestErrorResponseDomainExceptionDispatch:
                 "Column Type Mismatch",
             ),
             # 502 family
-            (lambda: ExternalServiceError("boom"), 502, "External Service Error"),
             (lambda: QueryEngineUnreachable("qe1"), 502, "Query Engine Unreachable"),
         ],
     )
