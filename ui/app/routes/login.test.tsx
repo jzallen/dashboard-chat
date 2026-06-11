@@ -2,11 +2,11 @@
 //
 // /login behaviors (CDO-S5; ADR-050 §d — mode discovery):
 //   - on mount the route fetches the memoized fetchAuthConfig(); until it
-//     resolves NO sign-in affordance renders (a neutral waiting surface — never a
-//     flash of a dev button in workos mode);
-//   - mode==='dev'    → the "Sign in (dev)" button;
-//   - mode==='workos' → a plain "Sign in" button;
-//   - BOTH onClick invoke the UNCHANGED login();
+//     resolves NO affordance renders (a neutral waiting surface — never a flash
+//     of a button in workos mode);
+//   - mode==='dev'    → the "Sign in (dev)" button; onClick invokes login();
+//   - mode==='workos' → NO button: WorkOS is the sign-in page, so the route
+//     hands off via login() immediately (only a redirect notice renders);
 //   - hasSession() short-circuits to the workspace.
 //
 // Driven ports: the auth/bootstrap module seam (fetchAuthConfig + login) and the
@@ -64,23 +64,24 @@ describe("LoginRoute mode discovery (ADR-050 §d)", () => {
     expect(login).toHaveBeenCalledTimes(1);
   });
 
-  it("mode=workos: renders a plain 'Sign in' button (no dev label), which calls login()", async () => {
+  it("mode=workos: shows NO sign-in button and hands off to WorkOS via login()", async () => {
     vi.mocked(hasSession).mockReturnValue(false);
     vi.mocked(fetchAuthConfig).mockResolvedValue({ mode: "workos" });
     vi.mocked(login).mockResolvedValue(undefined);
 
     renderLogin();
 
-    const button = await screen.findByRole("button", { name: /^sign in$/i });
-    expect(button).toBeTruthy();
-    // No dev affordance leaked.
+    // login() is invoked automatically — WorkOS itself is the sign-in page.
+    await waitFor(() => expect(login).toHaveBeenCalledTimes(1));
+    // No local button of any flavour — neither dev nor a plain "Sign in".
+    expect(screen.queryByRole("button")).toBeNull();
     expect(screen.queryByText("Sign in (dev)")).toBeNull();
-    fireEvent.click(button);
-    expect(login).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/redirecting to sign-in/i)).toBeTruthy();
   });
 
-  it("does NOT flash a dev button in workos mode (no affordance before the config resolves)", async () => {
+  it("does NOT flash any button before the config resolves, and never a dev button in workos", async () => {
     vi.mocked(hasSession).mockReturnValue(false);
+    vi.mocked(login).mockResolvedValue(undefined);
     let resolveConfig!: (c: { mode: "dev" | "workos" }) => void;
     vi.mocked(fetchAuthConfig).mockReturnValue(
       new Promise((resolve) => {
@@ -96,11 +97,24 @@ describe("LoginRoute mode discovery (ADR-050 §d)", () => {
 
     resolveConfig({ mode: "workos" });
 
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: /^sign in$/i })).toBeTruthy(),
-    );
-    // Never a dev button.
+    // Post-resolution: auto-redirect, still no button (and never a dev button).
+    await waitFor(() => expect(login).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("button")).toBeNull();
     expect(screen.queryByText("Sign in (dev)")).toBeNull();
+  });
+
+  it("mode=workos: surfaces a Retry affordance only when the handoff fails", async () => {
+    vi.mocked(hasSession).mockReturnValue(false);
+    vi.mocked(fetchAuthConfig).mockResolvedValue({ mode: "workos" });
+    vi.mocked(login).mockRejectedValueOnce(new Error("login failed: 503"));
+
+    renderLogin();
+
+    const retry = await screen.findByRole("button", { name: /retry/i });
+    expect(retry).toBeTruthy();
+    vi.mocked(login).mockResolvedValue(undefined);
+    fireEvent.click(retry);
+    await waitFor(() => expect(login).toHaveBeenCalledTimes(2));
   });
 
   it("redirects an already-signed-in person to the workspace via hasSession()", () => {

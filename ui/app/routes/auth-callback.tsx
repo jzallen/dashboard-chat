@@ -1,6 +1,7 @@
-/* /auth/callback — exchange the dev auth code for a token, then land on the
-   workspace. The replace navigation scrubs ?code= from history.
-   AUTH_MODE=dev path: no WorkOS state CSRF round-trip. */
+/* /auth/callback — exchange the auth code for a token, then land on the
+   workspace. The replace navigation scrubs ?code=&state= from history.
+   dev: the code is dev-auth-code with no state. workos: WorkOS echoes
+   ?code=…&state=…; the state is forwarded so the auth-proxy's CSRF check passes. */
 import { useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 
@@ -21,8 +22,10 @@ export default function AuthCallbackRoute() {
       navigate("/login", { replace: true });
       return;
     }
+    // workos echoes the CSRF state alongside the code; dev has none (undefined).
+    const state = searchParams.get("state") ?? undefined;
     calledRef.current = true;
-    handleCallback(code)
+    handleCallback(code, state)
       .then(() => {
         log.info("callback.ok");
         navigate("/", { replace: true });
