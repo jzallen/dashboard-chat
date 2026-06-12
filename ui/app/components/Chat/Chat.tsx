@@ -181,11 +181,14 @@ export function AssistantOverlay({
           <Icon name="sparkle" size={15} />
         </span>
         <span className={styles.ct}>Assistant</span>
-        {context && (
+        {context ? (
           <span className={styles.chatCtx}>
             <LayerDot layer={context.layer} size={6} />
             {context.label}
+            <span className={styles.chatCtxLayer}>{context.layer}</span>
           </span>
+        ) : (
+          <span className={styles.chatCtx}>No dataset in context</span>
         )}
         <div className={styles.aoActions}>
           <button className={styles.aoIconbtn} onClick={newSession}>

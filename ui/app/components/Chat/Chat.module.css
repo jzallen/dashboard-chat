@@ -117,6 +117,10 @@
   padding: 3px 8px;
   border-radius: 99px;
 }
+.chatCtxLayer {
+  color: var(--text-400);
+  text-transform: lowercase;
+}
 .aoActions {
   margin-left: auto;
   display: flex;

@@ -2,6 +2,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { LineageNode } from "../../catalog";
 import { fixtureSource } from "../../catalog";
 import { installCatalogForTest } from "../useCatalog";
 import { AssistantOverlay } from "./Chat";
@@ -11,11 +12,11 @@ beforeEach(async () => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-function renderOverlay() {
+function renderOverlay(context: LineageNode | null = null) {
   const noop = () => {};
   render(
     <AssistantOverlay
-      context={null}
+      context={context}
       onCreate={noop}
       onClose={noop}
       onOpenNode={noop}
@@ -23,6 +24,14 @@ function renderOverlay() {
     />,
   );
 }
+
+const datasetNode: LineageNode = {
+  id: "ds-1",
+  label: "customers",
+  sub: "raw upload",
+  layer: "staging",
+  ref: { fields: [] },
+};
 
 describe("AssistantOverlay — live chat error path", () => {
   it("shows an unavailable notice when the broker call fails", async () => {
@@ -39,5 +48,21 @@ describe("AssistantOverlay — live chat error path", () => {
     await waitFor(() =>
       expect(screen.getByText(/assistant is unavailable/i)).toBeTruthy(),
     );
+  });
+});
+
+describe("AssistantOverlay — context indicator", () => {
+  it("shows the dataset name AND its layer word when a context node is present", () => {
+    renderOverlay(datasetNode);
+
+    expect(screen.getByText("customers")).toBeTruthy();
+    // The layer word is shown next to the name (dot + name + layer).
+    expect(screen.getByText("staging")).toBeTruthy();
+  });
+
+  it("shows an explicit 'No dataset in context' chip when there is no context", () => {
+    renderOverlay(null);
+
+    expect(screen.getByText(/no dataset in context/i)).toBeTruthy();
   });
 });
