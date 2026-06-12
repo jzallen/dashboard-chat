@@ -5,7 +5,7 @@
   "description": "Vite harness around the Claude Design 'dashboard-chat-layers' prototype. Temporary: the prototype scripts run as one concatenated module today; refactor them into real ESM components incrementally.",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "react-router build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"

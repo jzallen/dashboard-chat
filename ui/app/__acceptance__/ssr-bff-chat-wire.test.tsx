@@ -23,7 +23,7 @@
  * RED until DELIVER lands steps 4-7 (the /bff/chat action, the SSE reader, the
  * AssistantOverlay rewire, and the public catalog.revalidateScope()).
  */
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   afterAll,
   afterEach,
