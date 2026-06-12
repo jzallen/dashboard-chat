@@ -45,11 +45,13 @@ function stubProjects(body: unknown, ok = true) {
 
 const PROJECTS = "/api/projects";
 const DATASETS = "/api/datasets";
+const SOURCES = "/api/sources";
 const VIEWS = "/api/projects/p1/views";
 const REPORTS = "/api/projects/p1/reports";
 
 const LINEAGE_ROUTES = {
   [PROJECTS]: { data: [{ id: "p1", name: "Acme" }] },
+  [SOURCES]: { data: [] },
   [DATASETS]: {
     data: [
       {
@@ -239,6 +241,35 @@ describe("metadataApiSource — lineage core (getNodes/getEdges/getAudit)", () =
     expect(nodes.r1.layer).toBe("mart");
   });
 
+  it("also fetches /api/sources and surfaces source nodes + source→staging edges", async () => {
+    const fetchMock = stubFetch({
+      [PROJECTS]: { data: [{ id: "p1", name: "Acme" }] },
+      [SOURCES]: { data: [{ id: "s1", name: "orders_csv", schema_config: { fields: {} } }] },
+      [DATASETS]: {
+        data: [
+          {
+            id: "d1",
+            name: "customers",
+            source_id: "s1",
+            schema_config: { fields: {} },
+            staging_sql: "SELECT 1",
+            row_count: 3,
+          },
+        ],
+      },
+      [VIEWS]: { data: [] },
+      [REPORTS]: { data: [] },
+    });
+    const source = metadataApiSource({ getToken: () => "tok" });
+    const nodes = await source.getNodes!();
+    const edges = await source.getEdges!();
+
+    const urls = fetchMock.mock.calls.map((c) => c[0] as string);
+    expect(urls).toContain("/api/sources?project_id=p1");
+    expect(nodes.s1.layer).toBe("source");
+    expect(edges).toContainEqual(["s1", "d1"]);
+  });
+
   it("hits /api/datasets with the resolved project_id query", async () => {
     const fetchMock = stubFetch(LINEAGE_ROUTES);
     const source = metadataApiSource({ getToken: () => "tok" });
@@ -278,6 +309,7 @@ describe("metadataApiSource — lineage core (getNodes/getEdges/getAudit)", () =
   it("getNodes resolves {} when the backend is legitimately empty (does NOT reject)", async () => {
     stubFetch({
       [PROJECTS]: { data: [{ id: "p1", name: "Acme" }] },
+      [SOURCES]: { data: [] },
       [DATASETS]: { data: [] },
       [VIEWS]: { data: [] },
       [REPORTS]: { data: [] },
@@ -319,6 +351,8 @@ describe("metadataApiSource — project-scoped lineage (project-in-path)", () =>
   /** Lineage routes for two coexisting projects, p1 and p2. */
   const TWO_PROJECT_ROUTES = {
     [PROJECTS]: { data: [{ id: "p1", name: "Acme" }, { id: "p2", name: "Beta" }] },
+    "/api/sources?project_id=p1": { data: [] },
+    "/api/sources?project_id=p2": { data: [] },
     "/api/datasets?project_id=p1": {
       data: [
         {
@@ -1039,5 +1073,312 @@ describe("metadataApiSource — createDataset (multipart upload)", () => {
     });
     const file = new Blob(["x"]) as unknown as File;
     await expect(source.createDataset!(file)).rejects.toThrow();
+  });
+});
+
+describe("metadataApiSource — getSources (lineage source list)", () => {
+  it("fetches the project-scoped sources and returns the unwrapped list", async () => {
+    const fetchMock = stubFetch({
+      [PROJECTS]: { data: [{ id: "p1", name: "Acme" }] },
+      "/api/sources?project_id=p1": {
+        data: [
+          {
+            type: "sources",
+            id: "s1",
+            attributes: { name: "orders_csv", schema_config: { fields: {} } },
+          },
+        ],
+      },
+    });
+    const source = metadataApiSource({ getToken: () => "tok" });
+
+    const sources = await source.getSources!();
+
+    expect(fetchMock.mock.calls.map((c) => c[0] as string)).toContain(
+      "/api/sources?project_id=p1",
+    );
+    expect(sources).toEqual([
+      { id: "s1", name: "orders_csv", schema_config: { fields: {} } },
+    ]);
+  });
+
+  it("rejects on a non-2xx sources response", async () => {
+    stubFetch({ "/api/sources?project_id=p1": { data: [] } }, false);
+    const source = metadataApiSource({
+      getToken: () => "tok",
+      getProjectId: () => "p1",
+    });
+    await expect(source.getSources!()).rejects.toThrow();
+  });
+});
+
+describe("metadataApiSource — createSource (POST /api/sources)", () => {
+  it("POSTs project_id + name and returns the created source id (JSON:API unwrap)", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 201,
+      json: async () => ({
+        data: { type: "sources", id: "src.new", attributes: { name: "orders_csv" } },
+      }),
+    }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const source = metadataApiSource({
+      getToken: () => "tok",
+      getProjectId: () => "p1",
+    });
+
+    const res = await source.createSource!("orders_csv");
+
+    expect(res).toEqual({ id: "src.new" });
+    const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(call[0]).toBe("/api/sources");
+    expect(call[1].method).toBe("POST");
+    expect(JSON.parse(call[1].body as string)).toEqual({
+      project_id: "p1",
+      name: "orders_csv",
+    });
+    expect(call[1].credentials).toBe("include");
+  });
+
+  it("rejects on a non-2xx create response", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: false,
+      status: 500,
+      json: async () => ({}),
+    }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const source = metadataApiSource({
+      getToken: () => "tok",
+      getProjectId: () => "p1",
+    });
+    await expect(source.createSource!("x")).rejects.toThrow();
+  });
+});
+
+describe("metadataApiSource — requestUpload (POST .../uploads, RAW 202)", () => {
+  it("POSTs the file descriptor and returns the raw presign body (NOT envelope-unwrapped)", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 202,
+      json: async () => ({
+        upload_id: "up.1",
+        put_url: "https://minio.local/bucket/key?sig=abc",
+        storage_key: "uploads/p1/s1/up.1/orders.csv",
+        status: "pending",
+      }),
+    }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const source = metadataApiSource({ getToken: () => "tok" });
+
+    const file = new File(["a,b\n1,2\n"], "orders.csv", { type: "text/csv" });
+    const res = await source.requestUpload!("s1", file);
+
+    expect(res).toEqual({
+      uploadId: "up.1",
+      putUrl: "https://minio.local/bucket/key?sig=abc",
+      storageKey: "uploads/p1/s1/up.1/orders.csv",
+    });
+    const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(call[0]).toBe("/api/sources/s1/uploads");
+    expect(call[1].method).toBe("POST");
+    expect(JSON.parse(call[1].body as string)).toEqual({
+      filename: "orders.csv",
+      content_type: "text/csv",
+      size: file.size,
+    });
+    expect(call[1].credentials).toBe("include");
+  });
+
+  it("rejects on a non-2xx upload-record response", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: false,
+      status: 500,
+      json: async () => ({}),
+    }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const source = metadataApiSource({ getToken: () => "tok" });
+    const file = new File(["x"], "x.csv", { type: "text/csv" });
+    await expect(source.requestUpload!("s1", file)).rejects.toThrow();
+  });
+});
+
+describe("metadataApiSource — putToStorage (DIRECT browser→MinIO PUT)", () => {
+  it("PUTs the file bytes to the presigned URL with the file's Content-Type and NO auth", async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200 }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const source = metadataApiSource({ getToken: () => "secret-token" });
+
+    const file = new File(["a,b\n1,2\n"], "orders.csv", { type: "text/csv" });
+    await source.putToStorage!("https://minio.local/bucket/key?sig=abc", file);
+
+    const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    // Direct to the presigned URL, bypassing the app/auth-proxy.
+    expect(call[0]).toBe("https://minio.local/bucket/key?sig=abc");
+    expect(call[1].method).toBe("PUT");
+    expect(call[1].body).toBe(file);
+    // The presign was signed with a ContentType — the PUT MUST echo it or MinIO
+    // rejects the signature.
+    expect((call[1].headers as Record<string, string>)["Content-Type"]).toBe(
+      "text/csv",
+    );
+    // No auth-proxy cookie/credentials are attached to the third-party PUT.
+    expect(call[1].credentials).not.toBe("include");
+    expect(
+      (call[1].headers as Record<string, string>).Authorization,
+    ).toBeUndefined();
+  });
+
+  it("rejects when MinIO returns a non-2xx (e.g. a signature mismatch)", async () => {
+    const fetchMock = vi.fn(async () => ({ ok: false, status: 403 }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const source = metadataApiSource({ getToken: () => "tok" });
+    const file = new File(["x"], "x.csv", { type: "text/csv" });
+    await expect(
+      source.putToStorage!("https://minio.local/bucket/key", file),
+    ).rejects.toThrow();
+  });
+});
+
+describe("metadataApiSource — processUpload (POST .../process)", () => {
+  it("POSTs the process step and unwraps the linked dataset id", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: {
+          type: "datasets",
+          id: "ds.linked",
+          attributes: { source_id: "s1", name: "orders" },
+        },
+      }),
+    }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const source = metadataApiSource({ getToken: () => "tok" });
+
+    const res = await source.processUpload!("s1", "up.1");
+
+    expect(res).toEqual({ datasetId: "ds.linked" });
+    const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(call[0]).toBe("/api/sources/s1/uploads/up.1/process");
+    expect(call[1].method).toBe("POST");
+    expect(call[1].credentials).toBe("include");
+  });
+
+  it("forwards choices when provided (sheet-selection path)", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ data: { type: "datasets", id: "ds.x", attributes: {} } }),
+    }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const source = metadataApiSource({ getToken: () => "tok" });
+
+    await source.processUpload!("s1", "up.1", { sheet: "Sheet1" });
+
+    const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(call[1].body as string)).toEqual({
+      choices: { sheet: "Sheet1" },
+    });
+  });
+
+  it("rejects on a 4xx (e.g. 409 schema-mismatch / append-not-supported)", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: false,
+      status: 409,
+      json: async () => ({ detail: "schema mismatch" }),
+    }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const source = metadataApiSource({ getToken: () => "tok" });
+    await expect(source.processUpload!("s1", "up.1")).rejects.toThrow();
+  });
+});
+
+describe("metadataApiSource — getSourceUploads (upload modal Files list)", () => {
+  it("GETs /api/sources/{id}/uploads and maps the unwrapped JSON:API list to SourceUpload[]", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: [
+          {
+            id: "up.1",
+            type: "uploads",
+            attributes: {
+              upload_id: "up.1",
+              original_filename: "patients.csv",
+              file_size: 2048,
+              status: "ingested",
+              row_count: 42,
+              created_at: new Date().toISOString(),
+            },
+          },
+          {
+            id: "up.2",
+            type: "uploads",
+            attributes: {
+              upload_id: "up.2",
+              original_filename: "more.csv",
+              file_size: 1024,
+              status: "pending",
+              row_count: null,
+              created_at: new Date().toISOString(),
+            },
+          },
+        ],
+      }),
+    }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const source = metadataApiSource({ getToken: () => "tok" });
+
+    const uploads = await source.getSourceUploads!("s1");
+
+    expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe(
+      "/api/sources/s1/uploads",
+    );
+    expect(uploads).toHaveLength(2);
+    expect(uploads[0].name).toBe("patients.csv");
+    expect(uploads[0].rows).toBe(42);
+    expect(uploads[0].status).toBe("ingested");
+    expect(uploads[1].rows).toBe(null);
+    expect(uploads[1].status).toBe("pending");
+  });
+
+  it("formats a just-uploaded created_at as a short 'just now'-style string", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: [
+          {
+            id: "up.1",
+            type: "uploads",
+            attributes: {
+              upload_id: "up.1",
+              original_filename: "fresh.csv",
+              file_size: 10,
+              status: "ingested",
+              row_count: 1,
+              created_at: new Date().toISOString(),
+            },
+          },
+        ],
+      }),
+    }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const source = metadataApiSource({ getToken: () => "tok" });
+
+    const uploads = await source.getSourceUploads!("s1");
+    expect(uploads[0].when.toLowerCase()).toContain("just now");
+  });
+
+  it("rejects on a non-2xx response", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: false,
+      status: 500,
+      json: async () => ({ detail: "boom" }),
+    }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const source = metadataApiSource({ getToken: () => "tok" });
+    await expect(source.getSourceUploads!("s1")).rejects.toThrow();
   });
 });

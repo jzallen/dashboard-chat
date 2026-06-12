@@ -50,12 +50,68 @@ import { apiGet, apiPatch, apiPost, apiUpload } from "./backendClient";
 import type {
   BackendDataset,
   BackendReport,
+  BackendSource,
   BackendView,
 } from "./lineageMappers";
 import { toLineageGraph } from "./lineageMappers";
 import type { BackendSession } from "./sessionMappers";
 import { toChatHistoryItem } from "./sessionMappers";
-import type { PartialCatalogSource } from "./source";
+import type { PartialCatalogSource, SourceUpload } from "./source";
+
+/**
+ * An upload resource as the backend returns it (post envelope-unwrap):
+ * snake_case attributes flattened alongside the resource `id`. Mapped to the
+ * UI's {@link SourceUpload} by {@link toSourceUpload}.
+ */
+interface BackendUpload {
+  id: string;
+  upload_id: string;
+  original_filename: string;
+  file_size: number;
+  status: string;
+  row_count: number | null;
+  created_at: string;
+}
+
+/**
+ * Format an upload's `created_at` into a short relative/date string for the
+ * Files list: "just now" (<1m), "Nm ago" (<1h), "Nh ago" (<24h), "Nd ago"
+ * (<7d), else a "Mon D" date. Tolerates an unparseable timestamp → "".
+ */
+function formatUploadWhen(createdAt: string): string {
+  // Normalize for cross-engine parsing + correct UTC interpretation: trim
+  // sub-millisecond digits (Safari rejects 6-digit fractions → NaN → blank)
+  // and mark a timezone-less timestamp as UTC (backend stores naive-UTC, so an
+  // unmarked string would otherwise be parsed as local time and skew the age).
+  let normalized = (createdAt ?? "").trim().replace(/(\.\d{3})\d+/, "$1");
+  if (normalized && !/[zZ]|[+-]\d{2}:?\d{2}$/.test(normalized)) {
+    normalized += "Z";
+  }
+  const then = Date.parse(normalized);
+  if (Number.isNaN(then)) return "";
+  const seconds = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (seconds < 60) return "just now";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(then).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+/** Map a backend upload resource (snake_case) to the UI's {@link SourceUpload}. */
+function toSourceUpload(upload: BackendUpload): SourceUpload {
+  return {
+    name: upload.original_filename,
+    rows: upload.row_count ?? null,
+    when: formatUploadWhen(upload.created_at),
+    status: upload.status,
+  };
+}
 
 /** A project resource as the backend returns it (post envelope-unwrap). */
 interface BackendProject {
@@ -177,6 +233,17 @@ export interface MetadataApiSourceDeps {
 }
 
 /**
+ * Read the server-assigned id off a JSON:API single response `{ data: { id } }`.
+ * Used by the write ports that go through `apiPost` — which returns the RAW
+ * decoded body (it does NOT envelope-unwrap like `apiGet`), so the id is pulled
+ * out here.
+ */
+function dataId(body: unknown): string {
+  const data = (body as { data?: { id?: unknown } } | undefined)?.data;
+  return String(data?.id);
+}
+
+/**
  * Map a backend project to the catalog's project-list DTO. `models` is 0 (not yet
  * backed by the API); `datasets` is the count of attached datasets.
  */
@@ -232,7 +299,11 @@ export function metadataApiSource(
     if (!bundle) {
       bundle = (async () => {
         const tok = deps.getToken();
-        const [datasets, views, reports] = await Promise.all([
+        const [sources, datasets, views, reports] = await Promise.all([
+          apiGet<BackendSource[]>(
+            `/api/sources?project_id=${encodeURIComponent(pid)}`,
+            tok,
+          ),
           apiGet<BackendDataset[]>(
             `/api/datasets?project_id=${encodeURIComponent(pid)}`,
             tok,
@@ -246,7 +317,7 @@ export function metadataApiSource(
             tok,
           ),
         ]);
-        return toLineageGraph(datasets, views, reports);
+        return toLineageGraph(sources, datasets, views, reports);
       })();
       lineageBundlesByPid.set(pid, bundle);
     }
@@ -460,6 +531,103 @@ export function metadataApiSource(
         deps.getToken(),
       );
       return { id: res.data.id };
+    },
+
+    /* ─── Source-from-upload saga ports ──────────────────────────────────── */
+
+    async getSources(): Promise<BackendSource[]> {
+      // Project-scoped, mirroring the lineage getters. apiGet unwraps the
+      // JSON:API list; resolves [] for a source-less project, rejects on a
+      // fetch/auth error.
+      const pid = await scopedProjectId();
+      return apiGet<BackendSource[]>(
+        `/api/sources?project_id=${encodeURIComponent(pid)}`,
+        deps.getToken(),
+      );
+    },
+
+    async getSourceUploads(sourceId: string): Promise<SourceUpload[]> {
+      // GET /api/sources/{id}/uploads → JSON:API uploads list. apiGet unwraps
+      // each resource to `{ id, ...attributes }`; map snake_case → the UI shape.
+      // The source id IS the scope here (no project_id query needed). Rejects on
+      // a fetch/auth error (apiGet throws on non-2xx).
+      const uploads = await apiGet<BackendUpload[]>(
+        `/api/sources/${encodeURIComponent(sourceId)}/uploads`,
+        deps.getToken(),
+      );
+      return uploads.map(toSourceUpload);
+    },
+
+    async createSource(name: string): Promise<{ id: string }> {
+      // POST /api/sources {project_id, name} → 201 JSON:API single. apiPost
+      // returns the RAW body (no unwrap), so the id is read off `data.id`.
+      // Rejects on a non-2xx (apiPost throws) so the saga reports failure.
+      const pid = await scopedProjectId();
+      const body = await apiPost<{ data: { id: string } }>(
+        "/api/sources",
+        { project_id: pid, name },
+        deps.getToken(),
+      );
+      return { id: dataId(body) };
+    },
+
+    async requestUpload(
+      sourceId: string,
+      file: File,
+    ): Promise<{ uploadId: string; putUrl: string; storageKey: string }> {
+      // POST /api/sources/{id}/uploads {filename, content_type, size} → 202 RAW
+      // (NOT JSON:API): {upload_id, put_url, storage_key, status}. The browser
+      // uploads the bytes itself via putToStorage — no bytes are sent here.
+      const body = await apiPost<{
+        upload_id: string;
+        put_url: string;
+        storage_key: string;
+        status: string;
+      }>(
+        `/api/sources/${encodeURIComponent(sourceId)}/uploads`,
+        { filename: file.name, content_type: file.type, size: file.size },
+        deps.getToken(),
+      );
+      return {
+        uploadId: body.upload_id,
+        putUrl: body.put_url,
+        storageKey: body.storage_key,
+      };
+    },
+
+    async putToStorage(putUrl: string, file: File): Promise<void> {
+      // DIRECT browser → MinIO PUT. Plain fetch, NOT through the app/auth-proxy:
+      // no session cookie, no Authorization header. The presign was signed with
+      // a ContentType, so the PUT MUST echo `Content-Type: file.type` or MinIO
+      // rejects the signature. Rejects on a non-2xx storage response.
+      const response = await fetch(putUrl, {
+        method: "PUT",
+        body: file,
+        headers: { "Content-Type": file.type },
+      });
+      if (!response.ok) {
+        throw new Error(
+          `PUT to storage failed with status ${response.status}`,
+        );
+      }
+    },
+
+    async processUpload(
+      sourceId: string,
+      uploadId: string,
+      choices?: Record<string, unknown>,
+    ): Promise<{ datasetId: string }> {
+      // POST .../process → 200 JSON:API datasets (the linked/appended staging
+      // Dataset). apiPost returns the RAW body, so the id is read off `data.id`.
+      // A 4xx throws — notably a 422 SchemaMismatch (whose body carries the
+      // missing/extra/type_mismatch columns) the saga reports as
+      // source_upload_failed and the surface renders as a recovery affordance.
+      const body = await apiPost<{ data: { id: string } }>(
+        `/api/sources/${encodeURIComponent(sourceId)}/uploads/${encodeURIComponent(uploadId)}/process`,
+        choices ? { choices } : undefined,
+        deps.getToken(),
+      );
+      return { datasetId: dataId(body) };
     },
   };
 }

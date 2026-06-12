@@ -274,6 +274,22 @@ export class LineageGraph {
     return new LineageGraph(nodes, this.edgeList, this.cold, addedIds);
   }
 
+  /**
+   * Remove a node and its incident edges outright — the optimistic-rollback
+   * counterpart of {@link addSource}. Unlike {@link archive} it does NOT retire
+   * the node to cold storage; an optimistic node that never landed is discarded,
+   * not restorable. Absent id → the same instance (no-op).
+   */
+  removeSource(id: string): LineageGraph {
+    if (!this.nodes.has(id)) return this;
+    const nodes = new Map(this.nodes);
+    nodes.delete(id);
+    const edgeList = this.edgeList.filter(([a, b]) => a !== id && b !== id);
+    const addedIds = new Set(this.addedIds);
+    addedIds.delete(id);
+    return new LineageGraph(nodes, edgeList, this.cold, addedIds);
+  }
+
   /** Add a live model node and the edge feeding it (each deduped). */
   addModel(node: LineageNode, edge: Edge): LineageGraph {
     const nodes = new Map(this.nodes);

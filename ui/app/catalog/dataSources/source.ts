@@ -17,6 +17,21 @@ import type {
   OrgSettings,
   ProjectSummary,
 } from "../models";
+import type { BackendSource } from "./lineageMappers";
+
+/**
+ * A source's uploaded file as the upload modal's Files list renders it. Mapped
+ * from the backend's snake_case upload resource: `name` ← `original_filename`,
+ * `rows` ← `row_count` (null for a still-pending upload), `when` is a short
+ * formatted date/relative string from `created_at`, `status` passes through
+ * (`"ingested"` | `"pending"`).
+ */
+export type SourceUpload = {
+  name: string;
+  rows: number | null;
+  when: string;
+  status: string;
+};
 
 export interface CatalogSource {
   getProjects(): Promise<ProjectSummary[]>;
@@ -58,6 +73,55 @@ export interface CatalogSource {
    * id; rejects on failure.
    */
   createDataset?(file: File): Promise<{ id: string }>;
+  /* ─── Source-from-upload saga ports (the browser is the saga coordinator) ─── */
+  /**
+   * List the active project's Sources (for the lineage canvas). Resolves the
+   * unwrapped backend source list; rejects on a fetch/auth error.
+   */
+  getSources?(): Promise<BackendSource[]>;
+  /**
+   * List the files uploaded to a Source (backs the upload modal's Files list).
+   * Resolves the mapped {@link SourceUpload}[] (both ingested and pending);
+   * rejects on a fetch/auth error.
+   */
+  getSourceUploads?(sourceId: string): Promise<SourceUpload[]>;
+  /**
+   * Create a Source (the logical table behind one or more uploaded files). The
+   * active project scope is the source's own concern. Resolves with the new
+   * Source's id; rejects on failure (the saga reports `source_upload_failed`).
+   */
+  createSource?(name: string): Promise<{ id: string }>;
+  /**
+   * Record an Upload against a Source and mint a presigned PUT URL. Returns the
+   * RAW 202 body (`{uploadId, putUrl, storageKey}`) — the browser PUTs the bytes
+   * itself ({@link putToStorage}); the app server writes NO bytes here.
+   */
+  requestUpload?(
+    sourceId: string,
+    file: File,
+  ): Promise<{ uploadId: string; putUrl: string; storageKey: string }>;
+  /**
+   * Upload the file bytes DIRECTLY to MinIO via the presigned `putUrl` — a plain
+   * `fetch`, NOT through the app/auth-proxy (no Authorization header, no session
+   * cookie). The presign was signed with a `ContentType`, so the PUT MUST send
+   * `Content-Type: file.type` or MinIO rejects the signature. Rejects on a
+   * non-2xx storage response.
+   */
+  putToStorage?(putUrl: string, file: File): Promise<void>;
+  /**
+   * Trigger ingestion: the server reads the object back from MinIO, validates +
+   * ingests it, and creates/links (first upload) or appends-on-schema-match
+   * (subsequent uploads) the staging Dataset. Resolves with the linked/appended
+   * dataset id; rejects on a 4xx — notably a 422 SchemaMismatch (whose body
+   * carries the offending columns) the saga reports as `source_upload_failed`
+   * and the surface renders as a recovery affordance. `choices` carries a sheet
+   * selection for the `awaiting_input` path.
+   */
+  processUpload?(
+    sourceId: string,
+    uploadId: string,
+    choices?: Record<string, unknown>,
+  ): Promise<{ datasetId: string }>;
   /**
    * Drop any cached per-project reads (e.g. a memoized lineage fetch) so the
    * next read re-fetches fresh. Called before a write-triggered revalidation so

@@ -91,6 +91,9 @@ export function Overlays({
           onCreateSource={upload.createSource}
           onRename={upload.renameSource}
           onArchive={upload.requestArchive}
+          mismatch={upload.mismatch}
+          onRetry={upload.clearMismatch}
+          onLoadUploads={(sourceId) => catalog.getSourceUploads(sourceId)}
         />
       )}
       {upload.confirmArchive && (

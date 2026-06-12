@@ -8,15 +8,14 @@
 // throws ApiError {status, body}; 2xx → returns the unwrapped JSON:API body;
 // network/timeout → throws a plain (non-ApiError) Error. The driver maps those
 // outcomes to the closed-union past-tense outcome reports.
-import { describe, expect, it, vi } from "vitest";
-
-import { ApiError } from "../catalog/dataSources/backendClient";
 import {
   anonymousStateDocument,
   type ChatAppStateDocument,
   type ChatAppWireEvent,
 } from "@dashboard-chat/ui-state-wire";
+import { describe, expect, it, vi } from "vitest";
 
+import { ApiError } from "../catalog/dataSources/backendClient";
 import { createOnboardingDriver, type OnboardingClient } from "./onboarding-driver";
 
 // ───────────────────────────── test doubles ─────────────────────────────

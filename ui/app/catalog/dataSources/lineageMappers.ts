@@ -46,6 +46,25 @@ export interface BackendDataset {
   row_count?: number;
   staging_sql?: string;
   archived_at?: string | null;
+  /**
+   * The Source this dataset is the `SELECT *` staging view over, when it was
+   * created from a Source upload. Absent on LEGACY datasets (created the old
+   * 1:1 upload→dataset way) — those stay graph ROOTS, exactly as before.
+   */
+  source_id?: string | null;
+}
+
+/**
+ * A source as the list endpoint serializes it (post envelope-unwrap). A Source is
+ * a logical table backed by one or more uploaded files sharing a schema; it maps
+ * to a `source`-layer node (the upstream-most layer). `schema_config` is NESTED
+ * like a dataset's (`{ fields: { col: { type, label? } } }`) and may be absent
+ * before the first upload locks the schema.
+ */
+export interface BackendSource {
+  id: string;
+  name: string;
+  schema_config?: { fields?: Record<string, { type?: unknown; label?: unknown }> };
 }
 
 /** A view as the list endpoint serializes it. Maps to an `intermediate` node. */
@@ -87,6 +106,24 @@ export function toFields(
     name,
     type: String((cfg as { type?: unknown })?.type ?? "text"),
   }));
+}
+
+/**
+ * Adapt a source to a `source`-layer {@link LineageNode}. Source nodes carry NO
+ * `ref` (no backend model entity behind them — they are raw uploads, not dbt
+ * models); the column schema lives on the top-level `schema` and `files` lists
+ * the uploads. `files` is `[]` for now — surfacing the per-source upload list is
+ * a later enhancement (slice 5+).
+ */
+export function toSourceNode(s: BackendSource): LineageNode {
+  return {
+    id: s.id,
+    label: s.name,
+    sub: "source",
+    layer: "source",
+    schema: toFields(s.schema_config),
+    files: [],
+  };
 }
 
 /** Adapt a dataset to a `staging` {@link LineageNode} (a graph root). */
@@ -162,12 +199,15 @@ export function toReportNode(r: BackendReport): LineageNode {
 }
 
 /**
- * Assemble the full lineage graph from the three backend lists. Staging nodes
- * come from non-archived datasets (the roots); intermediate/mart nodes from
- * views/reports. Each `source_ref` on a view/report yields an upstream→downstream
- * edge `[ref.id, entity.id]`.
+ * Assemble the full lineage graph from the four backend lists. Source nodes are
+ * the upstream-most roots; staging nodes come from non-archived datasets;
+ * intermediate/mart nodes from views/reports. A dataset created from a Source
+ * upload carries a `source_id`, yielding a `[source_id, dataset.id]` edge
+ * (source → staging); a LEGACY dataset (no `source_id`) stays a root, exactly as
+ * before. Each `source_ref` on a view/report yields a `[ref.id, entity.id]` edge.
  */
 export function toLineageGraph(
+  sources: BackendSource[],
   datasets: BackendDataset[],
   views: BackendView[],
   reports: BackendReport[],
@@ -175,9 +215,14 @@ export function toLineageGraph(
   const nodes: Record<string, LineageNode> = {};
   const edges: Edge[] = [];
 
+  for (const s of sources) {
+    nodes[s.id] = toSourceNode(s);
+  }
+
   for (const d of datasets) {
     if (d.archived_at) continue;
     nodes[d.id] = toStagingNode(d);
+    if (d.source_id) edges.push([d.source_id, d.id]);
   }
 
   for (const v of views) {

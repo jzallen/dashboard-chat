@@ -3,15 +3,24 @@ import { describe, expect, it } from "vitest";
 import type {
   BackendDataset,
   BackendReport,
+  BackendSource,
   BackendView,
 } from "./lineageMappers";
 import {
   toFields,
   toLineageGraph,
   toReportNode,
+  toSourceNode,
   toStagingNode,
   toViewNode,
 } from "./lineageMappers";
+
+const source = (over: Partial<BackendSource> = {}): BackendSource => ({
+  id: "s1",
+  name: "orders_csv",
+  schema_config: { fields: { order_id: { type: "integer" }, total: { type: "number" } } },
+  ...over,
+});
 
 const dataset = (over: Partial<BackendDataset> = {}): BackendDataset => ({
   id: "d1",
@@ -156,27 +165,78 @@ describe("toReportNode", () => {
   });
 });
 
+describe("toSourceNode", () => {
+  it("maps a backend source to a source-layer node", () => {
+    const node = toSourceNode(source());
+    expect(node.id).toBe("s1");
+    expect(node.label).toBe("orders_csv");
+    expect(node.layer).toBe("source");
+    expect(node.sub).toBe("source");
+  });
+
+  it("sets the top-level schema from schema_config (no ref)", () => {
+    const node = toSourceNode(source());
+    expect(node.schema).toEqual([
+      { name: "order_id", type: "integer" },
+      { name: "total", type: "number" },
+    ]);
+    expect(node.ref).toBeUndefined();
+  });
+
+  it("defaults files to [] (per-source upload list is a later enhancement)", () => {
+    expect(toSourceNode(source()).files).toEqual([]);
+  });
+
+  it("defaults schema to [] for a source with no schema_config yet", () => {
+    expect(toSourceNode(source({ schema_config: undefined })).schema).toEqual([]);
+  });
+});
+
 describe("toLineageGraph", () => {
-  it("keys the node map by id across all three entity kinds", () => {
-    const { nodes } = toLineageGraph([dataset()], [view()], [report()]);
-    expect(Object.keys(nodes).sort()).toEqual(["d1", "r1", "v1"]);
+  it("keys the node map by id across all four entity kinds", () => {
+    const { nodes } = toLineageGraph(
+      [source()],
+      [dataset({ source_id: "s1" })],
+      [view()],
+      [report()],
+    );
+    expect(Object.keys(nodes).sort()).toEqual(["d1", "r1", "s1", "v1"]);
+    expect(nodes.s1.layer).toBe("source");
     expect(nodes.d1.layer).toBe("staging");
     expect(nodes.v1.layer).toBe("intermediate");
     expect(nodes.r1.layer).toBe("mart");
   });
 
-  it("derives edges [source_ref.id, entity.id] upstream→downstream", () => {
-    const { edges } = toLineageGraph([dataset()], [view()], [report()]);
+  it("derives a [source_id, dataset.id] edge from a dataset's source link", () => {
+    const { edges } = toLineageGraph(
+      [source()],
+      [dataset({ source_id: "s1" })],
+      [],
+      [],
+    );
+    expect(edges).toContainEqual(["s1", "d1"]); // source → staging
+  });
+
+  it("derives view/report edges [source_ref.id, entity.id] upstream→downstream", () => {
+    const { edges } = toLineageGraph([], [dataset()], [view()], [report()]);
     expect(edges).toContainEqual(["d1", "v1"]); // dataset → view
     expect(edges).toContainEqual(["v1", "r1"]); // view → report
-    // ordering is upstream first, downstream second
     for (const [from, to] of edges) {
       expect([from, to]).toHaveLength(2);
     }
   });
 
+  it("keeps a legacy dataset WITHOUT a source_id as a root (no source edge)", () => {
+    const { nodes, edges } = toLineageGraph([], [dataset()], [], []);
+    expect(nodes.d1).toBeDefined();
+    expect(nodes.d1.layer).toBe("staging");
+    // no edge pointing INTO the dataset
+    expect(edges.some(([, to]) => to === "d1")).toBe(false);
+  });
+
   it("excludes an archived dataset from the graph", () => {
     const { nodes } = toLineageGraph(
+      [],
       [dataset(), dataset({ id: "d9", archived_at: "2026-01-01" })],
       [],
       [],
@@ -187,6 +247,7 @@ describe("toLineageGraph", () => {
 
   it("handles views/reports with no source_refs (no edges)", () => {
     const { edges } = toLineageGraph(
+      [],
       [dataset()],
       [view({ source_refs: undefined })],
       [report({ source_refs: undefined })],
@@ -195,6 +256,6 @@ describe("toLineageGraph", () => {
   });
 
   it("returns empty nodes + edges for empty inputs", () => {
-    expect(toLineageGraph([], [], [])).toEqual({ nodes: {}, edges: [] });
+    expect(toLineageGraph([], [], [], [])).toEqual({ nodes: {}, edges: [] });
   });
 });

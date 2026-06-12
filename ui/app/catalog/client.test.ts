@@ -360,6 +360,115 @@ describe("createDataCatalog — createDataset (upload → revalidate)", () => {
   });
 });
 
+describe("createDataCatalog — createSourceFromUpload (saga + optimistic node)", () => {
+  const file = new File(["a,b\n1,2\n"], "orders.csv", { type: "text/csv" });
+
+  /** A backend primary whose source-saga ports resolve the linked dataset, and
+   *  whose lineage reads reflect the real source + staging node after process. */
+  function sagaPrimary() {
+    let linked = false;
+    return {
+      getCurrentProject: () =>
+        Promise.resolve({ id: "p1", name: "P1", description: "" }),
+      getNodes: (): Promise<Record<string, LineageNode>> =>
+        Promise.resolve(
+          linked
+            ? {
+                "src.real": { id: "src.real", label: "orders_csv", sub: "source", layer: "source", schema: [], files: [] },
+                "ds.real": { id: "ds.real", label: "orders", sub: "staging", layer: "staging", ref: { fields: [] } },
+              }
+            : ({} as Record<string, LineageNode>),
+        ),
+      getEdges: () => Promise.resolve(linked ? ([["src.real", "ds.real"]] as Edge[]) : []),
+      getAudit: () => Promise.resolve({}),
+      createSource: vi.fn(async () => ({ id: "src.real" })),
+      requestUpload: vi.fn(async () => ({
+        uploadId: "up.1",
+        putUrl: "https://minio.local/k?sig=x",
+        storageKey: "k",
+      })),
+      putToStorage: vi.fn(async () => undefined),
+      processUpload: vi.fn(async () => {
+        linked = true;
+        return { datasetId: "ds.real" };
+      }),
+      invalidateScope: vi.fn(),
+    } satisfies PartialCatalogSource;
+  }
+
+  it("adds an optimistic node, drives the saga, posts ordered events, and revalidates", async () => {
+    const primary = sagaPrimary();
+    const catalog = await createDataCatalog(primary, makeSource());
+    await catalog.selectProject("p1");
+    await flush();
+
+    const reported: string[] = [];
+    const report = vi.fn(async (e: { type: string }) => {
+      reported.push(e.type);
+      return {} as never;
+    });
+
+    const result = await catalog.createSourceFromUpload(file, "orders_csv", report);
+
+    expect(primary.createSource).toHaveBeenCalledWith("orders_csv");
+    expect(primary.requestUpload).toHaveBeenCalledWith("src.real", file);
+    expect(primary.putToStorage).toHaveBeenCalledWith(
+      "https://minio.local/k?sig=x",
+      file,
+    );
+    expect(primary.processUpload).toHaveBeenCalledWith(
+      "src.real",
+      "up.1",
+      undefined,
+    );
+    expect(reported).toEqual([
+      "source_create_requested",
+      "source_created",
+      "source_upload_started",
+      "source_upload_processed",
+    ]);
+    expect(result?.datasetId).toBe("ds.real");
+    // The real source + staging node landed after revalidation.
+    expect(catalog.getNode("src.real")).toBeDefined();
+    expect(catalog.getNode("ds.real")).toBeDefined();
+  });
+
+  it("rolls back the optimistic node + reports failure when the saga rejects", async () => {
+    const primary = sagaPrimary();
+    primary.processUpload = vi.fn(async () => {
+      throw new Error("409 schema mismatch");
+    });
+    const catalog = await createDataCatalog(primary, makeSource());
+    await catalog.selectProject("p1");
+    await flush();
+
+    const reported: string[] = [];
+    const report = vi.fn(async (e: { type: string }) => {
+      reported.push(e.type);
+      return {} as never;
+    });
+
+    await expect(
+      catalog.createSourceFromUpload(file, "orders_csv", report),
+    ).rejects.toThrow();
+
+    expect(reported).toContain("source_upload_failed");
+    expect(reported).not.toContain("source_upload_processed");
+    // No optimistic node leaks (the only nodes are the fallback's, no temp left).
+    expect(
+      catalog.listNodes().filter((n) => n.layer === "source" && n.label === "orders_csv"),
+    ).toEqual([]);
+  });
+
+  it("is a no-op (undefined) when the source backs no source-upload ports", async () => {
+    const catalog = await createDataCatalog({}, makeSource());
+    const report = vi.fn(async () => ({}) as never);
+    await expect(
+      catalog.createSourceFromUpload(file, "x", report),
+    ).resolves.toBeUndefined();
+  });
+});
+
 describe("createDataCatalog — stale-while-revalidate (primary over fallback)", () => {
   const BACKEND_PROJECTS: ProjectSummary[] = [
     { id: "acme", name: "Acme Warehouse", desc: "real", datasets: 2, models: 0 },

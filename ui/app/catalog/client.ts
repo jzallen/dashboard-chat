@@ -30,9 +30,14 @@
  * adapter shell, never in the pure graph reducer.
  */
 import { createLogger } from "../lib/log";
+import {
+  createSourceUploadDriver,
+  type ReportSink,
+} from "../lib/source-upload-driver";
 import type {
   CatalogSource,
   PartialCatalogSource,
+  SourceUpload,
 } from "./dataSources/source";
 import type { Edge, Layer, LineageNode, ModelKind } from "./lineage";
 import { LineageGraph } from "./lineageGraph";
@@ -290,6 +295,51 @@ export async function createDataCatalog(
   // project's currentProject/recents/chats/lineage. Until then the snapshot shows
   // the seeded fallback (fixtures).
 
+  /**
+   * Build the source-upload saga driver over the backend source ports + the
+   * catalog's optimistic add/remove + a scope revalidation, bound to the
+   * project scope captured at call time. Returns `null` when no backend source
+   * backs the source-upload ports (the fixture fallback) so callers resolve
+   * `undefined`. Shared by createSourceFromUpload (new source) and
+   * addUploadToSource (existing source, slice 5).
+   */
+  const buildSourceUploadDriver = (report: ReportSink) => {
+    if (
+      !primary.createSource ||
+      !primary.requestUpload ||
+      !primary.putToStorage ||
+      !primary.processUpload
+    ) {
+      return null;
+    }
+    const requestedPid = currentScopedPid;
+    const driver = createSourceUploadDriver({
+      catalog: {
+        createSource: (sourceName) => primary.createSource!(sourceName),
+        requestUpload: (sourceId, uploadFile) =>
+          primary.requestUpload!(sourceId, uploadFile),
+        putToStorage: (putUrl, uploadFile) =>
+          primary.putToStorage!(putUrl, uploadFile),
+        processUpload: (sourceId, uploadId, choices) =>
+          primary.processUpload!(sourceId, uploadId, choices),
+        revalidateScope: async () => {
+          if (requestedPid !== undefined && requestedPid === currentScopedPid) {
+            await revalidateScoped(requestedPid, { fresh: true });
+          }
+        },
+      },
+      report,
+      addOptimistic: (node) =>
+        commit({ graph: snapshot.graph.addSource(node) }),
+      removeOptimistic: (id) =>
+        commit({ graph: snapshot.graph.removeSource(id) }),
+      log,
+      newTempId: () =>
+        `tmp.src.${Date.now().toString(36)}.${Math.random().toString(36).slice(2, 8)}`,
+    });
+    return { driver, requestedPid };
+  };
+
   return {
     listProjects: () => snapshot.projects,
     getCurrentProject: () => snapshot.currentProject,
@@ -489,6 +539,67 @@ export async function createDataCatalog(
         });
         throw err;
       }
+    },
+
+    /**
+     * Create a Source from an uploaded file — the client-driven saga (slice 4).
+     * Composes {@link createSourceUploadDriver} over the backend source ports +
+     * the catalog's optimistic add/remove + a scope revalidation, and the
+     * injected `report` sink (the StateProxy.postEvent the ui/ hook passes). The
+     * driver: adds an optimistic source node, drives create→upload→process,
+     * narrates each past-tense outcome to ui-state, then revalidates so the real
+     * source + staging node + edge land. On failure it removes the optimistic
+     * node, reports source_upload_failed, and re-throws.
+     *
+     * Returns the linked dataset id + temp node id, or `undefined` when no
+     * backend source backs the source-upload ports (the fixture fallback).
+     */
+    createSourceFromUpload: async (
+      file: File,
+      name: string,
+      report: ReportSink,
+    ): Promise<{ datasetId: string; tempNodeId: string } | undefined> => {
+      const built = buildSourceUploadDriver(report);
+      if (!built) return undefined;
+      return built.driver.createSourceFromUpload({
+        file,
+        name,
+        projectId: built.requestedPid ?? "",
+      });
+    },
+
+    /**
+     * Add a file to an EXISTING source (slice 5). Skips createSource and adds
+     * NO optimistic node — the source already exists on the canvas. Drives
+     * requestUpload→putToStorage→process via the same driver, narrating
+     * source_upload_started/processed. On a 4xx (e.g. 422 schema-mismatch) the
+     * driver reports source_upload_failed and RE-THROWS the original error so
+     * the surface can read the mismatch body. Returns the linked/appended
+     * dataset id, or `undefined` when no backend source backs the ports.
+     */
+    addUploadToSource: async (
+      sourceId: string,
+      file: File,
+      report: ReportSink,
+    ): Promise<{ datasetId: string } | undefined> => {
+      const built = buildSourceUploadDriver(report);
+      if (!built) return undefined;
+      return built.driver.addUploadToSource({
+        file,
+        sourceId,
+        projectId: built.requestedPid ?? "",
+      });
+    },
+
+    /**
+     * List an existing source's uploaded files (backs the upload modal's Files
+     * list). Delegates to the backend source's getSourceUploads; resolves `[]`
+     * when no backend source backs the port (the fixture fallback), so the modal
+     * simply shows an empty list rather than crashing.
+     */
+    getSourceUploads: async (sourceId: string): Promise<SourceUpload[]> => {
+      if (!primary.getSourceUploads) return [];
+      return primary.getSourceUploads(sourceId);
     },
 
     /**

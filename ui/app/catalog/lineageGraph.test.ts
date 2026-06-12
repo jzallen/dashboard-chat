@@ -210,6 +210,31 @@ describe("LineageGraph — immutability", () => {
     expect(graph.rename("does.not.exist", "x")).toBe(graph);
     expect(graph.restore("not.archived")).toBe(graph);
     expect(graph.addSource(NODES["src.orders"])).toBe(graph); // already present
+    expect(graph.removeSource("does.not.exist")).toBe(graph); // absent → no-op
+  });
+});
+
+describe("LineageGraph — removeSource (optimistic rollback)", () => {
+  const tempNode: LineageNode = {
+    id: "tmp.123",
+    label: "orders_csv",
+    sub: "source",
+    layer: "source",
+    schema: [],
+    files: [],
+  };
+
+  it("drops an optimistic node (and its incident edges) without archiving it", () => {
+    const withTemp = makeGraph()
+      .addSource(tempNode)
+      .addModel({ ...churn }, ["tmp.123", "mart.churn"]);
+    const rolled = withTemp.removeSource("tmp.123");
+
+    expect(rolled.getNode("tmp.123")).toBeUndefined();
+    // edges incident to the removed node are gone…
+    expect(rolled.allEdges().some(([a]) => a === "tmp.123")).toBe(false);
+    // …but it is NOT in cold storage (a rollback discards, never retires).
+    expect(rolled.coldStorage().some((c) => c.id === "tmp.123")).toBe(false);
   });
 });
 

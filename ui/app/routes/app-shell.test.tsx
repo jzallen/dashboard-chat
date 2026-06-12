@@ -24,16 +24,16 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError } from "../catalog/dataSources/backendClient";
 import { hasSession } from "../auth/tokenStorage";
+import { ApiError } from "../catalog/dataSources/backendClient";
 import { ThemeProvider } from "../components/AppShell/ThemeProvider";
 import { FlashedNodeProvider } from "../components/FlashedNodeProvider";
 import {
   installCatalogForTest,
   refreshOrgGlobal,
 } from "../components/useCatalog";
-import type { OnboardingClient } from "../lib/onboarding-driver";
 import { scriptedStateProxy } from "../lib/_stateProxyTestKit";
+import type { OnboardingClient } from "../lib/onboarding-driver";
 import { type StateProxy } from "../lib/state-proxy";
 import { StateProxyProvider } from "../lib/StateProxyProvider";
 import { fixtureFallback, NO_PRIMARY } from "./_fixtureCatalog";

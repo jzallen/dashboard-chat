@@ -321,3 +321,36 @@
   flex: 1;
   justify-content: center;
 }
+
+/* Schema-mismatch recovery banner (slice 5): the offending columns + a
+   pick-a-different-file affordance, shown when an add-to-source upload is
+   rejected with a 422 SchemaMismatch. */
+.mismatch {
+  border: 1px solid var(--danger-300, #f3b1b1);
+  background: var(--danger-50, #fdf2f2);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mismatchHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--danger-700, #b42318);
+}
+.mismatchList {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--text-600, #475467);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mismatch .btn {
+  align-self: flex-start;
+}

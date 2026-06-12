@@ -12,6 +12,11 @@ import {
   type Point,
 } from "./lineageLayout";
 import { AiEditChip } from "./shared";
+import {
+  isInFlightPhase,
+  sourceUploadPhaseLabel,
+  useSourceUpload,
+} from "./sourceUploadPhase";
 
 function Node({
   n,
@@ -20,6 +25,7 @@ function Node({
   orphan,
   dim,
   justAdded,
+  phaseLabel,
   onHover,
   onOpen,
 }: {
@@ -29,6 +35,8 @@ function Node({
   orphan: boolean;
   dim: boolean;
   justAdded: boolean;
+  /** The in-flight source-upload phase badge for this node, when advancing. */
+  phaseLabel: string | null;
   onHover: (id: string | null) => void;
   onOpen: (node: LineageNode) => void;
 }) {
@@ -45,6 +53,7 @@ function Node({
       data-orphan={orphan || undefined}
       data-dim={dim || undefined}
       data-just-added={justAdded || undefined}
+      data-uploading={phaseLabel ? true : undefined}
       style={style}
       onMouseEnter={() => onHover(n.id)}
       onMouseLeave={() => onHover(null)}
@@ -54,7 +63,7 @@ function Node({
         <LayerDot layer={n.layer} size={8} />
         <span className={styles.lnName}>{n.label}</span>
       </div>
-      <div className={styles.lnSub}>{n.sub}</div>
+      <div className={styles.lnSub}>{phaseLabel ?? n.sub}</div>
       <div className={styles.lnMeta}>
         {auditEditCount > 0 && (
           <AiEditChip count={auditEditCount} label="edits" />
@@ -105,6 +114,15 @@ export function DagView({
     () => computeDagLayout(catalog, DagDimensionConfig),
     [version],
   );
+
+  // The optimistic source-upload node + its current phase (client-reported,
+  // slice 4). The in-flight node is the saga's `source_id` once created, else
+  // the optimistic `temp_node_id`; its badge shows the saga progress.
+  const sourceUpload = useSourceUpload();
+  const inFlightNodeId = isInFlightPhase(sourceUpload.phase)
+    ? sourceUpload.source_id ?? sourceUpload.temp_node_id
+    : null;
+  const inFlightLabel = sourceUploadPhaseLabel(sourceUpload.phase);
 
   const inFocusNodeId = hover || sel;
   const orphans = catalog.orphans();
@@ -159,6 +177,7 @@ export function DagView({
             orphan={orphan}
             dim={dim}
             justAdded={n.id === flashedNodeId}
+            phaseLabel={n.id === inFlightNodeId ? inFlightLabel : null}
             onHover={setHover}
             onOpen={onOpen}
           />

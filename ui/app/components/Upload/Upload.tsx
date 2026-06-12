@@ -1,8 +1,15 @@
 /* Upload flow: browse → 3-leg dial-up progress → schema + name + upload-another,
    plus the archive-confirm dialog its "move to cold storage" action opens. */
-import { type ChangeEvent, type DragEvent, useRef, useState } from "react";
+import {
+  type ChangeEvent,
+  type DragEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import type { FieldDef, LineageNode } from "../../catalog";
+import type { SourceUpload } from "../../catalog/dataSources/source";
 import { Icon } from "../primitives";
 import styles from "./Upload.module.css";
 
@@ -37,18 +44,37 @@ const LEG_DEFS = [
   { key: "parse", name: "Parse", ms: 18 },
 ];
 
+/** Schema-mismatch detail surfaced for the recovery UX (slice 5). */
+type MismatchDetail = {
+  missing: string[];
+  extra: string[];
+  type_mismatch: { column: string; expected: string; actual: string }[];
+};
+
 export function UploadModal({
   source,
   onClose,
   onCreateSource,
   onRename,
   onArchive,
+  mismatch = null,
+  onRetry,
+  onLoadUploads,
 }: {
   source: LineageNode | null;
   onClose: () => void;
   onCreateSource: (src: CreateSourcePayload) => void | Promise<void>;
   onRename: (id: string, name: string) => void;
   onArchive: (src: LineageNode) => void;
+  /** When present, the last add-to-this-source upload was rejected for a schema
+   *  mismatch; the offending columns are shown with a recovery affordance. */
+  mismatch?: MismatchDetail | null;
+  /** Clear the mismatch and let the user pick a different file. */
+  onRetry?: () => void;
+  /** Load the existing source's uploaded files from the backend (the initial
+   *  Files list). Optional — when absent (a brand-new source) the list starts
+   *  empty and grows from fresh uploads only. */
+  onLoadUploads?: (sourceId: string) => Promise<SourceUpload[]>;
 }) {
   const existing = !!source;
   const [view, setView] = useState<UploadView>(existing ? "schema" : "browse");
@@ -57,9 +83,11 @@ export function UploadModal({
   const [schema, setSchema] = useState<FieldDef[] | null>(
     source ? source.schema || [] : null,
   );
-  const [files, setFiles] = useState<UploadFile[]>(
-    source ? (source.files ? source.files.map((f) => ({ ...f })) : []) : [],
-  );
+  // The Files list. For an existing source it is loaded from the backend (the
+  // UploadRecorded history) via onLoadUploads on open; fresh uploads append
+  // optimistically on top of it. A brand-new source starts empty.
+  const [files, setFiles] = useState<UploadFile[]>([]);
+  const [filesLoading, setFilesLoading] = useState<boolean>(!!source);
   const [freshFile, setFreshFile] = useState<string | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [name, setName] = useState(source ? source.label : "");
@@ -67,6 +95,37 @@ export function UploadModal({
   const [committed] = useState(existing);
   const inputRef = useRef<HTMLInputElement>(null);
   const runningRef = useRef(false);
+
+  // Load the existing source's uploaded files from the backend once on open.
+  // Fresh uploads (runUpload) append on top, so we prepend the loaded history
+  // before any optimistic rows rather than clobbering them.
+  useEffect(() => {
+    if (!source || !onLoadUploads) {
+      setFilesLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setFilesLoading(true);
+    onLoadUploads(source.id)
+      .then((loaded) => {
+        if (cancelled) return;
+        const initial: UploadFile[] = loaded.map((u) => ({
+          name: u.name,
+          rows: u.rows ?? 0,
+          when: u.when,
+        }));
+        setFiles((fresh) => [...initial, ...fresh]);
+      })
+      .catch(() => {
+        /* leave the list empty on a load error — the canvas surfaces failures */
+      })
+      .finally(() => {
+        if (!cancelled) setFilesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [source?.id, onLoadUploads]);
 
   async function runUpload(file: File) {
     if (runningRef.current) return;
@@ -173,6 +232,49 @@ export function UploadModal({
         </div>
 
         <div className="up-body">
+          {mismatch && (
+            <div className={styles.mismatch} role="alert">
+              <div className={styles.mismatchHead}>
+                <Icon name="x" size={14} />
+                <span>This file doesn&apos;t match the source schema</span>
+              </div>
+              <ul className={styles.mismatchList}>
+                {mismatch.missing.length > 0 && (
+                  <li>
+                    Missing columns: <b>{mismatch.missing.join(", ")}</b>
+                  </li>
+                )}
+                {mismatch.extra.length > 0 && (
+                  <li>
+                    Unexpected columns: <b>{mismatch.extra.join(", ")}</b>
+                  </li>
+                )}
+                {mismatch.type_mismatch.length > 0 && (
+                  <li>
+                    Wrong types:{" "}
+                    <b>
+                      {mismatch.type_mismatch
+                        .map(
+                          (m) =>
+                            `${m.column} (expected ${m.expected}, got ${m.actual})`,
+                        )
+                        .join(", ")}
+                    </b>
+                  </li>
+                )}
+              </ul>
+              <button
+                className="btn sq"
+                onClick={() => {
+                  onRetry?.();
+                  setView("browse");
+                }}
+              >
+                <Icon name="upload" size={14} />
+                Pick a different file
+              </button>
+            </div>
+          )}
           {view === "browse" && (
             <div
               className={`${styles.dropzone}${drag ? " " + styles.drag : ""}`}
@@ -261,32 +363,8 @@ export function UploadModal({
                   autoFocus={!existing}
                 />
               </div>
-              <div className={styles.upSectionH}>
-                <Icon
-                  name="file"
-                  size={14}
-                  style={{ color: "var(--text-500)" }}
-                />
-                <span className={styles.shT}>Files</span>
-                <span className={styles.shC}>
-                  {files.length} · {totalRows.toLocaleString()} rows
-                </span>
-              </div>
-              {files.map((f, i) => (
-                <div
-                  className={`${styles.fileRow}${f.fresh ? " " + styles.fresh : ""}`}
-                  key={i}
-                >
-                  <span className={styles.frIc}>
-                    <Icon name="file" size={14} />
-                  </span>
-                  <span className={styles.frName}>{f.name}</span>
-                  <span className={styles.frRows}>
-                    {(f.rows || 0).toLocaleString()} rows
-                  </span>
-                  <span className={styles.frWhen}>{f.when}</span>
-                </div>
-              ))}
+              {/* Schema sits ABOVE Files so adding a file grows the list at the
+                  bottom and never pushes the schema down. */}
               <div className={styles.upSectionH}>
                 <Icon
                   name="table"
@@ -315,6 +393,42 @@ export function UploadModal({
                   </div>
                 ))}
               </div>
+              <div className={styles.upSectionH}>
+                <Icon
+                  name="file"
+                  size={14}
+                  style={{ color: "var(--text-500)" }}
+                />
+                <span className={styles.shT}>Files</span>
+                <span className={styles.shC}>
+                  {files.length} · {totalRows.toLocaleString()} rows
+                </span>
+              </div>
+              {filesLoading && files.length === 0 && (
+                <div className={styles.fileRow}>
+                  <span className={styles.frName}>Loading files…</span>
+                </div>
+              )}
+              {!filesLoading && files.length === 0 && (
+                <div className={styles.fileRow}>
+                  <span className={styles.frName}>No files yet</span>
+                </div>
+              )}
+              {files.map((f, i) => (
+                <div
+                  className={`${styles.fileRow}${f.fresh ? " " + styles.fresh : ""}`}
+                  key={i}
+                >
+                  <span className={styles.frIc}>
+                    <Icon name="file" size={14} />
+                  </span>
+                  <span className={styles.frName}>{f.name}</span>
+                  <span className={styles.frRows}>
+                    {(f.rows || 0).toLocaleString()} rows
+                  </span>
+                  <span className={styles.frWhen}>{f.when}</span>
+                </div>
+              ))}
             </>
           )}
         </div>
