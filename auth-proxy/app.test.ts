@@ -877,6 +877,191 @@ describe("ui-cookie-session: header>cookie credential read at all four sites (C1
   });
 });
 
+// ssr-bff-gateway slice-2 (workos-auth-hop): the /worker hop REHYDRATES the
+// validated credential as `Authorization: Bearer <token>` on the upstream
+// request to the agent. Without it, a cookie-only chat turn reaches the agent
+// with NO Authorization header; the agent's extractJwt yields "" and its
+// downstream backend-client posts an empty Bearer — so the agent→backend
+// transform sub-call 401s at auth-proxy's `/api/*` catch-all. Rehydration lets
+// the agent forward a real token that re-enters the catch-all and resolves to
+// backend identity headers. Applied in BOTH dev and workos branches (dev was
+// also broken: the dev branch injected DEV_USER without reading a credential).
+describe("ssr-bff-gateway slice-2: /worker rehydrates the credential as a Bearer for the agent hop", () => {
+  const originalAuthMode = process.env.AUTH_MODE;
+  const originalWorkosClient = process.env.WORKOS_CLIENT_ID;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetSessionStore();
+    resetM2m();
+    process.env.AUTH_MODE = "dev";
+    mockFetch.mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+  });
+
+  afterEach(() => {
+    resetSessionStore();
+    if (originalAuthMode === undefined) delete process.env.AUTH_MODE;
+    else process.env.AUTH_MODE = originalAuthMode;
+    if (originalWorkosClient === undefined) delete process.env.WORKOS_CLIENT_ID;
+    else process.env.WORKOS_CLIENT_ID = originalWorkosClient;
+  });
+
+  it("dev: a cookie-only chat turn forwards Authorization: Bearer <cookie token> AND the dev identity", async () => {
+    const { token } = await mintUserToken({
+      sub: "dev-user-001",
+      email: "dev@localhost",
+      name: "Dev User",
+      org_id: "dev-org-001",
+      sid: "sid-dev-cookie",
+    });
+
+    const res = await app.fetch(
+      new Request("http://localhost/worker/chat", {
+        method: "POST",
+        headers: {
+          Cookie: `${COOKIE_AUTH_TOKEN}=${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ messages: [] }),
+      }),
+    );
+    expect(res.status).toBe(200);
+
+    const [, init] = mockFetch.mock.calls.at(-1) as [unknown, RequestInit];
+    const headers = init.headers as Headers;
+    // Rehydrated credential — the agent reads this via extractJwt.
+    expect(headers.get("Authorization")).toBe(`Bearer ${token}`);
+    // Dev identity is still injected for the agent's own /worker request.
+    expect(headers.get("X-User-Id")).toBe("dev-user-001");
+    expect(headers.get("X-Org-Id")).toBe("dev-org-001");
+    expect(headers.get("X-User-Email")).toBe("dev@localhost");
+  });
+
+  it("dev: a header-Bearer chat turn forwards that same Bearer (no clobber/double) plus dev identity", async () => {
+    const { token } = await mintUserToken({
+      sub: "dev-user-001",
+      email: "dev@localhost",
+      name: "Dev User",
+      org_id: "dev-org-001",
+      sid: "sid-dev-hdr",
+    });
+
+    const res = await app.fetch(
+      new Request("http://localhost/worker/chat", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ messages: [] }),
+      }),
+    );
+    expect(res.status).toBe(200);
+
+    const [, init] = mockFetch.mock.calls.at(-1) as [unknown, RequestInit];
+    const headers = init.headers as Headers;
+    expect(headers.get("Authorization")).toBe(`Bearer ${token}`);
+    expect(headers.get("X-User-Id")).toBe("dev-user-001");
+  });
+
+  it("dev: a credential-less chat turn still injects dev identity and forwards NO Authorization", async () => {
+    const res = await app.fetch(
+      new Request("http://localhost/worker/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ messages: [] }),
+      }),
+    );
+    expect(res.status).toBe(200);
+
+    const [, init] = mockFetch.mock.calls.at(-1) as [unknown, RequestInit];
+    const headers = init.headers as Headers;
+    expect(headers.get("Authorization")).toBeNull();
+    expect(headers.get("X-User-Id")).toBe("dev-user-001");
+    expect(headers.get("X-Org-Id")).toBe("dev-org-001");
+  });
+
+  it("workos: a cookie-only chat turn forwards Authorization: Bearer <cookie token> AND the verified identity", async () => {
+    process.env.AUTH_MODE = "workos";
+    process.env.WORKOS_CLIENT_ID = "test-workos-client";
+    const { token } = await mintUserToken({
+      sub: "u-wk",
+      email: "wk@example.com",
+      name: "Wk",
+      org_id: "o-wk",
+      sid: "sid-wk-cookie",
+    });
+
+    const res = await app.fetch(
+      new Request("http://localhost/worker/chat", {
+        method: "POST",
+        headers: {
+          Cookie: `${COOKIE_AUTH_TOKEN}=${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ messages: [] }),
+      }),
+    );
+    expect(res.status).toBe(200);
+
+    const [, init] = mockFetch.mock.calls.at(-1) as [unknown, RequestInit];
+    const headers = init.headers as Headers;
+    expect(headers.get("Authorization")).toBe(`Bearer ${token}`);
+    expect(headers.get("X-User-Id")).toBe("u-wk");
+    expect(headers.get("X-Org-Id")).toBe("o-wk");
+    expect(headers.get("X-User-Email")).toBe("wk@example.com");
+  });
+
+  it("workos: a header-Bearer chat turn forwards that Bearer plus the verified identity", async () => {
+    process.env.AUTH_MODE = "workos";
+    process.env.WORKOS_CLIENT_ID = "test-workos-client";
+    const { token } = await mintUserToken({
+      sub: "u-wk2",
+      email: "wk2@example.com",
+      name: "Wk2",
+      org_id: "o-wk2",
+      sid: "sid-wk-hdr",
+    });
+
+    const res = await app.fetch(
+      new Request("http://localhost/worker/chat", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ messages: [] }),
+      }),
+    );
+    expect(res.status).toBe(200);
+
+    const [, init] = mockFetch.mock.calls.at(-1) as [unknown, RequestInit];
+    const headers = init.headers as Headers;
+    expect(headers.get("Authorization")).toBe(`Bearer ${token}`);
+    expect(headers.get("X-User-Id")).toBe("u-wk2");
+  });
+
+  it("workos: a credential-less chat turn is refused (401) — unchanged", async () => {
+    process.env.AUTH_MODE = "workos";
+    process.env.WORKOS_CLIENT_ID = "test-workos-client";
+
+    const res = await app.fetch(
+      new Request("http://localhost/worker/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ messages: [] }),
+      }),
+    );
+    expect(res.status).toBe(401);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+});
+
 describe("ui-cookie-session: GET /api/auth/me identity (C2, D4)", () => {
   const originalAuthMode = process.env.AUTH_MODE;
 

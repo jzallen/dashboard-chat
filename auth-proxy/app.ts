@@ -598,16 +598,29 @@ async function buildAgentIdentityHeaders(
     }
   });
 
+  // ui-cookie-session (C1/D3): read the credential header-first, cookie
+  // fallback. The agent hop (ssr-bff-gateway slice-2) REHYDRATES this validated
+  // token as `Authorization: Bearer <token>` on the upstream request so the
+  // agent's extractJwt sees a real bearer and its downstream backend-client can
+  // re-enter auth-proxy's `/api/*` catch-all. Set explicitly (not relied upon
+  // from the copied inbound headers) so the cookie-only browser path — which
+  // carries NO Authorization header — still authenticates the agent→backend
+  // sub-call. The Bearer is the canonical credential for the hop; setting it
+  // here is idempotent when the client already sent the same token as a header.
+  const token = readCredential(c);
+
   if ((process.env.AUTH_MODE || "dev") === "dev") {
     headers.set("X-User-Id", "dev-user-001");
     headers.set("X-Org-Id", "dev-org-001");
     headers.set("X-User-Email", "dev@localhost");
+    // Dev is also broken without rehydration: chat itself works on the injected
+    // identity, but the transform sub-call needs a token the catch-all's
+    // verifyToken accepts (the auth_token cookie value is exactly such a token).
+    // No credential → inject identity only; chat still works.
+    if (token) headers.set("Authorization", `Bearer ${token}`);
     return { headers };
   }
 
-  // ui-cookie-session (C1/D3): header-first, cookie fallback (prod branch only;
-  // the dev branch above injects DEV_USER unconditionally and is unchanged).
-  const token = readCredential(c);
   if (!token) {
     return {
       error: Response.json(
@@ -621,6 +634,7 @@ async function buildAgentIdentityHeaders(
     headers.set("X-User-Id", identity.userId);
     headers.set("X-Org-Id", identity.orgId);
     headers.set("X-User-Email", identity.email);
+    headers.set("Authorization", `Bearer ${token}`);
     return { headers };
   } catch {
     return { error: Response.json({ error: "Invalid or expired token" }, { status: 401 }) };
