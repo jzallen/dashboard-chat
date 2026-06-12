@@ -93,13 +93,62 @@ async def create_dataset_record(
     )
 
 
-async def write_parquet(lake_repo, df: pd.DataFrame, dataset: Dataset, partition_fields: list[str]) -> None:
-    """Write the cleaned CSV as partitioned parquet files to storage."""
-    cleaned_csv = df.to_csv(index=False).encode("utf-8")
+async def write_parquet(
+    lake_repo, df: pd.DataFrame, dataset: Dataset, partition_fields: list[str], upload_id: str
+) -> None:
+    """Write the cleaned CSV as partitioned parquet files to storage.
+
+    Every upload (first link AND subsequent appends) writes under a uniform
+    per-upload hive partition ``upload_id={upload_id}/`` beneath the dataset's
+    base ``storage_path``. ``upload_id`` is injected as a constant column on a
+    COPY of the df at write time only — schema inference / preview_rows (which
+    run on ``result.df`` before this call) never see it, so it stays out of the
+    dataset's stored ``schema_config`` and ``partition_fields``. It is an
+    internal provenance partition: the ``**/*.parquet`` glob unions all
+    per-upload partitions, and the column-explicit staging SQL excludes the
+    physical ``upload_id`` column from the default view.
+    """
+    partitioned_df = df.copy()
+    partitioned_df["upload_id"] = upload_id
+    cleaned_csv = partitioned_df.to_csv(index=False).encode("utf-8")
     await asyncio.to_thread(
         lambda: lake_repo.write_csv_as_partitioned_parquet(
             csv_content=cleaned_csv,
             storage_prefix=dataset.storage_path,
-            partition_fields=partition_fields,
+            partition_fields=[*partition_fields, "upload_id"],
         )
     )
+
+
+async def create_single_dataset(
+    metadata_repo,
+    lake_repo,
+    project_id: str,
+    result,
+    description: str | None,
+    partition_fields: list[str],
+    upload_id: str,
+) -> Dataset:
+    """Analyze one ProcessingResult, create its dataset record, and write parquet.
+
+    Shared by the synchronous ``create_dataset_from_upload`` path and the
+    UI-triggered ``source.process_upload`` path so the ingestion mechanics live
+    in exactly one place. ``upload_id`` becomes a per-upload hive partition at
+    write time (provenance only) — the stored ``partition_fields`` remain the
+    caller's list.
+    """
+    schema_config, column_profiles, preview_rows, row_count = analyze_dataframe(result.df, result.schema_hints)
+    dataset = await create_dataset_record(
+        metadata_repo,
+        project_id,
+        schema_config,
+        description,
+        partition_fields,
+        column_profiles,
+        preview_rows,
+        format_context=result.chat_guidance,
+        name=result.name,
+        row_count=row_count,
+    )
+    await write_parquet(lake_repo, result.df, dataset, partition_fields, upload_id)
+    return dataset

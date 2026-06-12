@@ -70,6 +70,13 @@ class Settings(BaseSettings):
     # MinIO internal endpoint for pg_duckdb containers (Docker networking)
     minio_internal_endpoint: str = ""
 
+    # MinIO public endpoint — browser-reachable host used to sign presigned
+    # PUT URLs (the browser uploads directly to MinIO). Distinct from
+    # minio_endpoint (server-side client) and minio_internal_endpoint
+    # (pg_duckdb). The presign client computes signatures only; it needs no
+    # network path to this host.
+    minio_public_endpoint: str = "localhost:9000"
+
     # Auth
     trust_proxy_headers: bool = False  # Trust X-User-Id/X-Org-Id/X-User-Email from auth proxy
     dev_no_org: bool = False  # Ignore org claims (header/contextvar); resolve org from DB by created_by

@@ -107,6 +107,7 @@ class Dataset:
     )
     archived_at: str | None = None  # MR-7: cold-storage timestamp (ISO); None when live
     retention_until: str | None = None  # MR-7: retention end (ISO) = archived_at + 90d; None when live
+    source_id: str | None = None  # Source aggregate link — the Source this dataset is the SELECT * view over
 
     @classmethod
     def from_record(
@@ -132,6 +133,7 @@ class Dataset:
             display_name=getattr(record, "display_name", None),
             archived_at=_iso_or_none(getattr(record, "archived_at", None)),
             retention_until=_iso_or_none(getattr(record, "retention_until", None)),
+            source_id=getattr(record, "source_id", None),
         )
 
     @property
@@ -268,6 +270,7 @@ class Dataset:
             "display_name": self.display_name,
             "archived_at": self.archived_at,
             "retention_until": self.retention_until,
+            "source_id": self.source_id,
             "staging_sql": self.display_sql,
         }
 

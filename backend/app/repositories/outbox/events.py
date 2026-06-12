@@ -49,6 +49,37 @@ class ProjectCreated:
 
 
 @dataclass(frozen=True, slots=True)
+class SourceCreated:
+    """A new source was created."""
+
+    source_id: str
+    project_id: str
+    created_by: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class UploadRecorded:
+    """An upload was recorded (presigned PUT minted) but not yet ingested.
+
+    The durable handoff between the upload request (which mints a presigned
+    PUT URL and writes NO bytes) and the UI-triggered process request (which
+    reads the object back from MinIO and ingests it). Mirrors the role
+    ``UploadFileReceived`` plays in the synchronous path.
+
+    Transitions upload to: pending
+    """
+
+    source_id: str
+    project_id: str
+    upload_id: str
+    storage_key: str
+    original_filename: str
+    file_size: int
+    content_type: str
+    status: str = "pending"
+
+
+@dataclass(frozen=True, slots=True)
 class DatasetSyncRequested:
     """Dataset sync requested — propagate view creation/update to query engine."""
 
@@ -81,6 +112,8 @@ OutboxEvent = (
     | TransformsCreated
     | TransformsUpdated
     | ProjectCreated
+    | SourceCreated
+    | UploadRecorded
     | DatasetSyncRequested
     | TransformSyncRequested
     | DatasetRemoved
@@ -105,6 +138,8 @@ def to_event(event_type: str, payload: dict[str, Any]) -> OutboxEvent:
         "TransformsCreated": TransformsCreated,
         "TransformsUpdated": TransformsUpdated,
         "ProjectCreated": ProjectCreated,
+        "SourceCreated": SourceCreated,
+        "UploadRecorded": UploadRecorded,
         "DatasetSyncRequested": DatasetSyncRequested,
         "TransformSyncRequested": TransformSyncRequested,
         "DatasetRemoved": DatasetRemoved,

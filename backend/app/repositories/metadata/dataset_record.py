@@ -45,6 +45,15 @@ class DatasetRecord(Base):
         nullable=False,
         index=True,
     )
+    # Nullable link to the Source this Dataset is the SELECT * view over.
+    # Nullable so legacy datasets (created before the Source aggregate) survive;
+    # nothing writes this yet in slice 1.
+    source_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("sources.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 

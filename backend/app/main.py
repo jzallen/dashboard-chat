@@ -23,6 +23,7 @@ from .routers import (
     reports_router,
     session_replay_router,
     sessions_router,
+    sources_router,
     sql_access_router,
     transforms_router,
     uploads_router,
@@ -163,6 +164,7 @@ async def domain_exception_handler(request: Request, exc: DomainException):
 # Include routers
 app.include_router(datasets_router)
 app.include_router(uploads_router)
+app.include_router(sources_router)
 app.include_router(projects_router)
 app.include_router(transforms_router)
 app.include_router(organizations_router)

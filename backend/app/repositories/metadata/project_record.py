@@ -11,6 +11,7 @@ from ...database import Base
 if TYPE_CHECKING:
     from .dataset_record import DatasetRecord
     from .report_record import ReportRecord
+    from .source_record import SourceRecord
     from .view_record import ViewRecord
 
 
@@ -36,6 +37,9 @@ class ProjectRecord(Base):
     # Relationships
     datasets: Mapped[list["DatasetRecord"]] = relationship(
         "DatasetRecord", back_populates="project", cascade="all, delete-orphan", order_by="DatasetRecord.id"
+    )
+    sources: Mapped[list["SourceRecord"]] = relationship(
+        "SourceRecord", back_populates="project", cascade="all, delete-orphan", order_by="SourceRecord.id"
     )
     views: Mapped[list["ViewRecord"]] = relationship(
         "ViewRecord", back_populates="project", cascade="all, delete-orphan"

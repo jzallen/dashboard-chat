@@ -7,6 +7,7 @@ from .query_engines import router as query_engines_router
 from .reports import router as reports_router
 from .sessions import router as sessions_router
 from .sessions import session_replay_router
+from .sources import router as sources_router
 from .sql_access import router as sql_access_router
 from .transforms import router as transforms_router
 from .uploads import router as uploads_router
@@ -20,6 +21,7 @@ __all__ = [
     "reports_router",
     "session_replay_router",
     "sessions_router",
+    "sources_router",
     "sql_access_router",
     "transforms_router",
     "uploads_router",

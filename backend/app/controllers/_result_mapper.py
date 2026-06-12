@@ -44,6 +44,10 @@ def error_response(error: Exception) -> tuple[dict, int]:
         body = wrap_jsonapi_error(error._status_code, error._title, str(error))
         if hasattr(error, "retry_after"):
             body["errors"][0]["retry_after"] = error.retry_after
+        if hasattr(error, "detail"):
+            # Machine-readable mismatch/validation detail for the UI to render
+            # (e.g. SchemaMismatch's missing/extra/type_mismatch columns).
+            body["errors"][0]["detail"] = error.detail
         return body, error._status_code
 
     logger.error("Unhandled error: %s", error)

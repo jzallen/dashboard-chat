@@ -21,10 +21,12 @@ from .events import (
     DatasetSyncRequested,
     OutboxEvent,
     ProjectCreated,
+    SourceCreated,
     TransformsCreated,
     TransformsUpdated,
     TransformSyncRequested,
     UploadFileReceived,
+    UploadRecorded,
     to_event,
 )
 from .outbox_record import OutboxRecord
@@ -138,6 +140,58 @@ class OutboxRepository:
         return await self._append_event(
             aggregate_type="project",
             aggregate_id=project_id,
+            event=event,
+        )
+
+    @handle_repository_exceptions
+    async def submit_source_created_event(
+        self,
+        source_id: str,
+        project_id: str,
+        created_by: str | None = None,
+    ) -> OutboxRecord:
+        event = SourceCreated(
+            source_id=source_id,
+            project_id=project_id,
+            created_by=created_by,
+        )
+        return await self._append_event(
+            aggregate_type="source",
+            aggregate_id=source_id,
+            event=event,
+        )
+
+    @handle_repository_exceptions
+    async def submit_upload_recorded_event(
+        self,
+        source_id: str,
+        project_id: str,
+        upload_id: str,
+        storage_key: str,
+        original_filename: str,
+        file_size: int,
+        content_type: str,
+        status: str = "pending",
+    ) -> OutboxRecord:
+        """Record an upload (presigned PUT minted) for later UI-triggered ingestion.
+
+        The aggregate is the ``upload`` so the process request can fetch the
+        pending event by (source_id, upload_id) without colliding with the
+        synchronous ``UploadFileReceived`` path.
+        """
+        event = UploadRecorded(
+            source_id=source_id,
+            project_id=project_id,
+            upload_id=upload_id,
+            storage_key=storage_key,
+            original_filename=original_filename,
+            file_size=file_size,
+            content_type=content_type,
+            status=status,
+        )
+        return await self._append_event(
+            aggregate_type="upload",
+            aggregate_id=upload_id,
             event=event,
         )
 
@@ -310,6 +364,26 @@ class OutboxRepository:
                 statuses[dataset_id] = "error" if age > error_threshold_seconds else "pending"
 
         return statuses
+
+    @handle_repository_exceptions
+    async def list_uploads_for_source(self, source_id: str) -> list[OutboxRecord]:
+        """List every UploadRecorded event for a source, oldest first.
+
+        The ``source_id`` lives in the JSON ``payload`` (the ``aggregate_id`` is
+        the upload_id), so the rows are fetched by event type + ordered in the DB
+        and filtered by ``payload["source_id"]`` in Python. This stays DB-agnostic
+        (no JSON-path WHERE) and is fine at the low per-source upload volume.
+
+        Includes BOTH processed (ingested) and unprocessed (pending) records — a
+        source's full file list spans the whole upload history.
+        """
+        result = await self._session.execute(
+            select(OutboxRecord)
+            .where(OutboxRecord.event_type == "UploadRecorded")
+            .order_by(OutboxRecord.created_at.asc())
+        )
+        records = result.scalars().all()
+        return [record for record in records if record.payload.get("source_id") == source_id]
 
     @handle_repository_exceptions
     async def get_file_received_event_by_id(self, record_id: str) -> OutboxEvent | None:

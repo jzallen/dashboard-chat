@@ -3,48 +3,19 @@ from typing import TYPE_CHECKING, Any
 from returns.result import Result
 
 from app.models.dataset import Dataset
-from app.plugins.protocol import ProcessingResult
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
 from app.use_cases.project.exceptions import ProjectNotFound
 
 from ._pipeline import (
-    analyze_dataframe,
-    create_dataset_record,
+    create_single_dataset,
     fetch_upload_event,
     read_raw_file,
-    write_parquet,
 )
 from ._pipeline.plugin_dispatch import UploadPluginDispatcher
 
 if TYPE_CHECKING:
     from app.repositories import RepositoryContainer
-
-
-async def _create_single_dataset(
-    metadata_repo,
-    lake_repo,
-    project_id: str,
-    result: ProcessingResult,
-    description: str | None,
-    partition_fields: list[str],
-) -> Dataset:
-    """Create one dataset from a single ProcessingResult."""
-    schema_config, column_profiles, preview_rows, row_count = analyze_dataframe(result.df, result.schema_hints)
-    dataset = await create_dataset_record(
-        metadata_repo,
-        project_id,
-        schema_config,
-        description,
-        partition_fields,
-        column_profiles,
-        preview_rows,
-        format_context=result.chat_guidance,
-        name=result.name,
-        row_count=row_count,
-    )
-    await write_parquet(lake_repo, result.df, dataset, partition_fields)
-    return dataset
 
 
 @handle_returns
@@ -82,13 +53,14 @@ async def create_dataset_from_upload(
 
     datasets: list[Dataset] = []
     for item in results:
-        dataset = await _create_single_dataset(
+        dataset = await create_single_dataset(
             metadata_repo,
             lake_repo,
             file_received_event.project_id,
             item,
             description,
             partition_fields,
+            upload_id,
         )
         datasets.append(dataset)
 

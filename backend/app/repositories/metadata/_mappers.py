@@ -14,6 +14,7 @@ from .project_memory_record import ProjectMemoryRecord
 from .project_record import ProjectRecord
 from .report_record import ReportRecord
 from .session_record import SessionRecord
+from .source_record import SourceRecord
 from .transform_record import TransformRecord
 from .view_record import ViewRecord
 
@@ -91,6 +92,19 @@ def dataset_to_dict(dataset: DatasetRecord) -> dict[str, Any]:
         "row_count": dataset.row_count,
         "created_at": _iso(dataset.created_at),
         "updated_at": _iso(dataset.updated_at),
+    }
+
+
+def source_to_dict(source: SourceRecord) -> dict[str, Any]:
+    """Convert SourceRecord to dictionary (wire-facing, ISO-8601 timestamps)."""
+    return {
+        "id": source.id,
+        "project_id": source.project_id,
+        "name": source.name,
+        "schema_config": source.schema_config,
+        "created_by": source.created_by,
+        "created_at": _iso(source.created_at),
+        "updated_at": _iso(source.updated_at),
     }
 
 

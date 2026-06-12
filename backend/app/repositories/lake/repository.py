@@ -184,6 +184,12 @@ class BaseLakeRepository:
         Supports both single parquet files and partitioned datasets.
         For partitioned data, use storage_path ending with '/' to read all partitions.
 
+        NOTE: this is the only whole-row read path (``to_json(t) FROM
+        read_parquet(...) t``); it has no production callers. If it were ever
+        wired in, the internal ``upload_id`` hive-partition column (injected at
+        ingestion as provenance) would appear in the returned rows, since this
+        path is NOT column-explicit like the default staging SQL.
+
         Args:
             storage_path: Path within bucket (use trailing '/' for partitioned data)
             limit: Number of rows to return
@@ -362,11 +368,17 @@ class BaseLakeRepository:
 class MinIOLakeRepository(BaseLakeRepository):
     """Lake repository for MinIO storage."""
 
-    def __init__(self, s3_client=None):
+    def __init__(self, s3_client=None, presign_client=None):
         """Initialize MinIO lake repository.
 
         Args:
-            s3_client: Optional boto3 S3 client. If not provided, creates one from settings.
+            s3_client: Optional boto3 S3 client for server-side reads/writes.
+                If not provided, creates one bound to ``minio_endpoint``.
+            presign_client: Optional boto3 S3 client used ONLY to compute
+                presigned URLs. If not provided, creates one bound to the
+                browser-reachable ``minio_public_endpoint`` so the signature
+                matches the host the browser will PUT to. This client never
+                makes network calls — it signs requests locally.
         """
         settings = get_settings()
 
@@ -384,5 +396,39 @@ class MinIOLakeRepository(BaseLakeRepository):
                 ),
             )
 
+        if presign_client is None:
+            presign_client = boto3.client(
+                "s3",
+                endpoint_url=f"http://{settings.minio_public_endpoint}",
+                aws_access_key_id=settings.minio_access_key,
+                aws_secret_access_key=settings.minio_secret_key,
+                config=Config(signature_version="s3v4"),
+            )
+
         super().__init__(s3_client, settings.storage_bucket)
         self._settings = settings
+        self._presign_client = presign_client
+
+    @handle_repository_exceptions
+    def presigned_put_url(self, storage_key: str, content_type: str, expires_in: int) -> str:
+        """Mint a presigned S3 PUT URL the browser can upload to directly.
+
+        The URL is signed against ``minio_public_endpoint`` (the browser-reachable
+        host) using S3v4. No bytes touch the app server — the browser PUTs the
+        file straight to MinIO.
+
+        Args:
+            storage_key: Object key within the bucket (e.g.
+                ``uploads/{project}/{source}/{upload}/{filename}``).
+            content_type: The Content-Type the browser will send on the PUT;
+                it is bound into the signature, so the browser must match it.
+            expires_in: URL validity window in seconds.
+
+        Returns:
+            A fully-qualified presigned PUT URL.
+        """
+        return self._presign_client.generate_presigned_url(
+            "put_object",
+            Params={"Bucket": self.bucket, "Key": storage_key, "ContentType": content_type},
+            ExpiresIn=expires_in,
+        )
