@@ -8,6 +8,7 @@ import {
 } from "ai";
 
 import { backendClient } from "./backend-client";
+import { fetchTableSchema } from "./datasetSchema";
 import { type DispatchContext, dispatcherRegistry } from "./dispatchers";
 import type { ChatEvent } from "./events";
 import { pipeChatStream } from "./pipeChatStream";
@@ -138,6 +139,22 @@ export async function handleChat(request: Request, env: Env): Promise<Response> 
     status: 200,
   });
 
+  // Resolve the dataset id BEFORE the prompt fork so it can drive prompt
+  // selection (slice-3). Resource shape: when the active scope carries a
+  // dataset resource, use it; otherwise fall back to the body's contextId for
+  // forward-compat with the legacy body-shape during the migration window.
+  const resolvedDatasetId =
+    scope.resource_type === "dataset"
+      ? scope.resource_id ?? undefined
+      : contextType === "dataset"
+        ? contextId ?? undefined
+        : undefined;
+
+  // The backend client is needed before the prompt fork (the agent may fetch
+  // the dataset schema itself) and again below for the dispatch context.
+  const jwt = extractJwt(request);
+  const backend = backendClient({ authProxyUrl: env.AUTH_PROXY_URL, jwt });
+
   // Fork system prompt and tools based on contextType
   let systemPrompt: string;
   let tools: ToolSet | undefined;
@@ -148,13 +165,41 @@ export async function handleChat(request: Request, env: Env): Promise<Response> 
   } else if (contextType === "view") {
     systemPrompt = getViewSystemPrompt();
     tools = getViewTools();
-  } else if (contextType === "dataset" && tableSchema?.columns) {
-    systemPrompt = getSystemPrompt(tableSchema);
-    tools = getTools(tableSchema);
+  } else if (contextType === "dataset" && (tableSchema?.columns || resolvedDatasetId)) {
+    // Dataset in scope → transform-capable prompt + tools. Prefer a
+    // caller-supplied tableSchema (fast path, no GET); otherwise the agent is
+    // self-sufficient and fetches the columns from the backend itself
+    // (slice-3 — the durable fix for the cookie-only ui/ POST that omits
+    // tableSchema). A failed fetch degrades to conversational + logs, so a
+    // broken fetch is diagnosable rather than a silent repeat of the bug.
+    let schema: TableSchema | null = tableSchema?.columns ? tableSchema : null;
+    if (!schema && resolvedDatasetId) {
+      try {
+        schema = await fetchTableSchema(resolvedDatasetId, backend);
+      } catch (err) {
+        console.warn(
+          JSON.stringify({
+            level: "warn",
+            event: "dataset_schema_fetch_failed",
+            datasetId: resolvedDatasetId,
+            error: err instanceof Error ? err.message : String(err),
+          }),
+        );
+        schema = null;
+      }
+    }
+    if (schema) {
+      systemPrompt = getSystemPrompt(schema);
+      tools = getTools(schema);
+    } else {
+      systemPrompt = getConversationalSystemPrompt();
+      tools = getConversationalTools();
+    }
   } else {
-    // Null context or missing tableSchema — conversational mode with resolve_dataset tool.
-    // pipeChatStream intercepts the resolve_dataset tool-input-available chunk and emits
-    // a `data-agent-request` typed part instead of leaking the tool call to the FE.
+    // Null context or no dataset in scope — conversational mode with
+    // resolve_dataset tool. pipeChatStream intercepts the resolve_dataset
+    // tool-input-available chunk and emits a `data-agent-request` typed part
+    // instead of leaking the tool call to the FE.
     systemPrompt = getConversationalSystemPrompt();
     tools = getConversationalTools();
   }
@@ -162,30 +207,18 @@ export async function handleChat(request: Request, env: Env): Promise<Response> 
   // Build DispatchContext. emit() pushes onto a buffer that pipeChatStream
   // drains as `data-chat-event` typed parts, preserving causal order with
   // upstream chunks (replaces the v4 `8:` annotation channel).
-  const jwt = extractJwt(request);
   const eventBuffer: ChatEvent[] = [];
   const channelId = thread_id ?? "";
   const presentationStateLog = env.presentationStateLog ?? inProcessPresentationStateLog;
   const dispatchCtx: DispatchContext = {
     jwt,
-    // Resource shape: when the active scope carries a dataset resource, use
-    // it; otherwise fall back to the body's contextId for forward-compat
-    // with the legacy body-shape during the migration window.
-    datasetId:
-      scope.resource_type === "dataset"
-        ? scope.resource_id ?? undefined
-        : contextType === "dataset"
-          ? contextId ?? undefined
-          : undefined,
+    datasetId: resolvedDatasetId,
     // DWD-3 / IC-J002-7: projectId now flows from X-Active-Scope, never from
     // the body post-sunset. project_id from body is only present here
     // because extractActiveScope already consumed it via the fallback path.
     projectId: scope.project_id,
     contextType: contextType === "report" ? "report" : contextType === "dataset" ? "dataset" : "project",
-    backend: backendClient({
-      authProxyUrl: env.AUTH_PROXY_URL,
-      jwt,
-    }),
+    backend,
     emit: (event: ChatEvent) => {
       eventBuffer.push(event);
     },
