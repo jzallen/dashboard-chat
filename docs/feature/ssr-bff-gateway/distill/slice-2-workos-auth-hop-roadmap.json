@@ -1,0 +1,49 @@
+{
+  "feature": "ssr-bff-gateway",
+  "slice": "slice-2-workos-auth-hop",
+  "wave": "DELIVER",
+  "shape": "bug-fix (known cause)",
+  "target_tree": "auth-proxy/",
+  "outside_in": true,
+  "acceptance_test": "auth-proxy/app.test.ts (describe: \"ssr-bff-gateway slice-2: /worker rehydrates the credential as a Bearer for the agent hop\")",
+  "acceptance_gate": "cd auth-proxy && npx vitest run",
+  "driving_port": "auth-proxy Hono route `app.all('/worker/*')` (via app.fetch) — the real proxy hop, so a TBU defect is structurally impossible",
+  "scenario": "a cookie-only chat turn reaches the agent with `Authorization: Bearer <validated token>` + identity headers, in BOTH dev and workos modes",
+  "decisions_ref": "docs/feature/ssr-bff-gateway/distill/slice-2-workos-auth-hop-notes.md",
+  "problem": "The last hop of a live assistant transform (agent → backend) 401s in BOTH dev and workos. A cookie-only browser turn (ui/ httpOnly auth_token cookie, NO Bearer) reaches the agent with no Authorization header; agent extractJwt (agent/lib/chat/handleChat.ts:78-84) reads only Authorization → jwt=''; backendClient (agent/lib/chat/backend-client.ts:25) posts `Bearer ''` with no cookie; auth-proxy's `/api/*` catch-all (app.ts:865) refuses with 401 in both modes (no dev bypass).",
+  "fix": "auth-proxy ONLY. In buildAgentIdentityHeaders (app.ts:591) rehydrate the validated credential as `Authorization: Bearer <token>` on the upstream /worker request, in BOTH branches. NOT M2M — backend is a pure resource server keyed on injected X-User-Id/X-Org-Id/X-User-Email (ADR-043); it never validates tokens. No agent, no backend change.",
+  "steps": [
+    {
+      "id": 1,
+      "title": "RED acceptance tests for the rehydration (both modes)",
+      "intent": "Add a describe block in auth-proxy/app.test.ts driving app.fetch('/worker/chat') and asserting the mocked upstream request carries Authorization: Bearer <token> + identity. Cases: dev cookie-only (RED), dev header-Bearer (guard), dev no-credential (identity-only, no Authorization), workos cookie-only (RED), workos header-Bearer (guard), workos no-credential (401 unchanged).",
+      "files": ["auth-proxy/app.test.ts"],
+      "verify": "cd auth-proxy && npx vitest run app.test.ts -t slice-2",
+      "expect": "2 RED (dev + workos cookie-only), 4 green guards — confirms the exact break before the fix"
+    },
+    {
+      "id": 2,
+      "title": "Rehydrate the validated credential as a Bearer in buildAgentIdentityHeaders",
+      "intent": "Read the credential once (readCredential, header-first then cookie). Dev branch: inject DEV_USER identity AND set Authorization: Bearer <token> when a credential is present (identity-only when absent). Workos branch: after verifyToken succeeds, set Authorization: Bearer <token> alongside the verified identity headers. Bearer is the canonical credential for the hop; idempotent when the client already sent the same token as a header. Do not log the token.",
+      "files": ["auth-proxy/app.ts"],
+      "verify": "cd auth-proxy && npx vitest run",
+      "escalate_if": "the dev empirical replay still 401s after the fix — the break would be elsewhere than the traced last hop; STOP and escalate with evidence, do not expand scope beyond auth-proxy"
+    },
+    {
+      "id": 3,
+      "title": "Empirical proof in a running dev stack",
+      "intent": "Bring up the dev compose stack and drive the REAL agent→backend transform path (ui/ assistant OR a faithful replay: a cookie-authenticated POST /worker/chat that triggers a cleaning/mutation tool). Capture BEFORE (401) and AFTER (2xx + persisted audit entry/row) evidence.",
+      "verify": "before/after captured in the submit summary"
+    }
+  ],
+  "verification_status": {
+    "unit_both_modes": "REQUIRED — green locally (auth-proxy vitest)",
+    "dev_empirical": "REQUIRED — before/after in a running stack",
+    "workos_empirical": "BEST-EFFORT headless — unit (workos branch) + stack-boot + code-path; full WorkOS browser login may need human manual confirmation, flag honestly"
+  },
+  "final_gate": [
+    "cd auth-proxy && npx vitest run  (MANDATORY local green — test.sh --auto maps auth-proxy/ → --backend, refinery will NOT run this)",
+    "./tools/test/test.sh --backend",
+    "commit atomically (fix; tests; distill notes); push origin/crew/keysmith; gt mq submit"
+  ]
+}
