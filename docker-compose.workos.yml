@@ -1,0 +1,18 @@
+# Local manual-testing override — flips the auth-proxy back to WorkOS mode.
+#
+# docker-compose.override.yml hardcodes AUTH_MODE=dev for the frictionless
+# dev-login loop. This file (applied LAST, explicitly) restores the
+# production-like WorkOS flow so the client-driven onboarding surfaces can be
+# exercised against the real WorkOS test tenant. WORKOS_* values still flow
+# from .env through the base docker-compose.yml auth-proxy environment block;
+# only AUTH_MODE is overridden here.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml \
+#                  -f docker-compose.workos.yml up -d \
+#                  redis minio query-engine api ui-state auth-proxy agent
+#
+# Not committed; delete when done.
+services:
+  auth-proxy:
+    environment:
+      AUTH_MODE: workos
