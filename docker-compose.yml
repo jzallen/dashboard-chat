@@ -219,6 +219,12 @@ services:
       # cannot exchange the returned code.
       WORKOS_API_KEY: ${WORKOS_API_KEY:-}
       WORKOS_REDIRECT_URI: ${WORKOS_REDIRECT_URI:-http://localhost:5173/auth/callback}
+      # Post-logout landing: appended as `return_to` on the WorkOS end-session
+      # URL so the browser lands back on /login after the SSO session is ended
+      # (logout already terminates the session without it — this just controls
+      # where WorkOS redirects afterward). MUST be whitelisted in the WorkOS
+      # dashboard (User Management → logout redirects) or WorkOS rejects it.
+      WORKOS_LOGOUT_REDIRECT: ${WORKOS_LOGOUT_REDIRECT:-http://localhost:5173/login}
       BACKEND_URL: http://api:8000
       # Chat-worker (agent) upstream for the /worker/* + presentation-state
       # proxy rules. Container-internal; the agent trusts the identity headers

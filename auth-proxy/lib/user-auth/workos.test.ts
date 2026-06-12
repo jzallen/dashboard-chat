@@ -316,6 +316,37 @@ describe("WorkOsUserAuthProvider", () => {
       });
     });
 
+    it("preserves the WorkOS session id across refresh (so logout can still end the SSO session)", async () => {
+      await withFrozenTime(async () => {
+        const sessionStore = createInMemorySessionStore();
+        sessionStore.set("sid-known", {
+          workos_refresh_token: "wos-r-old",
+          expires_at: NOW_SEC + 3600,
+          user_claims: {
+            sub: "wos-user-known",
+            email: "known@example",
+            name: "Known",
+            org_id: "wos-org-known",
+          },
+          workos_session_id: "session_01ABC",
+        });
+        const mockFetch = vi
+          .fn()
+          .mockResolvedValue(workosOkResponse({ refresh_token: "wos-r-new" }));
+        const provider = new WorkOsUserAuthProvider({
+          fetch: mockFetch,
+          sessionStore,
+          config: TEST_CONFIG,
+        });
+
+        await provider.refresh("sid-known");
+
+        expect(sessionStore.get("sid-known")?.workos_session_id).toBe(
+          "session_01ABC",
+        );
+      });
+    });
+
     it("returns a freshly-minted local JWT and never the WorkOS refresh_token", async () => {
       const sessionStore = createInMemorySessionStore();
       sessionStore.set("sid-known", {

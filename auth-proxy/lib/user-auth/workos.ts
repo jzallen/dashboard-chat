@@ -123,6 +123,11 @@ export class WorkOsUserAuthProvider implements UserAuthProvider {
       workos_refresh_token: rotated.refresh_token,
       expires_at: Math.floor(Date.now() / 1000) + expiresIn,
       user_claims: session.user_claims,
+      // Preserve the WorkOS session id across refresh. The keep-alive beat
+      // refreshes every ~5 min while the user is active; dropping it here would
+      // leave logout unable to build the WorkOS end-session URL, so the next
+      // login would silently re-authenticate against a still-live SSO session.
+      workos_session_id: session.workos_session_id,
     });
     return { accessToken: token, expiresIn };
   }
