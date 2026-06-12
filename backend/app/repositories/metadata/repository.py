@@ -579,9 +579,7 @@ class MetadataRepository:
         ``storage_path`` / ``partition_fields`` / ``row_count`` so a subsequent
         matching upload appends parquet to the same prefix.
         """
-        result = await self._session.execute(
-            select(DatasetRecord).where(DatasetRecord.source_id == source_id).limit(1)
-        )
+        result = await self._session.execute(select(DatasetRecord).where(DatasetRecord.source_id == source_id).limit(1))
         dataset = result.scalar_one_or_none()
         if not dataset:
             return None
@@ -594,9 +592,7 @@ class MetadataRepository:
         Distinguishes the first upload (create the SELECT * Dataset) from
         subsequent uploads (schema-match append — slice 5).
         """
-        return (
-            await self._session.execute(select(exists().where(DatasetRecord.source_id == source_id)))
-        ).scalar()
+        return (await self._session.execute(select(exists().where(DatasetRecord.source_id == source_id)))).scalar()
 
     # -------------------------------------------------------------------------
     # Transform operations

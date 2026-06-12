@@ -67,9 +67,7 @@ class SchemaMismatch(DomainException):
         if self.extra:
             parts.append(f"unexpected columns: {', '.join(self.extra)}")
         if self.type_mismatch:
-            cols = ", ".join(
-                f"{m['column']} (expected {m['expected']}, got {m['actual']})" for m in self.type_mismatch
-            )
+            cols = ", ".join(f"{m['column']} (expected {m['expected']}, got {m['actual']})" for m in self.type_mismatch)
             parts.append(f"type mismatches: {cols}")
         detail = "; ".join(parts) if parts else "schema does not match the source"
         prefix = f"Upload schema does not match source '{source_id}'" if source_id else "Upload schema mismatch"

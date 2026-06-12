@@ -258,9 +258,7 @@ async def _append_to_existing(
     offending columns and offers retry / pick-a-different-file).
     """
     metadata_repo = repositories.metadata
-    incoming_schema, _profiles, _preview, incoming_rows = analyze_dataframe(
-        result_item.df, result_item.schema_hints
-    )
+    incoming_schema, _profiles, _preview, incoming_rows = analyze_dataframe(result_item.df, result_item.schema_hints)
 
     source = await metadata_repo.get_source(source_id)
     mismatch = _compare_schemas(source["schema_config"], incoming_schema)

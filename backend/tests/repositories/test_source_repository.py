@@ -67,9 +67,7 @@ class TestListSources:
 
 class TestLinkDatasetToSource:
     async def test_sets_source_id_on_dataset(self, repo_with_project, db_session):
-        db_session.add(
-            DatasetRecord(id=DATASET_1, project_id=PROJECT_1, name="Staging", schema_config={"fields": {}})
-        )
+        db_session.add(DatasetRecord(id=DATASET_1, project_id=PROJECT_1, name="Staging", schema_config={"fields": {}}))
         await db_session.commit()
         source = await repo_with_project.create_source(project_id=PROJECT_1, name="Patients")
 

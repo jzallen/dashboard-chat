@@ -33,9 +33,7 @@ class SourceController:
         schema_config: dict[str, Any] | None = None,
         user: "AuthUser | None" = None,
     ) -> tuple[dict, int]:
-        result = await _uc().create_source(
-            project_id=project_id, name=name, schema_config=schema_config, user=user
-        )
+        result = await _uc().create_source(project_id=project_id, name=name, schema_config=schema_config, user=user)
         match result:
             case Success(data):
                 serialized = serialize(data)
@@ -66,9 +64,7 @@ class SourceController:
         match result:
             case Success(data):
                 items = [{"id": upload["upload_id"], **upload} for upload in data]
-                resp = wrap_jsonapi_list(
-                    "uploads", items, f"/api/sources/{source_id}/uploads", len(items), None, False
-                )
+                resp = wrap_jsonapi_list("uploads", items, f"/api/sources/{source_id}/uploads", len(items), None, False)
                 return resp, 200
             case Failure(error):
                 return error_response(error)
