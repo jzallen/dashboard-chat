@@ -2,6 +2,11 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { AuditTag, Edge, LineageNode } from "../../catalog";
+import {
+  type ChatStreamEvent,
+  isCatalogMutatingEvent,
+  readChatStream,
+} from "../../lib/chat-stream";
 import { Icon, type IconName, LayerDot, TAG_ICON } from "../primitives";
 import { catalog, useCatalog } from "../useCatalog";
 import styles from "./Chat.module.css";
@@ -41,9 +46,37 @@ function fmt(text: string) {
 }
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+/** Best-effort agent context from the open lineage node — the agent reads
+ *  contextType/contextId to scope its tools. ModelRef is heterogeneous (datasets
+ *  carry `fields`, views `columns`, reports `columns_metadata`). */
+function agentContext(node: LineageNode | null): {
+  contextType: "dataset" | "view" | "report" | null;
+  contextId: string | null;
+} {
+  if (!node) return { contextType: null, contextId: null };
+  const ref = node.ref;
+  const contextType = ref?.fields
+    ? "dataset"
+    : ref?.columns
+      ? "view"
+      : ref?.columns_metadata
+        ? "report"
+        : null;
+  return { contextType, contextId: node.id };
+}
+
+/** Append a domain event to the catalog-revalidation decision: the live
+ *  assistant-transform reflection fires a scoped revalidate on the first
+ *  dataset-mutating event of a turn. */
+function revalidateOnMutation(event: ChatStreamEvent, fired: { done: boolean }) {
+  if (!fired.done && isCatalogMutatingEvent(event)) {
+    fired.done = true;
+    void catalog.revalidateScope();
+  }
+}
+
 export function AssistantOverlay({
   context,
-  onCreate,
   onClose,
   onOpenNode,
   go,
@@ -68,28 +101,64 @@ export function AssistantOverlay({
       bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
   }, [msgs, typing]);
 
+  // The live assistant turn: POST the message to the ui/ server broker
+  // (/bff/chat), which relays the agent SSE straight back, and stream the
+  // assistant's reply into the transcript. A dataset-mutating domain event
+  // (transform_applied, column_renamed, row_*) triggers a scoped catalog
+  // revalidation so the lineage reflects the change. (The setTimeout script mock
+  // is gone for this path; TerminalAssistant stays scripted for now.)
   async function runScript(promptText: string) {
     if (busy) return;
     setBusy(true);
     setMsgs((m) => [...m, { role: "user", text: promptText }]);
-    const S = catalog.getChatScript();
-    await sleep(450);
     setTyping(true);
-    await sleep(700);
-    setTyping(false);
-    for (const turn of S.turns) {
-      if (turn.type === "text") {
-        setTyping(true);
-        await sleep(520);
-        setTyping(false);
-        setMsgs((m) => [...m, { role: "bot", text: turn.text }]);
-      } else {
-        await sleep(360);
-        setMsgs((m) => [...m, { role: "tool", say: turn.say, tag: turn.tag }]);
-      }
+
+    const { contextType, contextId } = agentContext(context);
+    const projectId = catalog.getCurrentProject()?.id ?? null;
+    const fired = { done: false };
+    // First text-delta starts the streaming bot bubble; later deltas replace it.
+    let started = false;
+
+    try {
+      const res = await fetch("/bff/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          messages: [{ role: "user", content: promptText }],
+          contextType,
+          contextId,
+          project_id: projectId,
+        }),
+      });
+      if (!res.ok || !res.body) throw new Error(`chat ${res.status}`);
+
+      await readChatStream(res.body, {
+        onText: (accumulated) => {
+          setTyping(false);
+          const isFirst = !started;
+          started = true;
+          setMsgs((m) =>
+            isFirst
+              ? [...m, { role: "bot", text: accumulated }]
+              : [...m.slice(0, -1), { role: "bot", text: accumulated }],
+          );
+        },
+        onEvent: (event) => revalidateOnMutation(event, fired),
+        onError: (message) => {
+          setTyping(false);
+          setMsgs((m) => [...m, { role: "bot", text: `⚠️ ${message}` }]);
+        },
+      });
+    } catch {
+      setTyping(false);
+      setMsgs((m) => [
+        ...m,
+        { role: "bot", text: "⚠️ The assistant is unavailable right now." },
+      ]);
+    } finally {
+      setTyping(false);
+      setBusy(false);
     }
-    onCreate(S.newNode, S.newEdge);
-    setBusy(false);
   }
 
   const newSession = () => {

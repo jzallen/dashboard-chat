@@ -59,7 +59,7 @@ describe("readChatStream — client-side agent SSE reader", () => {
     expect(texts).toEqual(["Trimmed ", "Trimmed whitespace."]);
     expect(events).toHaveLength(1);
     expect(events[0].type).toBe("transform_applied");
-    expect((events[0] as { column: string }).column).toBe("city");
+    expect(events[0].column).toBe("city");
     expect(doneText).toBe("Trimmed whitespace.");
   });
 
