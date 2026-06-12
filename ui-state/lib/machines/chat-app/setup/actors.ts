@@ -13,9 +13,10 @@ import { setup } from "xstate";
 
 import type {
   ChatAppChildEvent,
+  OnboardingInput,
   ProjectContextInput,
   SessionChatInput,
-  OnboardingInput,
+  SourceUploadInput,
 } from "./types.ts";
 
 /** Build a do-nothing child whose input type is pinned by the caller. It
@@ -42,6 +43,7 @@ function createPlaceholderChild<TInput>() {
 const onboarding = createPlaceholderChild<OnboardingInput>();
 const projectContext = createPlaceholderChild<ProjectContextInput>();
 const sessionChat = createPlaceholderChild<SessionChatInput>();
+const sourceUpload = createPlaceholderChild<SourceUploadInput>();
 
 // name → child placeholder index (keys are the `invoke.src` strings used in
 // ../machine.ts).
@@ -49,6 +51,7 @@ export const actors = {
   onboarding,
   projectContext,
   sessionChat,
+  sourceUpload,
 };
 
 /** Cast target for a concrete onboarding machine provided over the `onboarding`
@@ -62,6 +65,10 @@ export type ChatAppProjectContextLogic = (typeof actors)["projectContext"];
 /** Cast target for a concrete session-chat machine provided over the
  *  `sessionChat` placeholder slot. */
 export type ChatAppSessionChatLogic = (typeof actors)["sessionChat"];
+
+/** Cast target for a concrete source-upload machine provided over the
+ *  `sourceUpload` placeholder slot. */
+export type ChatAppSourceUploadLogic = (typeof actors)["sourceUpload"];
 
 /**
  * The ProvidedActor union XState derives from `actors` when it types

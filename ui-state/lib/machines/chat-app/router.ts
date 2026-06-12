@@ -66,6 +66,7 @@ const CANONICAL_CHILDREN: readonly ChatAppChildId[] = [
   "onboarding",
   "project-context",
   "session-chat",
+  "source-upload",
 ];
 
 /** Bounded settle timeout — the longest a write handler awaits the actor's
@@ -346,7 +347,19 @@ type ChatAppWireEvent =
   | {
       type: "dataset_context_switch_failed";
       payload: { cause: SessionChatFailureCause };
-    };
+    }
+  // ── client-reported source-upload OUTCOME members (Slice 3) — the browser
+  //    narrates the Source-creation saga (create → upload → process → link); the
+  //    source-upload child (alive on `engaged`) transitions on these. ──
+  | {
+      type: "source_create_requested";
+      payload: { temp_node_id: string; project_id: string };
+    }
+  | { type: "source_created"; payload: { source_id: string } }
+  | { type: "source_upload_started"; payload: { upload_id: string } }
+  | { type: "source_upload_processed"; payload: { dataset_id: string } }
+  | { type: "source_upload_failed"; payload: { reason: string } }
+  | { type: "source_flow_reset" };
 
 /** Why a client-reported session-chat outcome failed (ADR-050 §e.5). Mirrors
  *  the shared `SessionChatFailureCause` (string-literal unions with equal
@@ -515,6 +528,30 @@ const chatAppWireEventSchema = z.discriminatedUnion(
       type: z.literal("dataset_context_switch_failed"),
       payload: z.object({ cause: sessionChatFailureCause }).passthrough(),
     }),
+    // ── client-reported source-upload OUTCOME members (Slice 3) ──
+    z.object({
+      type: z.literal("source_create_requested"),
+      payload: z
+        .object({ temp_node_id: z.string(), project_id: z.string() })
+        .passthrough(),
+    }),
+    z.object({
+      type: z.literal("source_created"),
+      payload: z.object({ source_id: z.string() }).passthrough(),
+    }),
+    z.object({
+      type: z.literal("source_upload_started"),
+      payload: z.object({ upload_id: z.string() }).passthrough(),
+    }),
+    z.object({
+      type: z.literal("source_upload_processed"),
+      payload: z.object({ dataset_id: z.string() }).passthrough(),
+    }),
+    z.object({
+      type: z.literal("source_upload_failed"),
+      payload: z.object({ reason: z.string() }).passthrough(),
+    }),
+    z.object({ type: z.literal("source_flow_reset") }),
   ],
 );
 

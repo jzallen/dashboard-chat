@@ -24,16 +24,18 @@
 //   docs/decisions/adr-044-*.md  — root orchestrator statechart
 //   docs/decisions/adr-028-*.md  — one root actor mediating parent-ignorant children
 
+import { createOnboardingMachine } from "../onboarding/index.ts";
 import type { ProjectContextMachineDeps } from "../project-context/index.ts";
 import { createProjectContextMachine } from "../project-context/index.ts";
 import type { SessionChatMachineDeps } from "../session-chat/index.ts";
 import { createSessionChatMachine } from "../session-chat/index.ts";
-import { createOnboardingMachine } from "../onboarding/index.ts";
+import { createSourceUploadMachine } from "../source-upload/index.ts";
 import { createChatAppMachine } from "./machine.ts";
 import type {
   ChatAppOnboardingLogic,
   ChatAppProjectContextLogic,
   ChatAppSessionChatLogic,
+  ChatAppSourceUploadLogic,
 } from "./setup/actors.ts";
 
 /**
@@ -73,12 +75,14 @@ export function createChatApp(deps: ChatAppDeps) {
   const onboarding = createOnboardingMachine();
   const projectContext = createProjectContextMachine(deps.projectContext);
   const sessionChat = createSessionChatMachine(deps.sessionChat);
+  const sourceUpload = createSourceUploadMachine();
 
   return createChatAppMachine().provide({
     actors: {
       onboarding: onboarding as unknown as ChatAppOnboardingLogic,
       projectContext: projectContext as unknown as ChatAppProjectContextLogic,
       sessionChat: sessionChat as unknown as ChatAppSessionChatLogic,
+      sourceUpload: sourceUpload as unknown as ChatAppSourceUploadLogic,
     },
   });
 }
@@ -88,6 +92,7 @@ export type {
   ChatAppOnboardingLogic,
   ChatAppProjectContextLogic,
   ChatAppSessionChatLogic,
+  ChatAppSourceUploadLogic,
 } from "./setup/actors.ts";
 export type {
   AuthHandoff,
@@ -97,8 +102,9 @@ export type {
   ChatAppEvent,
   ChatAppLifecycle,
   ChatUserIntent,
+  OnboardingInput,
   ProjectContextInput,
   ProjectHandoff,
   SessionChatInput,
-  OnboardingInput,
+  SourceUploadInput,
 } from "./setup/types.ts";

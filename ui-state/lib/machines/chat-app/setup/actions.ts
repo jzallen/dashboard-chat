@@ -118,3 +118,10 @@ export const forwardToProjectContext = ({ event, enqueue }: ForwardArgs) => {
 export const forwardToSessionChat = ({ event, enqueue }: ForwardArgs) => {
   enqueue.sendTo("session-chat", event);
 };
+/** engaged.on: forward the source-upload vocabulary to the live source-upload
+ *  child (a sibling of project-context, alive throughout the workspace phase, so
+ *  reachable from engaged.chat too). An out-of-phase report (still on `login`)
+ *  has no handler and is dropped by XState. */
+export const forwardToSourceUpload = ({ event, enqueue }: ForwardArgs) => {
+  enqueue.sendTo("source-upload", event);
+};

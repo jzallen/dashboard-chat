@@ -1,13 +1,13 @@
 // POST /state/keepalive — the TTL-refresh touch surface (slice B). The client's
 // idle tracker fires this debounced to keep an active-but-idle session's keys
-// alive; it must bump the snapshot + all three canonical child logs for the
+// alive; it must bump the snapshot + all four canonical child logs for the
 // principal, never mutate state, and stay best-effort (always 204).
 import { describe, expect, it, vi } from "vitest";
 
 import { buildChatAppApp } from "../../../index.ts";
 import {
-  createNoopChatAppSnapshotStore,
   type ChatAppSnapshotStore,
+  createNoopChatAppSnapshotStore,
 } from "../../persistence/chatapp-snapshot-store.ts";
 import {
   createNoopFlowEventLog,
@@ -36,7 +36,7 @@ async function keepalive(
 }
 
 describe("POST /state/keepalive", () => {
-  it("204s and touches the snapshot + all three canonical child logs", async () => {
+  it("204s and touches the snapshot + all four canonical child logs", async () => {
     const eventLog = createNoopFlowEventLog();
     const snapshotStore = createNoopChatAppSnapshotStore();
     const eventTouch = vi.spyOn(eventLog, "touch");
@@ -52,6 +52,7 @@ describe("POST /state/keepalive", () => {
         "onboarding:u-keep",
         "project-context:u-keep",
         "session-chat:u-keep",
+        "source-upload:u-keep",
       ].sort(),
     );
   });
@@ -81,7 +82,7 @@ describe("POST /state/keepalive", () => {
 });
 
 describe("POST /state/logout", () => {
-  it("204s and resets the snapshot + all three canonical child logs", async () => {
+  it("204s and resets the snapshot + all four canonical child logs", async () => {
     const eventLog = createNoopFlowEventLog();
     const snapshotStore = createNoopChatAppSnapshotStore();
     const eventReset = vi.spyOn(eventLog, "reset");
@@ -102,6 +103,7 @@ describe("POST /state/logout", () => {
         "onboarding:u-out",
         "project-context:u-out",
         "session-chat:u-out",
+        "source-upload:u-out",
       ].sort(),
     );
   });

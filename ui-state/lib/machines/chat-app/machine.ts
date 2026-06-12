@@ -30,6 +30,7 @@ import {
   forwardToOnboarding,
   forwardToProjectContext,
   forwardToSessionChat,
+  forwardToSourceUpload,
 } from "./setup/actions.ts";
 import { actors } from "./setup/actors.ts";
 import { guards } from "./setup/guards.ts";
@@ -57,6 +58,7 @@ export function createChatAppMachine() {
       forwardToOnboarding: enqueueActions(forwardToOnboarding),
       forwardToProjectContext: enqueueActions(forwardToProjectContext),
       forwardToSessionChat: enqueueActions(forwardToSessionChat),
+      forwardToSourceUpload: enqueueActions(forwardToSourceUpload),
     },
   }).createMachine({
     id: "chat-app",
@@ -122,26 +124,50 @@ export function createChatAppMachine() {
           project_switched: { actions: "forwardToProjectContext" },
           open_deep_link: { actions: "forwardToProjectContext" },
           back_to_projects_clicked: { actions: "forwardToProjectContext" },
+          // Source-upload vocabulary is routed on `engaged` (NOT a deeper
+          // sub-state) so the optimistic source flow stays drivable whether the
+          // active sub-child is project-context or session-chat — the
+          // source-upload child is invoked here as a sibling and is alive
+          // throughout the workspace phase.
+          source_create_requested: { actions: "forwardToSourceUpload" },
+          source_created: { actions: "forwardToSourceUpload" },
+          source_upload_started: { actions: "forwardToSourceUpload" },
+          source_upload_processed: { actions: "forwardToSourceUpload" },
+          source_upload_failed: { actions: "forwardToSourceUpload" },
+          source_flow_reset: { actions: "forwardToSourceUpload" },
         },
-        invoke: {
-          id: "project-context",
-          src: "projectContext",
-          input: ({ context }) => ({
-            request_id: context.request_id,
-            principal_id: context.principal_id,
-          }),
-          onSnapshot: [
-            {
-              guard: "isInitialProjectSelected",
-              target: ".chat",
-              actions: "captureProjectHandoff",
-            },
-            {
-              guard: "shouldSwitchProject",
-              actions: ["captureProjectHandoff", "forwardProjectReady"],
-            },
-          ],
-        },
+        invoke: [
+          {
+            id: "project-context",
+            src: "projectContext",
+            input: ({ context }) => ({
+              request_id: context.request_id,
+              principal_id: context.principal_id,
+            }),
+            onSnapshot: [
+              {
+                guard: "isInitialProjectSelected",
+                target: ".chat",
+                actions: "captureProjectHandoff",
+              },
+              {
+                guard: "shouldSwitchProject",
+                actions: ["captureProjectHandoff", "forwardProjectReady"],
+              },
+            ],
+          },
+          {
+            // The source-upload coordinator — client-reported, no I/O. Invoked as
+            // a sibling of project-context so it is alive for the whole workspace
+            // phase; the parent forwards the source vocabulary to it verbatim.
+            id: "source-upload",
+            src: "sourceUpload",
+            input: ({ context }) => ({
+              request_id: context.request_id,
+              principal_id: context.principal_id,
+            }),
+          },
+        ],
         states: {
           project_context: {},
           chat: {

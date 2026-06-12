@@ -147,6 +147,29 @@ export type SessionChatWireEvent =
       payload: { cause: SessionChatFailureCause };
     };
 
+// ───────────────────────────── source-upload outcome members (Slice 3) ─────────────────────────────
+// The browser is the saga coordinator for Source creation (create → upload file
+// direct to MinIO → process/ingest → link Dataset). It narrates each past-tense
+// outcome; ui-state's source-upload child (alive on the `engaged` workspace
+// phase, a sibling of project-context) transitions on these (zero egress). The
+// `sourceUpload` region of the ChatAppStateDocument exposes the resulting phase
+// so the lineage canvas can render an optimistic source node advancing.
+
+/** The source-upload client-reported OUTCOME members. Each carries the small
+ *  payload the optimistic node needs (temp id + project on open; the real
+ *  source/upload/dataset ids as the saga advances; the failure reason on a
+ *  schema mismatch / failed ingest). `source_flow_reset` clears the flow. */
+export type SourceUploadWireEvent =
+  | {
+      type: "source_create_requested";
+      payload: { temp_node_id: string; project_id: string };
+    }
+  | { type: "source_created"; payload: { source_id: string } }
+  | { type: "source_upload_started"; payload: { upload_id: string } }
+  | { type: "source_upload_processed"; payload: { dataset_id: string } }
+  | { type: "source_upload_failed"; payload: { reason: string } }
+  | { type: "source_flow_reset" };
+
 export type ChatAppWireEvent =
   // ── client-reported onboarding outcomes (ADR-049/050) — the client probes the
   //    org SSOT and narrates the past-tense result; ui-state transitions on the
@@ -225,4 +248,9 @@ export type ChatAppWireEvent =
   //    the report-driven half of ui-state's zero-egress mandate. The machine
   //    SETTLES on each surviving intent (above) and transitions on the matching
   //    outcome report below. ──
-  | SessionChatWireEvent;
+  | SessionChatWireEvent
+  // ── client-reported source-upload OUTCOME members (Slice 3) — the browser
+  //    narrates the Source-creation saga; ui-state's source-upload child
+  //    transitions on these (zero egress). Routed on the `engaged` workspace
+  //    phase. ──
+  | SourceUploadWireEvent;

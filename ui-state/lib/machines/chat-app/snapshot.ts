@@ -63,6 +63,10 @@ const TRANSIENT_CHILD_STATES: Readonly<
   // is reached, so the transient set is empty (the four retired invoke states
   // no longer exist).
   "session-chat": new Set<string>(),
+  // Client-reported source-upload (Slice 3) invokes NO actors — every phase
+  // (idle/creating_source/uploading/processing/linked/error_recoverable) SETTLES
+  // the instant it is reached, so the transient set is empty.
+  "source-upload": new Set<string>(),
 };
 
 /** Capture the JSON-serializable persisted snapshot of a live ChatApp actor

@@ -163,6 +163,33 @@ export interface RegionView {
   context: ReducedContext;
 }
 
+/** The optimistic source node's phase, mirroring the ui-state source-upload
+ *  child's state vocabulary (idle → creating_source → uploading → processing →
+ *  linked, plus error_recoverable). */
+export type SourceUploadPhase =
+  | "idle"
+  | "creating_source"
+  | "uploading"
+  | "processing"
+  | "linked"
+  | "error_recoverable";
+
+/**
+ * The `sourceUpload` region — a FLAT slice the lineage canvas reads to render an
+ * optimistic source node advancing through the Source-creation saga and to
+ * reconcile it against the real source/dataset once linked (client-reported
+ * model, ADR-049/050). Unlike the three lifecycle regions it is NOT a
+ * `{ state, context }` slice — the source-upload child carries only this small
+ * flat shape.
+ */
+export interface SourceUploadRegion {
+  phase: SourceUploadPhase;
+  temp_node_id: string | null;
+  source_id: string | null;
+  dataset_id: string | null;
+  error: string | null;
+}
+
 /**
  * The single JSON document `GET /state` and `/state/stream` emit and
  * `POST /state/events` returns — a STABLE DERIVED VIEW of the one per-principal
@@ -183,6 +210,8 @@ export interface ChatAppStateDocument {
     onboarding: RegionView;
     projectContext: RegionView;
     sessionChat: RegionView;
+    /** The optimistic source-upload flow (client-reported; ADR-049/050). */
+    sourceUpload: SourceUploadRegion;
   };
 }
 
@@ -221,6 +250,15 @@ export function anonymousStateDocument(): ChatAppStateDocument {
         context: initialReducedContext(),
       },
       sessionChat: { state: "verifying", context: initialReducedContext() },
+      // The source-upload flow folds to `idle` before the workspace is engaged
+      // (no live source-upload child), byte-equal to the origin's emptyView.
+      sourceUpload: {
+        phase: "idle",
+        temp_node_id: null,
+        source_id: null,
+        dataset_id: null,
+        error: null,
+      },
     },
   };
 }

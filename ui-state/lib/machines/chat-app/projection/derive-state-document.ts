@@ -99,6 +99,15 @@ interface ProjectContextChildContext {
   last_used_degraded_project_ids: string[];
 }
 
+interface SourceUploadChildContext {
+  temp_node_id: string | null;
+  source_id: string | null;
+  upload_id: string | null;
+  dataset_id: string | null;
+  project_id: string | null;
+  error: string | null;
+}
+
 interface SessionChatChildContext {
   org_id: string;
   project: { id: string | null; name: string | null };
@@ -295,6 +304,35 @@ export function deriveSessionChat(snapshot: ChatAppSnapshotView): {
   return { state: mapState(SESSION_CHAT_STATE_MAP, rawValue), context };
 }
 
+/** sourceUpload region ← source-upload child. The browser is the saga
+ *  coordinator; this region exposes the optimistic source node's current phase
+ *  plus the ids the canvas needs to render it advancing and reconcile against the
+ *  real source/dataset after revalidation. Unlike the three lifecycle regions, it
+ *  is a FLAT slice (the source-upload child carries a small flat context, not a
+ *  ReducedContext). Before `engaged` (no live child) it folds to `idle`. */
+export function deriveSourceUpload(
+  snapshot: ChatAppSnapshotView,
+): SourceUploadRegion {
+  const child = readChild(snapshot, "source-upload");
+  if (!child) {
+    return {
+      phase: "idle",
+      temp_node_id: null,
+      source_id: null,
+      dataset_id: null,
+      error: null,
+    };
+  }
+  const c = child.context as SourceUploadChildContext;
+  return {
+    phase: child.value as SourceUploadPhase,
+    temp_node_id: c.temp_node_id ?? null,
+    source_id: c.source_id ?? null,
+    dataset_id: c.dataset_id ?? null,
+    error: c.error ?? null,
+  };
+}
+
 // ─────────────────────────────── bookkeeping (from the log) ───────────────────────────────
 
 export interface ProjectionBookkeeping {
@@ -335,6 +373,28 @@ export interface RegionView {
   context: ReducedContext;
 }
 
+/** The optimistic source node's phase, mirroring the source-upload child's
+ *  state vocabulary (idle → creating_source → uploading → processing → linked,
+ *  plus error_recoverable). */
+export type SourceUploadPhase =
+  | "idle"
+  | "creating_source"
+  | "uploading"
+  | "processing"
+  | "linked"
+  | "error_recoverable";
+
+/** The `sourceUpload` region — a FLAT slice the canvas reads to render the
+ *  optimistic source node's current phase and reconcile it against the real
+ *  source/dataset once linked (ADR-049/050 client-reported model). */
+export interface SourceUploadRegion {
+  phase: SourceUploadPhase;
+  temp_node_id: string | null;
+  source_id: string | null;
+  dataset_id: string | null;
+  error: string | null;
+}
+
 /** The single document `GET /state` / `/state/stream` emit. A STABLE DERIVED
  *  VIEW of the one per-principal ChatApp actor. */
 export interface ChatAppStateDocument {
@@ -349,6 +409,8 @@ export interface ChatAppStateDocument {
     onboarding: RegionView;
     projectContext: RegionView;
     sessionChat: RegionView;
+    /** The optimistic source-upload flow (client-reported; ADR-049/050). */
+    sourceUpload: SourceUploadRegion;
   };
 }
 
@@ -470,6 +532,7 @@ export function deriveStateDocument(
   const onboarding = deriveOnboarding(view);
   const projectContext = deriveProjectContext(view);
   const sessionChat = deriveSessionChat(view);
+  const sourceUpload = deriveSourceUpload(view);
 
   return {
     phase: derivePhase(view),
@@ -484,6 +547,7 @@ export function deriveStateDocument(
         context: projectContext.context,
       },
       sessionChat: { state: sessionChat.state, context: sessionChat.context },
+      sourceUpload,
     },
   };
 }

@@ -70,7 +70,8 @@ export type ChatAppLifecycle = "login" | "project_context" | "chat";
 export type ChatAppChildId =
   | "onboarding"
   | "project-context"
-  | "session-chat";
+  | "session-chat"
+  | "source-upload";
 
 // ─────────────────────────── Hand-off payloads ───────────────────────────
 // Captured from a child's snapshot when it reaches its readiness state, then
@@ -276,7 +277,18 @@ export type ChatAppEvent =
   | { type: "session_created"; session: { session_id: string } }
   | { type: "session_create_failed"; cause: string }
   | { type: "dataset_context_switched"; resource: { type: ResourceType | null; id: string | null } }
-  | { type: "dataset_context_switch_failed"; cause: string };
+  | { type: "dataset_context_switch_failed"; cause: string }
+  // ── source-upload vocabulary (routed on `engaged` — the source-upload child is
+  //    alive throughout the workspace phase, a sibling of project-context). The
+  //    browser is the saga coordinator; these are the past-tense outcome reports
+  //    it narrates as an optimistic source node advances. Each member is spelled
+  //    as the source-upload child reads it (top-level fields). ──
+  | { type: "source_create_requested"; temp_node_id: string; project_id: string }
+  | { type: "source_created"; source_id: string }
+  | { type: "source_upload_started"; upload_id: string }
+  | { type: "source_upload_processed"; dataset_id: string }
+  | { type: "source_upload_failed"; reason: string }
+  | { type: "source_flow_reset" };
 
 /** Display-data row shapes the session-chat OUTCOME reports carry (mirrors the
  *  session-chat machine's SessionSummary / TranscriptMessage; declared locally so
@@ -335,6 +347,15 @@ export interface SessionChatInput {
   project_id?: string;
   project_name?: string;
   deeplink_session_id?: string | null;
+}
+
+/** Input contract for the `sourceUpload` slot. The source-upload child is
+ *  client-reported and stateless at construction (the flow's ids all arrive via
+ *  the reported outcome events), so it reads only the static request/principal
+ *  ids the parent threads in — same minimal shape as the other children. */
+export interface SourceUploadInput {
+  request_id: string;
+  principal_id: string;
 }
 
 // ─────────────────── Snapshot views (read at onSnapshot) ───────────────────
