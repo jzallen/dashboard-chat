@@ -628,6 +628,21 @@ export async function createDataCatalog(
       return revalidateScoped(projectId);
     },
 
+    /**
+     * Revalidate the CURRENTLY-scoped project against fresh server state — the
+     * public seam for live reactive reads (e.g. the assistant-transform
+     * reflection: an SSE `transform_applied` event from /bff/chat triggers this so
+     * the lineage/preview re-derives). Wraps the private scoped revalidation with
+     * `fresh:true` (drop the source's per-project cache first). No-op until a
+     * project is scoped (the captured-pid guard also drops a late commit if the
+     * scope changes mid-flight). Defaults `fresh:true`; pass `{ fresh:false }` for
+     * an SWR-style refresh.
+     */
+    revalidateScope: (opts?: { fresh?: boolean }): Promise<void> => {
+      if (currentScopedPid === undefined) return Promise.resolve();
+      return revalidateScoped(currentScopedPid, { fresh: opts?.fresh ?? true });
+    },
+
     /* ─── reactivity surface (for useSyncExternalStore) ──────────────────── */
     /** Register a listener; returns an unsubscribe function. */
     subscribe: (listener: () => void): (() => void) => {
