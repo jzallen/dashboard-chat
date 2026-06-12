@@ -20,6 +20,12 @@ export default [
   // Top-level, OUTSIDE the app-shell layout (D6): onboarding renders with no
   // Topbar/overlays — the principal has no org yet, so no shell to scope.
   route("/onboarding", "routes/onboarding.tsx"),
+  // BFF resource routes (loader/action only, no React). Top-level so they carry
+  // none of the app-shell chrome or its clientLoader; they run purely server-side
+  // and broker the live agent rails (SSR-BFF gateway, slice 1). /bff/health is
+  // the auth-hop proof; /bff/chat relays the agent SSE.
+  route("/bff/health", "routes/bff-health.tsx"),
+  route("/bff/chat", "routes/bff-chat.tsx"),
   layout("routes/app-shell.tsx", [
     index("routes/home-redirect.tsx"),
     route("org", "routes/org.tsx"),

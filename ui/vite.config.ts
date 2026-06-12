@@ -5,6 +5,13 @@ import { defineConfig } from "vite";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 
+// Dev-loop default for the in-process RRv7 server: the `/bff/*` resource routes
+// fetch auth-proxy server-side via AUTH_PROXY_URL (app/lib/agent-client.ts). In
+// dev that is the host-forwarded auth-proxy container at localhost:1042 — the same
+// origin the `/api` + `/ui-state` proxies below target. Production runs the server
+// build with a real injected env, so this default never applies there.
+process.env.AUTH_PROXY_URL ??= "http://localhost:1042";
+
 // RRv7 framework-mode SPA harness (Phase 0 — foamy-knitting-hennessy). The
 // reactRouter() plugin takes over the document entry (app/root.tsx +
 // app/entry.client.tsx), superseding the old index.html → src/main.js seam.
