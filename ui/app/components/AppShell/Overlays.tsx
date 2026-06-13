@@ -19,15 +19,18 @@ import { ConfirmArchive, UploadModal } from "../Upload";
 import { catalog } from "../useCatalog";
 import { useTheme } from "./ThemeProvider";
 
-/** The resolved deep-linked model for the chat context, or null off a resource route. */
-function chatContextNode(
-  pathname: string,
+/**
+ * The resolved deep-linked model for the chat context, or null off a model route.
+ *
+ * Keys off the project-scoped route params (`dataset/:datasetId`,
+ * `view/:viewId`, `report/:reportId` under `/project/:projectId`), which RRv7
+ * surfaces here from the descendant match — NOT off the path shape, which moved
+ * under `/project/...` and no longer has top-level `/table|/view|/report` prefixes.
+ */
+export function chatContextNode(
   params: Record<string, string | undefined>,
 ): LineageNode | null {
-  let id: string | undefined;
-  if (pathname.startsWith("/table/")) id = params.datasetId;
-  else if (pathname.startsWith("/view/")) id = params.viewId;
-  else if (pathname.startsWith("/report/")) id = params.reportId;
+  const id = params.datasetId ?? params.viewId ?? params.reportId;
   if (!id) return null;
   return catalog.getNode(id) ?? null;
 }
@@ -51,7 +54,7 @@ export function Overlays({
   const location = useLocation();
   const params = useParams();
   const onOrg = location.pathname === "/org";
-  const chatContext = chatContextNode(location.pathname, params);
+  const chatContext = chatContextNode(params);
   return (
     <>
       {!chatOpen && !onOrg && (
