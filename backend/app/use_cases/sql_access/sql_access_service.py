@@ -9,7 +9,7 @@ import logging
 from app.config import get_settings
 from app.models.dataset import Dataset
 from app.use_cases.project._dbt.bootstrap_sql import generate_bootstrap_sql
-from app.use_cases.project._dbt.naming import deduplicate_names, to_snake_case
+from app.use_cases.project._dbt.naming import resolved_view_names
 from app.use_cases.sql_access._infra import QueryEngineProvisioner
 
 logger = logging.getLogger(__name__)
@@ -42,7 +42,7 @@ async def bootstrap_sql_views_via_provisioner(
     storage_bucket: str,
 ) -> None:
     """Generate bootstrap SQL and execute via the query engine provisioner."""
-    snake_names = deduplicate_names([to_snake_case(ds.name) for ds in full_datasets])
-    dataset_pairs = list(zip(snake_names, full_datasets, strict=False))
+    view_names = resolved_view_names(full_datasets)
+    dataset_pairs = list(zip(view_names, full_datasets, strict=False))
     bootstrap_sql = generate_bootstrap_sql(pg_schema, dataset_pairs, storage_bucket)
     await provisioner.sync_views(engine_node_id, project_id, bootstrap_sql)

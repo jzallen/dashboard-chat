@@ -238,6 +238,71 @@ describe("createDataCatalog — renameSource (optimistic write-through)", () => 
   });
 });
 
+describe("createDataCatalog — setModelName (pessimistic, confirm-gated)", () => {
+  function modelNamePrimary(
+    setModelName: (id: string, modelName: string) => Promise<void>,
+  ): PartialCatalogSource {
+    const nodes: Record<string, LineageNode> = {
+      "d.1": {
+        id: "d.1",
+        label: "Customers",
+        sub: "dataset",
+        layer: "staging",
+        modelName: "stg_customers",
+        ref: { columns: [] },
+      },
+    };
+    return {
+      getCurrentProject: () =>
+        Promise.resolve({ id: "p1", name: "P1", description: "" }),
+      getNodes: () => Promise.resolve(nodes),
+      getEdges: () => Promise.resolve([]),
+      getAudit: () => Promise.resolve({}),
+      setModelName,
+    };
+  }
+
+  it("writes FIRST, then commits modelName only on success (pessimistic)", async () => {
+    let resolveWrite: () => void = () => {};
+    const setModelName = vi.fn(
+      () => new Promise<void>((r) => (resolveWrite = r)),
+    );
+    const catalog = await createDataCatalog(
+      modelNamePrimary(setModelName),
+      makeSource(),
+    );
+    await catalog.selectProject("p1");
+    await flush();
+
+    const pending = catalog.setModelName("d.1", "stg_warm_leads");
+    // Pessimistic: NOT applied while the write is in flight.
+    expect(setModelName).toHaveBeenCalledWith("d.1", "stg_warm_leads");
+    expect(catalog.getNode("d.1")?.modelName).toBe("stg_customers");
+
+    resolveWrite();
+    await pending;
+    // Applied only after the write resolves.
+    expect(catalog.getNode("d.1")?.modelName).toBe("stg_warm_leads");
+    // Decoupling: the display label is untouched.
+    expect(catalog.getNode("d.1")?.label).toBe("Customers");
+  });
+
+  it("does not apply modelName when the write rejects", async () => {
+    const setModelName = vi.fn().mockRejectedValue(new Error("409 collision"));
+    const catalog = await createDataCatalog(
+      modelNamePrimary(setModelName),
+      makeSource(),
+    );
+    await catalog.selectProject("p1");
+    await flush();
+
+    await expect(
+      catalog.setModelName("d.1", "stg_warm_leads"),
+    ).rejects.toThrow();
+    expect(catalog.getNode("d.1")?.modelName).toBe("stg_customers");
+  });
+});
+
 describe("createDataCatalog — archive/restore (optimistic write-through)", () => {
   /** A primary backing one staging (dataset) node + spy-able archive/restore. */
   function archivePrimary(opts: {

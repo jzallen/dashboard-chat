@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, TypedDict
 
-from .naming import deduplicate_names
+from .naming import deduplicate_names, resolved_view_names
 from .naming import to_snake_case as to_snake_case
 from .schema_yml import schema_uses_dbt_utils
 
@@ -61,8 +61,10 @@ def build_dbt_file_plan(
     views = views or []
     reports = reports or []
 
-    dataset_snake_names = deduplicate_names([ds.name for ds in datasets])
-    dataset_pairs = list(zip(dataset_snake_names, datasets, strict=False))
+    # Resolve in lockstep with generate_dbt_project_zip: a user-set ``model_name``
+    # names the staging source/model, else the deduplicated snake fallback.
+    dataset_view_names = resolved_view_names(datasets)
+    dataset_pairs = list(zip(dataset_view_names, datasets, strict=False))
 
     view_snake_names = deduplicate_names([v.name for v in views])
     view_pairs = list(zip(view_snake_names, views, strict=False))
@@ -82,12 +84,13 @@ def build_dbt_file_plan(
     entries.append(_config_entry("scripts/bootstrap_db.sql"))
     entries.append(_config_entry("README.md"))
 
-    for snake_name, _ds in dataset_pairs:
+    for view_name, _ds in dataset_pairs:
+        staging_model = view_name if view_name.startswith("stg_") else f"stg_{view_name}"
         entries.append(
             {
-                "path": f"models/staging/stg_{snake_name}.sql",
+                "path": f"models/staging/{staging_model}.sql",
                 "layer": "staging",
-                "ref": f"stg_{snake_name}",
+                "ref": staging_model,
             }
         )
 

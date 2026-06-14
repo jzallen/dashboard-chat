@@ -241,6 +241,21 @@ export class LineageGraph {
   }
 
   /**
+   * Set a node's dbt machine name (`modelName`). DECOUPLED from {@link rename}
+   * (which edits `label`/display name): this touches only `modelName`. Returns
+   * `this` (a referential no-op) when the node is absent or the value is
+   * unchanged so the commit guard suppresses a spurious render.
+   */
+  withModelName(id: string, modelName: string): LineageGraph {
+    const node = this.nodes.get(id);
+    if (!node) return this;
+    if (node.modelName === modelName) return this;
+    const nodes = new Map(this.nodes);
+    nodes.set(id, { ...node, modelName });
+    return new LineageGraph(nodes, this.edgeList, this.cold, this.addedIds);
+  }
+
+  /**
    * Flip the `enabled` flag of a node's matching {@link AuditEntry} (keyed by
    * `auditEntryId`). Mirrors the other reducers: returns `this` (a referential
    * no-op) when the node, the entry, or the value is unchanged, so the catalog's

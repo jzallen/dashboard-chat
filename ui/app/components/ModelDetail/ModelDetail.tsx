@@ -368,21 +368,145 @@ function DetName({ node }: { node: LineageNode }) {
 }
 
 /**
+ * A blocking confirm dialog gating a dbt machine-name (`model_name`) change.
+ * Clones the {@link ConfirmArchive} shape (global `up-scrim` + `role="dialog"`
+ * + cancel/confirm). Renaming the machine name is a deliberate act: the app
+ * repoints everything it manages (the lakehouse view + the exportable dbt
+ * project) automatically, but anything OUTSIDE the app keyed on the old name
+ * is the user's to update — and the display name is the soft, deferable
+ * alternative. The copy says this in plain, non-technical terms.
+ */
+function ConfirmModelName({
+  oldName,
+  newName,
+  displayName,
+  onCancel,
+  onConfirm,
+}: {
+  oldName: string;
+  newName: string;
+  displayName: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <>
+      <div className="up-scrim" style={{ zIndex: 46 }} onClick={onCancel} />
+      <div className={styles.confirmDialog} role="dialog">
+        <div className={styles.cdTitle}>Update the machine name?</div>
+        <div className={styles.cdBody}>
+          <b>{oldName}</b> → <b>{newName}</b>. The app takes care of this for you
+          everywhere it manages — your data here and the dbt project you can
+          export both stay in sync. The one thing to know: anything outside the
+          app that points to <b>{oldName}</b>, like an external database or BI
+          tool, you&rsquo;ll need to update yourself.
+          <span className={styles.cdNote}>
+            Not ready to commit? You can rename the display name,{" "}
+            <b>{displayName}</b>, instead — that&rsquo;s a soft, in-app label, so
+            the machine name and everything built from it stay exactly as they
+            are.
+          </span>
+        </div>
+        <div className={styles.cdActions}>
+          <button className="btn sq" onClick={onCancel}>
+            Cancel
+          </button>
+          <button className="btn ok sq" onClick={onConfirm}>
+            Change machine name
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/**
  * The header subline beneath {@link DetName}.
  *
- * For a DATASET node this renders the READ-ONLY dbt machine name
- * (`node.modelName`, e.g. `stg_customers`) — derived once at creation, decoupled
- * from the editable display name, and never editable here (no input, no
- * `renameSource` wiring; independent editing is a later concern). Gates
- * gracefully to nothing for a legacy dataset row that has no `modelName`.
+ * For a DATASET node this renders the EDITABLE dbt machine name
+ * (`node.modelName`, e.g. `stg_customers`) — a SECOND, independent editor from
+ * {@link DetName} (the display label). The two are DECOUPLED: this path only
+ * ever calls `catalog.setModelName`, never `renameSource`. Editing is
+ * PESSIMISTIC: a click opens a draft input; committing it opens a blocking
+ * {@link ConfirmModelName} dialog, and only confirming writes (no optimistic
+ * flip). Cancel/Escape reverts the draft with no write. Gates to nothing for a
+ * legacy dataset row with no `modelName`.
  *
  * For VIEW / REPORT nodes there is no machine name, so the friendly model name
- * (`m.name`) is shown — it is distinct from the technical header label.
+ * (`m.name`) is shown READ-ONLY — distinct from the technical header label.
  */
 function DetSubline({ node, m }: { node: LineageNode; m: Model }) {
-  const text = m.kind === "dataset" ? node.modelName : m.name;
+  const isDataset = m.kind === "dataset";
+  const text = isDataset ? node.modelName : m.name;
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(text ?? "");
+  const [pending, setPending] = useState<string | null>(null);
+
   if (!text) return null;
-  return <div className={styles.detFriendly}>{text}</div>;
+
+  if (!isDataset) {
+    return <div className={styles.detFriendly}>{text}</div>;
+  }
+
+  if (pending !== null) {
+    return (
+      <>
+        <div className={styles.detFriendly}>{text}</div>
+        <ConfirmModelName
+          oldName={text}
+          newName={pending}
+          displayName={node.label}
+          onCancel={() => {
+            setPending(null);
+            setDraft(text);
+          }}
+          onConfirm={() => {
+            catalog.setModelName(node.id, pending);
+            setPending(null);
+          }}
+        />
+      </>
+    );
+  }
+
+  if (!editing) {
+    return (
+      <div
+        className={styles.detFriendly}
+        onClick={() => {
+          setDraft(text);
+          setEditing(true);
+        }}
+      >
+        {text}
+      </div>
+    );
+  }
+
+  const commit = () => {
+    setEditing(false);
+    const next = draft.trim();
+    if (!next || next === text) return; // no-op / cancel → no dialog
+    setPending(next);
+  };
+
+  return (
+    <input
+      className={`${styles.detFriendly} ${styles.detNameEditing}`}
+      aria-label="Edit dataset machine name"
+      autoFocus
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") commit();
+        if (e.key === "Escape") {
+          setDraft(text);
+          setEditing(false);
+        }
+      }}
+    />
+  );
 }
 
 export function ModelDetail({

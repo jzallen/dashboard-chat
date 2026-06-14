@@ -60,6 +60,16 @@ export interface CatalogSource {
    */
   renameModel?(id: string, kind: ModelKind, name: string): Promise<void>;
   /**
+   * Set a dataset's dbt machine name (`model_name`) — the warehouse staging-view
+   * identifier. SEPARATE from {@link renameModel} (which edits `display_name`):
+   * the two are DECOUPLED, so editing the machine name never touches the display
+   * label. The backend forgiving-normalizes the input to `stg_<snake>`, enforces
+   * project-scoped uniqueness (409 on collision), and repoints the live view.
+   * Resolves on success; REJECTS on failure (the UI gates this behind a blocking
+   * confirm and does not flip optimistically).
+   */
+  setModelName?(id: string, modelName: string): Promise<void>;
+  /**
    * Archive a model-bearing node (soft-delete). Only datasets support archival
    * (a restorable Cold Storage); the impl no-ops for kinds the backend can't
    * soft-delete. Rejects on failure so the optimistic archive rolls back.

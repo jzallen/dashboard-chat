@@ -71,6 +71,10 @@ class DatasetUpdate(BaseModel):
     schema_config: dict[str, Any] | None = None
     # MR-6: editable source display name (the underlying filename/``name`` stays unchanged).
     display_name: str | None = None
+    # Slice C: editable dbt machine name. Forgiving-normalized to ``stg_<snake>`` and
+    # project-unique at the use-case layer; repoints the live warehouse view.
+    # DECOUPLED from display_name — a display edit never touches this.
+    model_name: str | None = None
 
 
 class DatasetResponse(DatasetBase):

@@ -87,6 +87,74 @@ async def test_process_dataset_sync_event(db_session):
     assert mock_provisioner.sync_calls[0][0] == ENGINE_NODE_ID
 
 
+async def test_process_dataset_sync_uses_model_name_for_view(db_session):
+    """When a dataset carries a model_name, the synced view binds to it
+    (the warehouse machine name), not the filename-derived snake name."""
+    await _seed(db_session)
+    set_session(db_session)
+
+    # Give the dataset a user-set machine name.
+    container = RepositoryContainer(RestrictedSession(db_session))
+    await container.metadata.update_dataset(DATASET_1, model_name="stg_warm_leads")
+    await db_session.commit()
+
+    mock_provisioner = MockQueryEngineProvisioner()
+    set_app_query_engine_provisioner(mock_provisioner)
+
+    await container.outbox.submit_dataset_sync_event(
+        project_id=PROJECT_1,
+        dataset_id=DATASET_1,
+        engine_node_id=ENGINE_NODE_ID,
+    )
+    await db_session.commit()
+
+    with patch("app.use_cases.query_engine.sync_processor.async_session") as mock_session_ctx:
+        mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=db_session)
+        mock_session_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
+        await process_sync_events()
+
+    sql = mock_provisioner.sync_calls[0][2]
+    assert "CREATE OR REPLACE VIEW" in sql
+    assert '"stg_warm_leads"' in sql
+    # No DROP when there is no previous view name.
+    assert "DROP VIEW" not in sql
+
+
+async def test_process_dataset_sync_drops_old_view_on_repoint(db_session):
+    """A machine-name repoint carries previous_view_name; the sync drops the
+    stale view (no orphan) then creates the new one in one DDL batch."""
+    await _seed(db_session)
+    set_session(db_session)
+
+    container = RepositoryContainer(RestrictedSession(db_session))
+    await container.metadata.update_dataset(DATASET_1, model_name="stg_warm_leads")
+    await db_session.commit()
+
+    mock_provisioner = MockQueryEngineProvisioner()
+    set_app_query_engine_provisioner(mock_provisioner)
+
+    await container.outbox.submit_dataset_sync_event(
+        project_id=PROJECT_1,
+        dataset_id=DATASET_1,
+        engine_node_id=ENGINE_NODE_ID,
+        previous_view_name="test_dataset",
+    )
+    await db_session.commit()
+
+    with patch("app.use_cases.query_engine.sync_processor.async_session") as mock_session_ctx:
+        mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=db_session)
+        mock_session_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
+        await process_sync_events()
+
+    sql = mock_provisioner.sync_calls[0][2]
+    assert "DROP VIEW IF EXISTS" in sql
+    assert '"test_dataset"' in sql
+    assert "CREATE OR REPLACE VIEW" in sql
+    assert '"stg_warm_leads"' in sql
+    # Drop precedes create so the rename is atomic within the batch.
+    assert sql.index("DROP VIEW") < sql.index("CREATE OR REPLACE VIEW")
+
+
 async def test_process_dataset_removed_event(db_session):
     """Should process a DatasetRemoved event and call provisioner with DROP VIEW."""
     await _seed(db_session)

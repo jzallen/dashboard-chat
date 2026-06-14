@@ -984,6 +984,50 @@ describe("metadataApiSource — renameModel (optimistic write-through PATCH)", (
   });
 });
 
+describe("metadataApiSource — setModelName (machine-name PATCH, Slice C)", () => {
+  function stubPatch(ok = true) {
+    const fetchMock = vi.fn(async () => ({
+      ok,
+      status: ok ? 200 : 409,
+      json: async () => ({ data: {} }),
+    }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    return fetchMock;
+  }
+
+  it("PATCHes the dataset URL with model_name (separate from display_name)", async () => {
+    const fetchMock = stubPatch();
+    const source = metadataApiSource({
+      getToken: () => "tok",
+      getProjectId: () => "p1",
+    });
+
+    await source.setModelName!("d1", "stg_warm_leads");
+
+    const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(call[0]).toBe("/api/datasets/d1");
+    expect(call[1].method).toBe("PATCH");
+    expect(JSON.parse(call[1].body as string)).toEqual({
+      model_name: "stg_warm_leads",
+    });
+    // Decoupling: the machine-name write never carries display_name.
+    expect(JSON.parse(call[1].body as string)).not.toHaveProperty(
+      "display_name",
+    );
+  });
+
+  it("rejects on a non-2xx (e.g. 409 collision) so the caller surfaces it", async () => {
+    stubPatch(false);
+    const source = metadataApiSource({
+      getToken: () => "tok",
+      getProjectId: () => "p1",
+    });
+    await expect(
+      source.setModelName!("d1", "stg_warm_leads"),
+    ).rejects.toThrow();
+  });
+});
+
 describe("metadataApiSource — archiveModel / restoreModel (soft-delete POST)", () => {
   /** A fetch stub that succeeds for any URL and records the request init. */
   function stubPost(ok = true) {

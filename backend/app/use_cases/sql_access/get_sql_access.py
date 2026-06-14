@@ -9,7 +9,7 @@ from app.config import get_settings
 from app.models.dataset import Dataset
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
-from app.use_cases.project._dbt.naming import to_snake_case
+from app.use_cases.project._dbt.naming import resolved_view_name
 from app.use_cases.sql_access._context import load_context
 from app.use_cases.sql_access._engine import resolve_engine_node_by_id
 from app.use_cases.sql_access._response import build_connection_response
@@ -59,7 +59,7 @@ async def _load_dataset_sync_entries(project_id: str, repositories: "RepositoryC
             {
                 "dataset_id": dataset.id,
                 "name": dataset.name,
-                "view_name": to_snake_case(dataset.name),
+                "view_name": resolved_view_name(dataset),
                 "sync_status": sync_statuses.get(dataset.id, "synced"),
             }
         )

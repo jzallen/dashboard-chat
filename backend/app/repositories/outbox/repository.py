@@ -201,11 +201,13 @@ class OutboxRepository:
         project_id: str,
         dataset_id: str,
         engine_node_id: str,
+        previous_view_name: str | None = None,
     ) -> OutboxRecord:
         event = DatasetSyncRequested(
             project_id=project_id,
             dataset_id=dataset_id,
             engine_node_id=engine_node_id,
+            previous_view_name=previous_view_name,
         )
         return await self._append_event(
             aggregate_type="dataset",

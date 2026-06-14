@@ -12,7 +12,7 @@ from app.models.dataset import Dataset
 from app.repositories import RepositoryContainer, RestrictedSession, set_session
 from app.repositories.outbox.events import DatasetRemoved, DatasetSyncRequested, TransformSyncRequested, to_event
 from app.use_cases.project._dbt.bootstrap_sql import _build_typed_select, _validate_s3_path
-from app.use_cases.project._dbt.naming import to_snake_case
+from app.use_cases.project._dbt.naming import resolved_view_name
 from app.use_cases.sql_access._infra import get_app_query_engine_provisioner
 from app.utils.sql_safety import quote_ident
 
@@ -82,8 +82,15 @@ async def _process_dataset_sync(event: DatasetSyncRequested, repositories: Repos
         return
 
     dataset = Dataset.from_record(dataset_record, include_transforms=True)
-    view_name = to_snake_case(dataset.name)
+    view_name = resolved_view_name(dataset)
     sql = _generate_single_view_sql(access_record.pg_schema, view_name, dataset, settings.storage_bucket)
+
+    # Repoint: when the machine name changed, drop the stale view in the same
+    # idempotent DDL batch so the old object does not orphan in the warehouse.
+    if event.previous_view_name and event.previous_view_name != view_name:
+        qs = quote_ident(access_record.pg_schema)
+        q_old = quote_ident(event.previous_view_name)
+        sql = f"DROP VIEW IF EXISTS {qs}.{q_old} CASCADE;\n{sql}"
 
     # Also grant schema usage after view creation
     schema = quote_ident(access_record.pg_schema)

@@ -42,6 +42,64 @@
   flex-wrap: wrap;
 }
 
+/* Machine-name confirm dialog (Slice C). Mirrors the Upload ConfirmArchive
+   shape so the two destructive-action gates look identical. */
+.confirmDialog {
+  position: fixed;
+  z-index: 47;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 400px;
+  max-width: calc(100vw - 32px);
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg);
+  padding: 22px;
+  text-align: center;
+}
+.cdTitle {
+  font-family: var(--font-serif);
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--text-900);
+  margin-bottom: 8px;
+  letter-spacing: -0.01em;
+}
+.cdBody {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-500);
+  margin-bottom: 20px;
+}
+.cdBody b {
+  color: var(--text-900);
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+.cdNote {
+  display: block;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-200, var(--text-100));
+  color: var(--text-400);
+}
+.cdNote b {
+  color: var(--text-900);
+  font-weight: 700;
+  font-family: inherit;
+}
+.cdActions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+.cdActions .btn {
+  flex: 1;
+  justify-content: center;
+}
+
 .depStrip {
   display: flex;
   align-items: center;

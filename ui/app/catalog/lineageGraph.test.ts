@@ -212,6 +212,19 @@ describe("LineageGraph — immutability", () => {
     expect(graph.addSource(NODES["src.orders"])).toBe(graph); // already present
     expect(graph.removeSource("does.not.exist")).toBe(graph); // absent → no-op
   });
+
+  it("withModelName sets modelName without touching the label (decoupled)", () => {
+    const graph = makeGraph();
+    const updated = graph.withModelName("src.orders", "stg_raw_orders");
+
+    expect(updated).not.toBe(graph);
+    expect(updated.getNode("src.orders")?.modelName).toBe("stg_raw_orders");
+    // display label is untouched
+    expect(updated.getNode("src.orders")?.label).toBe("orders");
+    // unchanged value and absent node are referential no-ops
+    expect(updated.withModelName("src.orders", "stg_raw_orders")).toBe(updated);
+    expect(graph.withModelName("does.not.exist", "x")).toBe(graph);
+  });
 });
 
 describe("LineageGraph — removeSource (optimistic rollback)", () => {

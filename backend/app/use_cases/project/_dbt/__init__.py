@@ -14,7 +14,7 @@ from .manifest import build_dbt_file_plan as build_dbt_file_plan
 from .manifest import report_model_prefix
 from .marts import generate_mart_sql
 from .model_sql import generate_model_sql
-from .naming import deduplicate_names
+from .naming import deduplicate_names, resolved_view_names
 from .naming import to_snake_case as to_snake_case
 from .packages_yml import generate_packages_yml
 from .profiles_yml import generate_profiles_yml
@@ -96,15 +96,25 @@ def generate_dbt_project_zip(
     views = views or []
     reports = reports or []
 
-    # Compute deduplicated snake_case names for datasets
-    raw_names = [ds.name for ds in datasets]
-    snake_names = deduplicate_names(raw_names)
-    dataset_pairs = list(zip(snake_names, datasets, strict=False))
+    # Resolve each dataset's staging-source name in lockstep with the live
+    # warehouse view. A user-set ``model_name`` (e.g. ``stg_customers``) is the
+    # warehouse view name; the dbt source, the staging ``.sql`` filename, and the
+    # ``ref`` target all bind to it so an ejected project matches the warehouse.
+    # Legacy null-``model_name`` rows fall back to the deduplicated snake name
+    # (``resolved_view_names`` applies ``deduplicate_names`` to the fallback only).
+    view_names = resolved_view_names(datasets)
+    dataset_pairs = list(zip(view_names, datasets, strict=False))
 
-    # Build ref name map: entity ID -> dbt model name
+    # Build ref name map: entity ID -> dbt staging model name. The staging model
+    # is the source name prefixed with ``stg_`` UNLESS the resolved name already
+    # carries it (a user-set ``model_name`` is already ``stg_``-prefixed), so we
+    # never produce ``stg_stg_…``.
     ref_name_map: dict[str, str] = {}
-    for snake_name, ds in dataset_pairs:
-        ref_name_map[ds.id] = f"stg_{snake_name}"
+    staging_model_names: dict[str, str] = {}
+    for view_name, ds in dataset_pairs:
+        staging_model = view_name if view_name.startswith("stg_") else f"stg_{view_name}"
+        ref_name_map[ds.id] = staging_model
+        staging_model_names[ds.id] = staging_model
 
     # Deduplicate view names and register in ref map
     view_raw_names = [v.name for v in views]
@@ -156,8 +166,9 @@ def generate_dbt_project_zip(
         ),
         "README.md": lambda: generate_readme(project.name),
     }
-    for snake_name, ds in dataset_pairs:
-        byte_providers[f"models/staging/stg_{snake_name}.sql"] = lambda sn=snake_name, dataset=ds: generate_model_sql(
+    for source_name, ds in dataset_pairs:
+        staging_model = staging_model_names[ds.id]
+        byte_providers[f"models/staging/{staging_model}.sql"] = lambda sn=source_name, dataset=ds: generate_model_sql(
             project_name_snake, sn, dataset
         )
     for snake_name, view in view_pairs:

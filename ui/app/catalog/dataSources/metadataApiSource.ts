@@ -494,6 +494,20 @@ export function metadataApiSource(
       );
     },
 
+    async setModelName(id: string, modelName: string): Promise<void> {
+      // A dataset's dbt machine name is `model_name` — DECOUPLED from the
+      // `display_name` that `renameModel` edits. PATCH it on its own so a
+      // machine-name change never disturbs the display label. The backend
+      // normalizes (`stg_<snake>`), rejects collisions (409), and repoints the
+      // live warehouse view. Rejects on a non-2xx (apiPatch throws) so the
+      // caller surfaces the error (no optimistic flip to roll back).
+      await apiPatch(
+        `/api/datasets/${encodeURIComponent(id)}`,
+        { model_name: modelName },
+        deps.getToken(),
+      );
+    },
+
     async archiveModel(id: string, kind: ModelKind): Promise<void> {
       // Only datasets support a restorable soft-delete (archived_at + retention);
       // views/reports have hard-delete only, so archiving them is left local-only

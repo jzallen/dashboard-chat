@@ -405,6 +405,22 @@ export async function createDataCatalog(
         commit({ graph: snapshot.graph.rename(id, prior) });
       }
     },
+    /**
+     * Set a dataset's dbt machine name (`modelName`) — PESSIMISTIC, the inverse
+     * of {@link renameSource}'s optimism. Renaming the warehouse machine name is
+     * a destructive warehouse migration, so the UI gates it behind a blocking
+     * confirm and writes FIRST: await `primary.setModelName`, and only on success
+     * commit the new `modelName` + notify. On rejection nothing is applied, so
+     * there is no rollback — the error propagates to the caller to surface.
+     * DECOUPLED from `renameSource` (display label): never touches the label.
+     */
+    setModelName: async (id: string, modelName: string): Promise<void> => {
+      if (!primary.setModelName) return; // local-only source backs no machine name
+      log.info("write.setModelName", { id, modelName });
+      await primary.setModelName(id, modelName);
+      log.debug("write.setModelName.ok", { id });
+      commit({ graph: snapshot.graph.withModelName(id, modelName) });
+    },
     /** Add a live source node (dedup by id). */
     addSource: (node: LineageNode) =>
       commit({ graph: snapshot.graph.addSource(node) }),

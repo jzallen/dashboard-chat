@@ -15,6 +15,22 @@ class DatasetNotFound(DomainException):
         super().__init__(msg)
 
 
+class ModelNameCollision(DomainException):
+    """Raised when a dataset's edited dbt machine name (``model_name``) would
+    collide with a sibling dataset's resolved warehouse view name in the same
+    project. Project-scoped uniqueness keeps two datasets from repointing to
+    the same live view."""
+
+    _type = "MODEL_NAME_COLLISION"
+    _title = "Model Name Already In Use"
+    _status_code = 409
+
+    def __init__(self, model_name: str):
+        super().__init__(
+            f"The warehouse machine name '{model_name}' is already used by another dataset in this project"
+        )
+
+
 class InvalidExpressionConfig(DomainException):
     """Raised when expression_config is invalid for the given operation."""
 

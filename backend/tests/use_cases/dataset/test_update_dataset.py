@@ -5,10 +5,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.dataset import Dataset
 from app.models.transform import Transform
-from app.repositories import set_session
+from app.repositories import RepositoryContainer, RestrictedSession, set_session
+from app.repositories.metadata.external_access_record import ExternalAccessRecord
+from app.repositories.metadata.query_engine_node_record import QueryEngineNodeRecord
+from app.repositories.outbox.events import DatasetSyncRequested, to_event
 from app.types import QueryBuilderJSON
 from app.use_cases.dataset import update_dataset
-from tests.uuidv7_fixtures import DATASET_1, PROJECT_1, TRANSFORM_1
+from app.use_cases.dataset.exceptions import ModelNameCollision
+from tests.uuidv7_fixtures import DATASET_1, DATASET_2, ORG_1, PROJECT_1, TRANSFORM_1
 
 
 class TestUpdateDataset:
@@ -166,7 +170,7 @@ class TestUpdateDataset:
         set_session(seeded_db)
 
         class FailingMetadataRepository:
-            async def dataset_exists(self, dataset_id: str) -> bool:
+            async def get_dataset_record(self, dataset_id: str, include_transforms: bool = True):
                 raise SQLAlchemyError("Database connection lost")
 
         result = await update_dataset(
@@ -182,3 +186,169 @@ class TestUpdateDataset:
                 pytest.fail("update_dataset should fail when database error occurs")
 
     # Transform CUD tests moved to tests/use_cases/transform/
+
+
+ENGINE_NODE_ID = "019515a0-8001-7000-8000-000000000091"
+
+
+async def _enable_sql_access(db_session: AsyncSession):
+    """Enable SQL access for PROJECT_1 so a model_name change emits a sync."""
+    db_session.add(
+        QueryEngineNodeRecord(
+            id=ENGINE_NODE_ID,
+            org_id=ORG_1,
+            name="test-engine",
+            host="localhost",
+            port=5432,
+            database="dashboard_external",
+            admin_user="admin",
+            admin_password_encrypted="secret",
+            status="active",
+        )
+    )
+    await db_session.flush()
+    db_session.add(
+        ExternalAccessRecord(
+            project_id=PROJECT_1,
+            org_id=ORG_1,
+            engine_node_id=ENGINE_NODE_ID,
+            pg_schema=f"project_{PROJECT_1[:8]}",
+            pg_role=f"reader_{PROJECT_1[:8]}",
+            pg_proxy_role=f"proxy_{PROJECT_1[:8]}",
+            pg_password_hash="md5fake",
+            enabled=True,
+        )
+    )
+    await db_session.commit()
+
+
+async def _pending_sync_events(db_session: AsyncSession) -> list[DatasetSyncRequested]:
+    container = RepositoryContainer(RestrictedSession(db_session))
+    records = await container.outbox.get_unprocessed_sync_events(limit=50)
+    return [to_event(r.event_type, r.payload) for r in records if r.event_type == "DatasetSyncRequested"]
+
+
+class TestUpdateDatasetModelName:
+    """Slice C: editing the dbt machine name (``model_name``)."""
+
+    async def test_model_name_persists_when_provided(self, seeded_db: AsyncSession):
+        set_session(seeded_db)
+
+        result = await update_dataset(
+            dataset_id=DATASET_1,
+            update_dict={"model_name": "stg_warm_leads"},
+        )
+
+        match result:
+            case Success(dataset):
+                assert dataset.model_name == "stg_warm_leads"
+            case Failure(error):
+                pytest.fail(f"update_dataset should succeed, got: {error}")
+
+    async def test_model_name_is_forgiving_normalized(self, seeded_db: AsyncSession):
+        """The user need never hand-type the ``stg_`` prefix: ``Customers``,
+        ``customers``, and ``stg_customers`` all normalize to ``stg_customers``."""
+        set_session(seeded_db)
+
+        result = await update_dataset(
+            dataset_id=DATASET_1,
+            update_dict={"model_name": "Customers"},
+        )
+
+        match result:
+            case Success(dataset):
+                assert dataset.model_name == "stg_customers"
+            case Failure(error):
+                pytest.fail(f"update_dataset should succeed, got: {error}")
+
+    async def test_model_name_does_not_touch_display_name(self, seeded_db: AsyncSession):
+        """Decoupling: setting the machine name must never derive or change
+        the display name (and vice versa)."""
+        set_session(seeded_db)
+
+        result = await update_dataset(
+            dataset_id=DATASET_1,
+            update_dict={"model_name": "stg_warm_leads"},
+        )
+
+        match result:
+            case Success(dataset):
+                assert dataset.model_name == "stg_warm_leads"
+                assert dataset.display_name is None
+            case Failure(error):
+                pytest.fail(f"update_dataset should succeed, got: {error}")
+
+    async def test_model_name_collides_with_sibling_model_name(self, seeded_db: AsyncSession):
+        """Project-scoped uniqueness: rejected when the normalized name equals a
+        sibling dataset's resolved view name."""
+        set_session(seeded_db)
+        # DATASET_2 already owns stg_warm_leads.
+        await update_dataset(dataset_id=DATASET_2, update_dict={"model_name": "warm_leads"})
+
+        result = await update_dataset(
+            dataset_id=DATASET_1,
+            update_dict={"model_name": "Warm Leads"},
+        )
+
+        match result:
+            case Failure(error):
+                assert isinstance(error, ModelNameCollision)
+            case Success(_):
+                pytest.fail("update_dataset should reject a colliding model_name")
+
+    async def test_model_name_collides_with_legacy_null_sibling(self, seeded_db: AsyncSession):
+        """Uniqueness includes legacy siblings whose model_name is NULL — their
+        resolved name is the filename-derived fallback."""
+        set_session(seeded_db)
+        # Rename DATASET_2 so its NULL-model fallback resolves to stg_legacy_view.
+        await update_dataset(dataset_id=DATASET_2, update_dict={"name": "stg_legacy_view"})
+
+        result = await update_dataset(
+            dataset_id=DATASET_1,
+            update_dict={"model_name": "legacy_view"},
+        )
+
+        match result:
+            case Failure(error):
+                assert isinstance(error, ModelNameCollision)
+            case Success(_):
+                pytest.fail("update_dataset should reject collision with a legacy null-model sibling")
+
+    async def test_model_name_unchanged_value_is_idempotent(self, seeded_db: AsyncSession):
+        """Re-applying the same model_name to the SAME dataset is not a collision."""
+        set_session(seeded_db)
+        await update_dataset(dataset_id=DATASET_1, update_dict={"model_name": "stg_warm_leads"})
+
+        result = await update_dataset(
+            dataset_id=DATASET_1,
+            update_dict={"model_name": "warm_leads"},
+        )
+
+        match result:
+            case Success(dataset):
+                assert dataset.model_name == "stg_warm_leads"
+            case Failure(error):
+                pytest.fail(f"re-applying same model_name should succeed, got: {error}")
+
+    async def test_sync_emitted_with_previous_view_name_on_change(self, seeded_db: AsyncSession):
+        """When SQL access is enabled and the machine name changes, a repoint
+        sync is emitted carrying the previous view name (so the old view drops)."""
+        set_session(seeded_db)
+        await _enable_sql_access(seeded_db)
+
+        await update_dataset(dataset_id=DATASET_1, update_dict={"model_name": "stg_warm_leads"})
+
+        events = await _pending_sync_events(seeded_db)
+        ours = [e for e in events if e.dataset_id == DATASET_1]
+        assert len(ours) == 1
+        # DATASET_1 was "Dataset One" with null model_name -> fallback dataset_one.
+        assert ours[0].previous_view_name == "dataset_one"
+
+    async def test_no_sync_emitted_when_sql_access_disabled(self, seeded_db: AsyncSession):
+        """No engine node => no sync event even on a machine-name change."""
+        set_session(seeded_db)
+
+        await update_dataset(dataset_id=DATASET_1, update_dict={"model_name": "stg_warm_leads"})
+
+        events = await _pending_sync_events(seeded_db)
+        assert [e for e in events if e.dataset_id == DATASET_1] == []

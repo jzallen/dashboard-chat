@@ -81,11 +81,18 @@ class UploadRecorded:
 
 @dataclass(frozen=True, slots=True)
 class DatasetSyncRequested:
-    """Dataset sync requested — propagate view creation/update to query engine."""
+    """Dataset sync requested — propagate view creation/update to query engine.
+
+    ``previous_view_name`` carries the prior staging-view name on a machine-name
+    (``model_name``) repoint so the sync processor drops the stale view in the
+    same idempotent DDL batch (no orphaned view). ``None`` for a plain
+    create/update where the name is unchanged.
+    """
 
     project_id: str
     dataset_id: str
     engine_node_id: str
+    previous_view_name: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

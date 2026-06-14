@@ -9,7 +9,7 @@ from app.auth.types import AuthUser
 from app.models.dataset import Dataset
 from app.repositories import with_repositories
 from app.use_cases import handle_returns
-from app.use_cases.project._dbt.naming import to_snake_case
+from app.use_cases.project._dbt.naming import resolved_view_name
 from app.use_cases.project.exceptions import ProjectNotFound
 
 if TYPE_CHECKING:
@@ -47,7 +47,7 @@ async def delete_project(
         records, _, _ = await metadata_repo.list_datasets(project_id, include_transforms=False)
         for record in records:
             ds = Dataset.from_record(record, include_transforms=False)
-            view_name = to_snake_case(ds.name)
+            view_name = resolved_view_name(ds)
             await repositories.outbox.submit_dataset_removed_event(
                 project_id=project_id,
                 dataset_id=ds.id,

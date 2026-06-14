@@ -11,11 +11,12 @@ from app.use_cases.project._dbt import generate_dbt_project_zip
 from app.use_cases.project._dbt.manifest import build_dbt_file_plan
 
 
-def _dataset(ds_id: str, name: str) -> Dataset:
+def _dataset(ds_id: str, name: str, model_name: str | None = None) -> Dataset:
     return Dataset(
         id=ds_id,
         name=name,
         schema_config={"fields": {"name": {"type": "text"}}},
+        model_name=model_name,
     )
 
 
@@ -99,5 +100,77 @@ class TestBuildDbtFilePlan:
 
         zip_bytes = generate_dbt_project_zip(project, "acme_analytics", views=views, reports=reports)
         zip_paths = sorted(zipfile.ZipFile(BytesIO(zip_bytes)).namelist())
+
+        assert plan_paths == zip_paths
+
+
+class TestModelNameRepointsEject:
+    """Slice C: a user-set ``model_name`` repoints the dbt eject's staging
+    source name, the ``.sql`` filename, and the ``ref`` target in lockstep so an
+    ejected project matches the live warehouse view."""
+
+    def test_staging_path_and_ref_use_model_name_when_set(self):
+        project = Project(
+            id="p1",
+            name="Acme Analytics",
+            description=None,
+            datasets=[_dataset("d1", "Leads.csv", model_name="stg_warm_leads")],
+        )
+
+        entries = build_dbt_file_plan(project)
+        by_path = {e["path"]: e for e in entries}
+
+        assert "models/staging/stg_warm_leads.sql" in by_path
+        assert by_path["models/staging/stg_warm_leads.sql"]["ref"] == "stg_warm_leads"
+        # the legacy filename-derived path must NOT be emitted
+        assert "models/staging/stg_leads.sql" not in by_path
+
+    def test_staging_path_falls_back_to_snake_name_when_model_name_null(self):
+        project = Project(
+            id="p1",
+            name="Acme Analytics",
+            description=None,
+            datasets=[_dataset("d1", "Leads", model_name=None)],
+        )
+
+        entries = build_dbt_file_plan(project)
+        by_path = {e["path"]: e for e in entries}
+
+        assert "models/staging/stg_leads.sql" in by_path
+
+    def test_ejected_sql_filename_and_source_ref_agree_with_model_name(self):
+        """The staging ``.sql`` file binds to a source whose name matches the
+        warehouse view (``model_name``); filename stem and ref agree."""
+        project = Project(
+            id="p1",
+            name="Acme Analytics",
+            description=None,
+            datasets=[_dataset("d1", "Leads.csv", model_name="stg_warm_leads")],
+        )
+
+        zip_bytes = generate_dbt_project_zip(project, "acme_analytics")
+        zf = zipfile.ZipFile(BytesIO(zip_bytes))
+
+        # filename uses the resolved (model_name) staging name
+        assert "models/staging/stg_warm_leads.sql" in zf.namelist()
+
+        staging_sql = zf.read("models/staging/stg_warm_leads.sql").decode()
+        sources_yml = zf.read("models/staging/sources.yml").decode()
+
+        # the staging model selects from a source named for the warehouse view,
+        # and sources.yml declares exactly that source name — they agree.
+        assert "stg_warm_leads" in staging_sql
+        assert "name: stg_warm_leads" in sources_yml
+
+    def test_manifest_and_zip_still_agree_with_model_name_set(self):
+        project = Project(
+            id="p1",
+            name="Acme Analytics",
+            description=None,
+            datasets=[_dataset("d1", "Leads.csv", model_name="stg_warm_leads")],
+        )
+
+        plan_paths = sorted(e["path"] for e in build_dbt_file_plan(project))
+        zip_paths = sorted(zipfile.ZipFile(BytesIO(generate_dbt_project_zip(project, "acme_analytics"))).namelist())
 
         assert plan_paths == zip_paths
