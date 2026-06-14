@@ -17,6 +17,17 @@ services:
     # local compose stack to dev so a plain `docker compose up` just works.
     environment:
       AUTH_MODE: dev
+      # Local dev convenience (prod-neutral; this override never ships to prod).
+      # The user cookie's `aud` defaults to AUTH_MODE-derived values
+      # (`dev-client` vs WORKOS_CLIENT_ID) in auth-proxy/lib/user-token.ts
+      # readConfig(), so flipping AUTH_MODE dev<->workos invalidates a live
+      # session even though the persisted RS256 keypair (auth_proxy_secrets
+      # volume) is unchanged. Pinning a stable audience makes a cookie minted in
+      # one mode still verify after a flip — no spurious re-login while testing.
+      M2M_AUDIENCE: ${M2M_AUDIENCE:-dashboard-chat-local}
+      # Stretch the dev session TTL from the 3600s default so long local test
+      # sessions don't expire mid-flow. Read by user-token.ts readConfig().
+      USER_TOKEN_TTL_SECONDS: ${USER_TOKEN_TTL_SECONDS:-28800}
 
   # Rebuild backend from source so DELIVER step 01-02 ships
   # POST /api/auth/reissue without waiting for the Bazel image refresh.
