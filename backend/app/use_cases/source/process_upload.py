@@ -26,7 +26,7 @@ from app.repositories import with_repositories
 from app.repositories.outbox.events import UploadFileReceived, to_event
 from app.use_cases import handle_returns
 from app.use_cases.dataset._pipeline import create_single_dataset, read_raw_file
-from app.use_cases.dataset._pipeline.ingestion import analyze_dataframe
+from app.use_cases.dataset._pipeline.ingestion import analyze_dataframe, title_case_label
 from app.use_cases.dataset._pipeline.plugin_dispatch import UploadPluginDispatcher
 from app.use_cases.source.exceptions import SchemaMismatch, SourceNotFound, UploadNotPending
 
@@ -160,7 +160,8 @@ async def process_upload(
     outbox_repo = repositories.outbox
     partition_fields = partition_fields or []
 
-    if await metadata_repo.get_source(source_id) is None:
+    source = await metadata_repo.get_source(source_id)
+    if source is None:
         raise SourceNotFound(source_id)
 
     pending = await outbox_repo.get_pending_event("upload", upload_id, "UploadRecorded")
@@ -197,7 +198,15 @@ async def process_upload(
         )
 
     return await _link_first_upload(
-        repositories, source_id, pending.id, upload_id, recorded.project_id, result_item, partition_fields
+        repositories,
+        source_id,
+        pending.id,
+        upload_id,
+        recorded.project_id,
+        result_item,
+        partition_fields,
+        source_name=source["name"],
+        original_filename=recorded.original_filename,
     )
 
 
@@ -209,11 +218,27 @@ async def _link_first_upload(
     project_id: str,
     result_item: Any,
     partition_fields: list[str],
+    source_name: str | None = None,
+    original_filename: str | None = None,
 ) -> ProcessedUpload:
-    """First upload: create the SELECT * Dataset, link it, and lock the schema."""
+    """First upload: create the SELECT * Dataset, link it, and lock the schema.
+
+    Seeds the new dataset's editable ``display_name`` from the linked Source's
+    name (falling back to the uploaded filename), title-cased — so the catalog
+    shows e.g. "Customers" instead of the "New Dataset" placeholder. The
+    immutable ``name`` is unchanged.
+    """
     metadata_repo = repositories.metadata
+    display_name = title_case_label(source_name or original_filename or "")
     dataset = await create_single_dataset(
-        metadata_repo, repositories.lake, project_id, result_item, None, partition_fields, upload_id
+        metadata_repo,
+        repositories.lake,
+        project_id,
+        result_item,
+        None,
+        partition_fields,
+        upload_id,
+        display_name=display_name,
     )
 
     await metadata_repo.link_dataset_to_source(dataset_id=dataset.id, source_id=source_id)
@@ -226,6 +251,7 @@ async def _link_first_upload(
         id=dataset.id,
         project_id=dataset.project_id,
         name=dataset.name,
+        display_name=dataset.display_name,
         description=dataset.description,
         schema_config=dataset.schema_config,
         partition_fields=dataset.partition_fields,

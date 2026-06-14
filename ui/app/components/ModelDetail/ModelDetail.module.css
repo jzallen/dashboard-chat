@@ -19,6 +19,15 @@
   font-weight: 700;
   color: var(--text-900);
 }
+.detNameEditing {
+  /* Inline-edit input: match .detName metrics so the header doesn't jump. */
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 4px;
+  margin: -2px -5px;
+  background: var(--surface-100, transparent);
+  outline: none;
+}
 .detFriendly {
   font-family: var(--font-serif);
   font-size: 15px;

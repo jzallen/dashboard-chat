@@ -102,7 +102,9 @@ function AuditPanel({ node }: { node: LineageNode }) {
                 <div className={styles.audSay}>{a.say}</div>
                 {m.kind === "dataset" && samples[i] && (
                   <div className={styles.ba}>
-                    <span className={styles.b}>{String(samples[i].before)}</span>
+                    <span className={styles.b}>
+                      {String(samples[i].before)}
+                    </span>
                     <span className={styles.ar}>→</span>
                     <span className={styles.a}>{String(samples[i].after)}</span>
                   </div>
@@ -311,6 +313,60 @@ function DataPreview({ node }: { node: LineageNode }) {
   );
 }
 
+/**
+ * The dataset display name as a click-to-edit header. Click commits the draft
+ * via `catalog.renameSource` (the existing optimistic write-through path that
+ * PATCHes `display_name` and rolls back on rejection); Enter/blur commits,
+ * Escape cancels, and an empty/whitespace or unchanged draft is a no-op.
+ *
+ * Editing is gated to dataset nodes — views/reports render a static label.
+ */
+function DetName({ node }: { node: LineageNode }) {
+  const editable = modelOf(node).kind === "dataset";
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(node.label);
+
+  if (!editing) {
+    return (
+      <div
+        className={styles.detName}
+        onClick={
+          editable
+            ? () => {
+                setDraft(node.label);
+                setEditing(true);
+              }
+            : undefined
+        }
+      >
+        {node.label}
+      </div>
+    );
+  }
+
+  const commit = () => {
+    setEditing(false);
+    const next = draft.trim();
+    if (!next || next === node.label) return; // no-op / cancel
+    catalog.renameSource(node.id, next);
+  };
+
+  return (
+    <input
+      className={`${styles.detName} ${styles.detNameEditing}`}
+      aria-label="Edit dataset name"
+      autoFocus
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") commit();
+        if (e.key === "Escape") setEditing(false);
+      }}
+    />
+  );
+}
+
 export function ModelDetail({
   node,
   onOpen,
@@ -324,7 +380,7 @@ export function ModelDetail({
     <div className={`${styles.det} layer-${node.layer}`}>
       <div className={styles.detHd}>
         <div>
-          <div className={styles.detName}>{node.label}</div>
+          <DetName node={node} />
           <div className={styles.detFriendly}>{m.name}</div>
         </div>
         <div className={styles.detBadges}>

@@ -84,6 +84,7 @@ def dataset_to_dict(dataset: DatasetRecord) -> dict[str, Any]:
         "storage_path": dataset.storage_path,
         "project_id": dataset.project_id,
         "name": dataset.name,
+        "display_name": dataset.display_name,
         "description": dataset.description,
         "schema_config": dataset.schema_config,
         "partition_fields": dataset.partition_fields,

@@ -134,6 +134,29 @@ class TestProcessUpload:
             case Failure(error):
                 pytest.fail(f"process_upload should succeed, got: {error}")
 
+    async def test_first_upload_seeds_display_name_from_source_name(self, seeded_db: AsyncSession):
+        """Linking a first upload seeds the dataset's editable display_name from the
+        title-cased Source name, leaving the immutable filename ``name`` unchanged."""
+        set_session(seeded_db)
+        lake = _FakeLakeRepo()
+        source_id = await _make_source(seeded_db, name="customers.csv")
+        upload_id = await _record(seeded_db, source_id, lake)
+
+        result = await process_upload(
+            source_id=source_id,
+            upload_id=upload_id,
+            repositories={"lake_repository": lambda: lake},
+        )
+
+        match result:
+            case Success(dataset):
+                assert dataset.dataset.display_name == "Customers"
+                # The default plugin path leaves ``name`` as the placeholder — the
+                # filename/name is never derived from the source title.
+                assert dataset.name == "New Dataset"
+            case Failure(error):
+                pytest.fail(f"process_upload should succeed, got: {error}")
+
     async def test_first_upload_stamps_row_count_into_upload_event_payload(self, seeded_db: AsyncSession):
         """The ingested row count is stamped into the UploadRecorded event's payload."""
         set_session(seeded_db)

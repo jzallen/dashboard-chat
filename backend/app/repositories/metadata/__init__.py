@@ -150,6 +150,7 @@ class MetadataRepositoryProtocol(Protocol):
         partition_fields: list[str] | None = None,
         column_profiles: dict[str, Any] | None = None,
         row_count: int | None = None,
+        display_name: str | None = None,
     ) -> dict[str, Any]:
         """Create a new dataset record.
 
@@ -157,12 +158,13 @@ class MetadataRepositoryProtocol(Protocol):
 
         Args:
             project_id: Parent project UUID
-            name: Dataset display name
+            name: Immutable dataset filename (never mutated by an edit)
             schema_config: Field definitions for query builder
             description: Optional description
             partition_fields: List of field names used for partitioning
             column_profiles: Per-column value statistics
             row_count: Total rows snapshotted at ingestion (None for legacy datasets)
+            display_name: Editable human label; UI falls back to ``name`` when unset
 
         Returns:
             Created dataset dictionary.

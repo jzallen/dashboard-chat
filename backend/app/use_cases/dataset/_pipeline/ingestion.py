@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 
 import pandas as pd
 
@@ -10,6 +11,43 @@ from app.repositories.outbox import OutboxRepository
 from app.use_cases.upload.exceptions import UploadNotFound
 from app.utils.column_profiler import compute_column_profiles
 from app.utils.schema_inference import infer_schema_from_dataframe
+
+# A trailing token that "looks like" a file extension: a dot followed by 1-5
+# ASCII letters at the very end of the string (e.g. ``.csv``, ``.xlsx``).
+_EXTENSION_RE = re.compile(r"\.[A-Za-z]{1,5}$")
+# Separator runs to fold into a single space when humanizing a raw label.
+_SEPARATOR_RE = re.compile(r"[_\-.\s]+")
+
+_FALLBACK_LABEL = "New Dataset"
+
+
+def title_case_label(raw: str) -> str:
+    """Derive a human-readable, title-cased display label from a raw name.
+
+    Used to seed a freshly-created dataset's ``display_name`` from its linked
+    Source name (or the uploaded filename). The immutable ``name`` is never
+    touched — this only produces the editable label.
+
+    Rules:
+        1. Strip a single trailing file extension (a dot + <=5 ASCII letters).
+        2. Replace ``_``, ``-``, ``.`` and whitespace runs with a single space,
+           then collapse and strip.
+        3. Title-case each word (ASCII ``.title()``).
+        4. An empty result falls back to ``"New Dataset"`` (never empty).
+
+    Examples:
+        ``customers.csv`` -> ``Customers``
+        ``orders_csv`` -> ``Orders Csv``
+        ``q1-revenue.xlsx`` -> ``Q1 Revenue``
+    """
+    if not raw:
+        return _FALLBACK_LABEL
+
+    without_extension = _EXTENSION_RE.sub("", raw.strip())
+    spaced = _SEPARATOR_RE.sub(" ", without_extension).strip()
+    if not spaced:
+        return _FALLBACK_LABEL
+    return spaced.title()
 
 
 async def fetch_upload_event(outbox_repo: OutboxRepository, upload_id: str):
@@ -67,8 +105,13 @@ async def create_dataset_record(
     format_context: str | None = None,
     name: str | None = None,
     row_count: int | None = None,
+    display_name: str | None = None,
 ) -> Dataset:
-    """Create the dataset metadata record and return a Dataset domain object."""
+    """Create the dataset metadata record and return a Dataset domain object.
+
+    ``display_name`` is the editable human label seeded at creation; ``name`` is
+    the immutable filename (defaults to ``"New Dataset"`` only when unset).
+    """
     dataset_dict = await metadata_repo.create_dataset(
         project_id=project_id,
         name=name or "New Dataset",
@@ -78,11 +121,13 @@ async def create_dataset_record(
         column_profiles=column_profiles,
         format_context=format_context,
         row_count=row_count,
+        display_name=display_name,
     )
     return Dataset(
         id=dataset_dict["id"],
         project_id=dataset_dict["project_id"],
         name=dataset_dict["name"],
+        display_name=dataset_dict.get("display_name"),
         description=dataset_dict["description"],
         schema_config=dataset_dict["schema_config"],
         partition_fields=dataset_dict["partition_fields"],
@@ -128,6 +173,7 @@ async def create_single_dataset(
     description: str | None,
     partition_fields: list[str],
     upload_id: str,
+    display_name: str | None = None,
 ) -> Dataset:
     """Analyze one ProcessingResult, create its dataset record, and write parquet.
 
@@ -149,6 +195,7 @@ async def create_single_dataset(
         format_context=result.chat_guidance,
         name=result.name,
         row_count=row_count,
+        display_name=display_name,
     )
     await write_parquet(lake_repo, result.df, dataset, partition_fields, upload_id)
     return dataset

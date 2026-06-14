@@ -1,9 +1,19 @@
 // @vitest-environment happy-dom
-import { act, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { fixtureFallback } from "../../../app/routes/_fixtureCatalog";
-import type { AuditEntry, LineageNode, PartialCatalogSource } from "../../catalog";
+import type {
+  AuditEntry,
+  LineageNode,
+  PartialCatalogSource,
+} from "../../catalog";
 import { catalog, installCatalogForTest, selectProject } from "../useCatalog";
 import { ModelDetail } from "./ModelDetail";
 
@@ -38,6 +48,13 @@ function fallbackWithAudit(): ReturnType<typeof fixtureFallback> {
 }
 
 const d1Node = (): LineageNode => catalog.getNode("d1")!;
+
+/** The clickable header name (a div whose only text is the dataset label). */
+function headerName(): HTMLElement {
+  return screen
+    .getAllByText("stg_customers")
+    .find((el) => el.className.includes("detName"))!;
+}
 
 async function installScoped(primary: PartialCatalogSource): Promise<void> {
   await installCatalogForTest(primary, fallbackWithAudit());
@@ -92,7 +109,10 @@ describe("ModelDetail AuditPanel — transform toggle control", () => {
         },
       ],
     };
-    await installCatalogForTest({}, { ...base, getAudit: () => Promise.resolve(audit) });
+    await installCatalogForTest(
+      {},
+      { ...base, getAudit: () => Promise.resolve(audit) },
+    );
     await act(async () => {
       await selectProject("proj-1");
     });
@@ -104,6 +124,75 @@ describe("ModelDetail AuditPanel — transform toggle control", () => {
 
     // The entry stays in the trail but is marked disabled and the toggle is off.
     expect(screen.getByText("disabled")).toBeTruthy();
-    expect((screen.getByRole("switch") as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByRole("switch") as HTMLInputElement).checked).toBe(
+      false,
+    );
+  });
+});
+
+describe("ModelDetail header — inline dataset rename", () => {
+  it("commits the edited name via renameSource and updates the label optimistically", async () => {
+    await installScoped({});
+    const spy = vi.spyOn(catalog, "renameSource").mockResolvedValue();
+
+    render(<ModelDetail node={d1Node()} onOpen={vi.fn()} />);
+    await waitFor(() => expect(headerName()).toBeTruthy());
+
+    await act(async () => {
+      headerName().click();
+    });
+    const input = screen.getByLabelText(
+      "Edit dataset name",
+    ) as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(input, { target: { value: "Customers" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+
+    expect(spy).toHaveBeenCalledWith("d1", "Customers");
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels on Escape without calling renameSource", async () => {
+    await installScoped({});
+    const spy = vi.spyOn(catalog, "renameSource").mockResolvedValue();
+
+    render(<ModelDetail node={d1Node()} onOpen={vi.fn()} />);
+    await waitFor(() => expect(headerName()).toBeTruthy());
+
+    await act(async () => {
+      headerName().click();
+    });
+    const input = screen.getByLabelText(
+      "Edit dataset name",
+    ) as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(input, { target: { value: "Throwaway" } });
+      fireEvent.keyDown(input, { key: "Escape" });
+    });
+
+    expect(spy).not.toHaveBeenCalled();
+    expect(headerName()).toBeTruthy();
+  });
+
+  it("does not write an empty or unchanged name", async () => {
+    await installScoped({});
+    const spy = vi.spyOn(catalog, "renameSource").mockResolvedValue();
+
+    render(<ModelDetail node={d1Node()} onOpen={vi.fn()} />);
+    await waitFor(() => expect(headerName()).toBeTruthy());
+
+    await act(async () => {
+      headerName().click();
+    });
+    const input = screen.getByLabelText(
+      "Edit dataset name",
+    ) as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(input, { target: { value: "   " } });
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+
+    expect(spy).not.toHaveBeenCalled();
   });
 });
