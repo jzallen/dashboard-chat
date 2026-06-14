@@ -367,6 +367,24 @@ function DetName({ node }: { node: LineageNode }) {
   );
 }
 
+/**
+ * The header subline beneath {@link DetName}.
+ *
+ * For a DATASET node this renders the READ-ONLY dbt machine name
+ * (`node.modelName`, e.g. `stg_customers`) — derived once at creation, decoupled
+ * from the editable display name, and never editable here (no input, no
+ * `renameSource` wiring; independent editing is a later concern). Gates
+ * gracefully to nothing for a legacy dataset row that has no `modelName`.
+ *
+ * For VIEW / REPORT nodes there is no machine name, so the friendly model name
+ * (`m.name`) is shown — it is distinct from the technical header label.
+ */
+function DetSubline({ node, m }: { node: LineageNode; m: Model }) {
+  const text = m.kind === "dataset" ? node.modelName : m.name;
+  if (!text) return null;
+  return <div className={styles.detFriendly}>{text}</div>;
+}
+
 export function ModelDetail({
   node,
   onOpen,
@@ -381,7 +399,7 @@ export function ModelDetail({
       <div className={styles.detHd}>
         <div>
           <DetName node={node} />
-          <div className={styles.detFriendly}>{m.name}</div>
+          <DetSubline node={node} m={m} />
         </div>
         <div className={styles.detBadges}>
           <LayerBadge layer={node.layer} />

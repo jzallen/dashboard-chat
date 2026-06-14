@@ -26,7 +26,7 @@ from app.repositories import with_repositories
 from app.repositories.outbox.events import UploadFileReceived, to_event
 from app.use_cases import handle_returns
 from app.use_cases.dataset._pipeline import create_single_dataset, read_raw_file
-from app.use_cases.dataset._pipeline.ingestion import analyze_dataframe, title_case_label
+from app.use_cases.dataset._pipeline.ingestion import analyze_dataframe, stg_model_name, title_case_label
 from app.use_cases.dataset._pipeline.plugin_dispatch import UploadPluginDispatcher
 from app.use_cases.source.exceptions import SchemaMismatch, SourceNotFound, UploadNotPending
 
@@ -230,6 +230,9 @@ async def _link_first_upload(
     """
     metadata_repo = repositories.metadata
     display_name = title_case_label(source_name or original_filename or "")
+    # Derive the dbt machine name ONCE from the seeded display_name; decoupled
+    # thereafter (a later display-name edit never reconciles into model_name).
+    model_name = stg_model_name(display_name)
     dataset = await create_single_dataset(
         metadata_repo,
         repositories.lake,
@@ -239,6 +242,7 @@ async def _link_first_upload(
         partition_fields,
         upload_id,
         display_name=display_name,
+        model_name=model_name,
     )
 
     await metadata_repo.link_dataset_to_source(dataset_id=dataset.id, source_id=source_id)
@@ -252,6 +256,7 @@ async def _link_first_upload(
         project_id=dataset.project_id,
         name=dataset.name,
         display_name=dataset.display_name,
+        model_name=dataset.model_name,
         description=dataset.description,
         schema_config=dataset.schema_config,
         partition_fields=dataset.partition_fields,

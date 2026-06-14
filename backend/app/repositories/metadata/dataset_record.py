@@ -61,6 +61,13 @@ class DatasetRecord(Base):
     # when unset, and the underlying filename/``name`` is never mutated by an edit.
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
+    # dbt machine name (``stg_<snake>``) derived from ``display_name`` ONCE at
+    # creation, then DECOUPLED — a later display-name edit never reconciles into
+    # it. Nullable for legacy rows (the migration backfills existing rows). The
+    # dbt compiler does not read this yet; it remains a derived runtime name for
+    # now (repointing the compiler is a separate, later concern).
+    model_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     # MR-7: cold-storage / retention. Both nullable and UTC-valued (mirrors
     # ``created_at``/``updated_at``). ``archived_at`` is set when the source is moved
     # to cold storage; ``retention_until`` = ``archived_at`` + the 90-day retention

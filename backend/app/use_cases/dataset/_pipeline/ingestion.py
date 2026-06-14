@@ -8,6 +8,7 @@ import pandas as pd
 
 from app.models.dataset import Dataset
 from app.repositories.outbox import OutboxRepository
+from app.use_cases.project._dbt.naming import to_snake_case
 from app.use_cases.upload.exceptions import UploadNotFound
 from app.utils.column_profiler import compute_column_profiles
 from app.utils.schema_inference import infer_schema_from_dataframe
@@ -48,6 +49,34 @@ def title_case_label(raw: str) -> str:
     if not spaced:
         return _FALLBACK_LABEL
     return spaced.title()
+
+
+def stg_model_name(display_name: str) -> str:
+    """Derive a dataset's persisted dbt machine name (``model_name``) at creation.
+
+    The ``model_name`` is the staging-model identifier the dbt compiler binds to
+    (e.g. ``stg_customers``). It is derived from the human ``display_name`` ONCE,
+    at dataset creation, and is thereafter DECOUPLED from it — a later
+    display-name edit must never reconcile back into ``model_name`` (independent
+    editing with a warehouse-migration warning is a separate, later concern).
+
+    Derivation:
+        1. ``root = to_snake_case(display_name)`` — reuses the tested dbt naming
+           helper (which folds an empty/punctuation-only input to ``"dataset"``).
+        2. If ``root`` already starts with ``stg_``, return it unchanged so an
+           already-prefixed display name does not become ``stg_stg_…``.
+        3. Otherwise prefix it: ``f"stg_{root}"``.
+
+    Examples:
+        ``"Customers"`` -> ``stg_customers``
+        ``"Q1 Revenue"`` -> ``stg_q1_revenue``
+        ``"stg_orders"`` -> ``stg_orders``
+        ``""`` -> ``stg_dataset``
+    """
+    root = to_snake_case(display_name)
+    if root.startswith("stg_"):
+        return root
+    return f"stg_{root}"
 
 
 async def fetch_upload_event(outbox_repo: OutboxRepository, upload_id: str):
@@ -106,11 +135,14 @@ async def create_dataset_record(
     name: str | None = None,
     row_count: int | None = None,
     display_name: str | None = None,
+    model_name: str | None = None,
 ) -> Dataset:
     """Create the dataset metadata record and return a Dataset domain object.
 
     ``display_name`` is the editable human label seeded at creation; ``name`` is
     the immutable filename (defaults to ``"New Dataset"`` only when unset).
+    ``model_name`` is the dbt machine name (``stg_<snake>``) derived from
+    ``display_name`` once at creation, decoupled thereafter.
     """
     dataset_dict = await metadata_repo.create_dataset(
         project_id=project_id,
@@ -122,12 +154,14 @@ async def create_dataset_record(
         format_context=format_context,
         row_count=row_count,
         display_name=display_name,
+        model_name=model_name,
     )
     return Dataset(
         id=dataset_dict["id"],
         project_id=dataset_dict["project_id"],
         name=dataset_dict["name"],
         display_name=dataset_dict.get("display_name"),
+        model_name=dataset_dict.get("model_name"),
         description=dataset_dict["description"],
         schema_config=dataset_dict["schema_config"],
         partition_fields=dataset_dict["partition_fields"],
@@ -174,6 +208,7 @@ async def create_single_dataset(
     partition_fields: list[str],
     upload_id: str,
     display_name: str | None = None,
+    model_name: str | None = None,
 ) -> Dataset:
     """Analyze one ProcessingResult, create its dataset record, and write parquet.
 
@@ -196,6 +231,7 @@ async def create_single_dataset(
         name=result.name,
         row_count=row_count,
         display_name=display_name,
+        model_name=model_name,
     )
     await write_parquet(lake_repo, result.df, dataset, partition_fields, upload_id)
     return dataset

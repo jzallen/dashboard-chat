@@ -105,6 +105,9 @@ class Dataset:
     display_name: str | None = (
         None  # MR-6: editable source display name; UI falls back to ``name`` (filename untouched)
     )
+    model_name: str | None = (
+        None  # dbt machine name (``stg_<snake>``) derived from display_name ONCE at creation; decoupled thereafter
+    )
     archived_at: str | None = None  # MR-7: cold-storage timestamp (ISO); None when live
     retention_until: str | None = None  # MR-7: retention end (ISO) = archived_at + 90d; None when live
     source_id: str | None = None  # Source aggregate link — the Source this dataset is the SELECT * view over
@@ -131,6 +134,7 @@ class Dataset:
             format_context=getattr(record, "format_context", None),
             row_count=getattr(record, "row_count", None),
             display_name=getattr(record, "display_name", None),
+            model_name=getattr(record, "model_name", None),
             archived_at=_iso_or_none(getattr(record, "archived_at", None)),
             retention_until=_iso_or_none(getattr(record, "retention_until", None)),
             source_id=getattr(record, "source_id", None),
@@ -268,6 +272,7 @@ class Dataset:
             "format_context": self.format_context,
             "row_count": self.row_count,
             "display_name": self.display_name,
+            "model_name": self.model_name,
             "archived_at": self.archived_at,
             "retention_until": self.retention_until,
             "source_id": self.source_id,

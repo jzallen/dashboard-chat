@@ -24,6 +24,7 @@ export function fixtureNodes(): Record<string, LineageNode> {
       label: "stg_customers",
       sub: "staging dataset",
       layer: "staging",
+      modelName: "stg_customers",
       ref: {
         kind: "dataset",
         name: "Customers (staging)",

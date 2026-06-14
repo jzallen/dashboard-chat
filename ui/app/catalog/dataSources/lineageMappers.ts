@@ -39,6 +39,12 @@ export interface BackendDataset {
   id: string;
   name: string;
   display_name?: string | null;
+  /**
+   * The dbt machine name (`stg_<snake>`), derived once at creation from
+   * `display_name` and decoupled thereafter. Read-only on this slice; absent on
+   * legacy rows created before the column existed.
+   */
+  model_name?: string | null;
   description?: string | null;
   schema_config?: { fields?: Record<string, { type?: unknown; label?: unknown }> };
   transforms?: unknown[];
@@ -134,6 +140,7 @@ export function toStagingNode(d: BackendDataset): LineageNode {
     label,
     sub: "staging",
     layer: "staging",
+    modelName: d.model_name ?? undefined,
     ref: {
       kind: "dataset",
       id: d.id,

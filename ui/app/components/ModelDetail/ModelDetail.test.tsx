@@ -130,6 +130,45 @@ describe("ModelDetail AuditPanel — transform toggle control", () => {
   });
 });
 
+describe("ModelDetail subheader — read-only dbt machine name", () => {
+  /** The subheader element (the non-`detName` text node under the header). */
+  function subheader(): HTMLElement {
+    return screen
+      .getAllByText("stg_customers")
+      .find((el) => el.className.includes("detFriendly"))!;
+  }
+
+  it("renders the dataset's modelName as the read-only stg_ subheader", async () => {
+    await installScoped({});
+
+    render(<ModelDetail node={d1Node()} onOpen={vi.fn()} />);
+    await waitFor(() => expect(subheader()).toBeTruthy());
+
+    expect(subheader().textContent).toBe("stg_customers");
+  });
+
+  it("does not wire renameSource for the subheader (it is read-only, not editable)", async () => {
+    await installScoped({});
+    const spy = vi.spyOn(catalog, "renameSource").mockResolvedValue();
+
+    render(<ModelDetail node={d1Node()} onOpen={vi.fn()} />);
+    await waitFor(() => expect(subheader()).toBeTruthy());
+
+    const sub = subheader();
+    // The subheader is a plain element, never an <input> — it carries no edit
+    // affordance (contrast the DetName header tests above).
+    expect(sub.tagName).not.toBe("INPUT");
+    expect(sub.querySelector("input")).toBeNull();
+
+    // Clicking it never opens an editor or calls renameSource.
+    await act(async () => {
+      sub.click();
+    });
+    expect(screen.queryByLabelText("Edit dataset name")).toBeNull();
+    expect(spy).not.toHaveBeenCalled();
+  });
+});
+
 describe("ModelDetail header — inline dataset rename", () => {
   it("commits the edited name via renameSource and updates the label optimistically", async () => {
     await installScoped({});

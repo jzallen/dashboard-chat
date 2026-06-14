@@ -62,7 +62,16 @@ describe("route mapping (URL → view)", () => {
 
   it("renders the dataset ModelDetail for /project/proj-1/dataset/d1", async () => {
     renderAt(["/project/proj-1/dataset/d1"]);
-    expect(await screen.findByText("Customers (staging)")).toBeTruthy();
+    // A dataset's ModelDetail subheader is its READ-ONLY dbt machine name
+    // (`modelName`), rendered in the `detFriendly` subline — unique to
+    // <ModelDetail> (the header label/breadcrumb show the display name).
+    await waitFor(() =>
+      expect(
+        screen
+          .getAllByText("stg_customers")
+          .some((el) => el.className.includes("detFriendly")),
+      ).toBe(true),
+    );
   });
 
   it("renders the report ModelDetail for /project/proj-1/report/r1", async () => {

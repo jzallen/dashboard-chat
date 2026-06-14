@@ -151,6 +151,7 @@ class MetadataRepositoryProtocol(Protocol):
         column_profiles: dict[str, Any] | None = None,
         row_count: int | None = None,
         display_name: str | None = None,
+        model_name: str | None = None,
     ) -> dict[str, Any]:
         """Create a new dataset record.
 
@@ -165,6 +166,8 @@ class MetadataRepositoryProtocol(Protocol):
             column_profiles: Per-column value statistics
             row_count: Total rows snapshotted at ingestion (None for legacy datasets)
             display_name: Editable human label; UI falls back to ``name`` when unset
+            model_name: dbt machine name (``stg_<snake>``) derived from
+                ``display_name`` once at creation, decoupled thereafter
 
         Returns:
             Created dataset dictionary.

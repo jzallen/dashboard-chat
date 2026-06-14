@@ -108,6 +108,16 @@ describe("toStagingNode", () => {
     expect(node.label).toBe("customers");
   });
 
+  it("maps model_name onto the node's modelName (the read-only stg_ machine name)", () => {
+    const node = toStagingNode(dataset({ model_name: "stg_customers" }));
+    expect(node.modelName).toBe("stg_customers");
+  });
+
+  it("leaves modelName undefined for a legacy row without model_name", () => {
+    expect(toStagingNode(dataset({ model_name: null })).modelName).toBeUndefined();
+    expect(toStagingNode({ id: "d2", name: "bare" }).modelName).toBeUndefined();
+  });
+
   it("does NOT set a top-level schema (staging refs carry fields)", () => {
     expect(toStagingNode(dataset()).schema).toBeUndefined();
   });

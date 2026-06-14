@@ -90,6 +90,13 @@ export interface LineageNode {
   label: string;
   sub: string;
   layer: Layer;
+  /**
+   * The dataset's dbt machine name (`stg_<snake>`), derived once at creation
+   * from the display name and decoupled thereafter. Staging-node only; absent
+   * for legacy rows (created before the column existed) and non-dataset nodes.
+   * Rendered READ-ONLY as the ModelDetail subheader.
+   */
+  modelName?: string;
   ref?: ModelRef; // absent for source nodes
   schema?: FieldDef[]; // source-only
   files?: { name: string; rows: number; when: string }[];

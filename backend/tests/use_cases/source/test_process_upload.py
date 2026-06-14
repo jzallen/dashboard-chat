@@ -157,6 +157,31 @@ class TestProcessUpload:
             case Failure(error):
                 pytest.fail(f"process_upload should succeed, got: {error}")
 
+    async def test_first_upload_seeds_model_name_from_display_name(self, seeded_db: AsyncSession):
+        """Linking a first upload derives the dataset's dbt machine ``model_name``
+        from its title-cased ``display_name`` (``"Customers"`` -> ``stg_customers``).
+
+        The ``model_name`` is the persisted ``stg_<snake>`` identifier; it is
+        derived once here and thereafter decoupled from the display name.
+        """
+        set_session(seeded_db)
+        lake = _FakeLakeRepo()
+        source_id = await _make_source(seeded_db, name="customers.csv")
+        upload_id = await _record(seeded_db, source_id, lake)
+
+        result = await process_upload(
+            source_id=source_id,
+            upload_id=upload_id,
+            repositories={"lake_repository": lambda: lake},
+        )
+
+        match result:
+            case Success(dataset):
+                assert dataset.dataset.display_name == "Customers"
+                assert dataset.dataset.model_name == "stg_customers"
+            case Failure(error):
+                pytest.fail(f"process_upload should succeed, got: {error}")
+
     async def test_first_upload_stamps_row_count_into_upload_event_payload(self, seeded_db: AsyncSession):
         """The ingested row count is stamped into the UploadRecorded event's payload."""
         set_session(seeded_db)
