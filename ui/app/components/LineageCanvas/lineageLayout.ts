@@ -8,7 +8,12 @@
  * is the only model this view-side math knows about; its internal graph stays
  * private. Dependencies point inward: LineageCanvas → catalog, never the reverse.
  */
-import { type DataCatalog, type Layer, LAYER_ORDER } from "../../catalog";
+import {
+  type DataCatalog,
+  type Layer,
+  LAYER_ORDER,
+  type LineageNode,
+} from "../../catalog";
 
 /**
  * DAG layout geometry (px): node box size, the gaps between boxes, and the
@@ -56,6 +61,47 @@ export interface DagLayout {
 }
 
 /**
+ * Order each layer-column so a node tracks its upstream parents' rows, left to
+ * right — a barycenter (Sugiyama vertex-ordering) pass that prevents edge
+ * crossings. Column 0 keeps catalog order (no parents to align to). For each
+ * later column, a node's sort key is the mean row of its already-placed parents
+ * (in any earlier column, since `rowOf` accumulates); nodes with no placed
+ * parent keep their relative catalog order and fall to the bottom. For the 1:1
+ * Source→Dataset case this collapses to "dataset inherits its source's row", so
+ * the edge draws as a straight horizontal line. Only the order within each
+ * column changes — never the column membership — so the downstream centering
+ * and sizing math is untouched.
+ */
+function buildOrderedColumns(catalog: DataCatalog): LineageNode[][] {
+  const rowOf: Record<string, number> = {};
+  return LAYER_ORDER.map((layer: Layer, columnIndex) => {
+    const raw = catalog.getNodesByLayer(layer);
+    const column =
+      columnIndex === 0
+        ? raw
+        : raw
+            .map((node, tie) => {
+              const rows = catalog
+                .parentsOf(node.id)
+                .map((p) => rowOf[p.id])
+                .filter((r): r is number => r !== undefined);
+              const key = rows.length
+                ? rows.reduce((a, b) => a + b, 0) / rows.length
+                : Number.POSITIVE_INFINITY;
+              return { node, key, tie };
+            })
+            // Stable sort by barycenter, then original index (keeps catalog
+            // order for ties and for parentless nodes).
+            .sort((a, b) => a.key - b.key || a.tie - b.tie)
+            .map((entry) => entry.node);
+    column.forEach((node, rowIndex) => {
+      rowOf[node.id] = rowIndex;
+    });
+    return column;
+  });
+}
+
+/**
  * Lay out the DAG: bucket nodes into one column per layer (in LAYER_ORDER),
  * size the content to the tallest column, then vertically center each shorter
  * column within that height. Returns absolute node positions (top-left corners)
@@ -84,10 +130,9 @@ export function computeDagLayout(
   const rowPitch = dims.nodeHeight + dims.rowGap;
   const columnPitch = dims.nodeWidth + dims.columnGap;
 
-  // One column per layer, in pipeline order (sources → … → marts).
-  const columns = LAYER_ORDER.map((layer: Layer) =>
-    catalog.getNodesByLayer(layer),
-  );
+  // One column per layer, in pipeline order (sources → … → marts), with each
+  // column ordered so children sit on their parents' rows (no edge crossings).
+  const columns = buildOrderedColumns(catalog);
 
   // The tallest column sets the content height; shorter columns are centered
   // within it.
