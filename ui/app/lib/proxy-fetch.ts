@@ -35,10 +35,16 @@ export interface ProxyFetchOptions {
 /** Copy the inbound user credential (cookie + authorization) onto the outbound
  *  headers without clobbering anything the caller set explicitly. */
 export function withForwardedCredential(
-  _request: Request,
-  _headers: Headers,
+  request: Request,
+  headers: Headers,
 ): Headers {
-  throw new Error("not implemented");
+  const cookie = request.headers.get("cookie");
+  if (cookie && !headers.has("cookie")) headers.set("cookie", cookie);
+  const authorization = request.headers.get("authorization");
+  if (authorization && !headers.has("authorization")) {
+    headers.set("authorization", authorization);
+  }
+  return headers;
 }
 
 /**
@@ -47,10 +53,26 @@ export function withForwardedCredential(
  * optional `timeoutMs` via AbortController.
  */
 export async function proxyFetch(
-  _request: Request,
-  _prefix: string,
-  _path: string,
-  _options: ProxyFetchOptions = {},
+  request: Request,
+  prefix: string,
+  path: string,
+  options: ProxyFetchOptions = {},
 ): Promise<Response> {
-  throw new Error("not implemented");
+  const { method = "GET", body = null, headers, timeoutMs } = options;
+  const url = new URL(`${prefix}${path}`, authProxyUrl());
+  const outboundHeaders = withForwardedCredential(request, new Headers(headers));
+
+  const init: RequestInit = { method, headers: outboundHeaders };
+  if (body !== null) init.body = body;
+
+  if (timeoutMs === undefined) {
+    return fetch(url, init);
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
 }
