@@ -5,9 +5,9 @@ IoT Data-plane HTTPS Publish API (boto3 ``iot-data`` client) — no MQTT client 
 the Lambda. The forwarded Linear headers ride along so the IoT leg carries the
 same metadata as the SQS leg.
 
-IF YOU'RE AN AGENT, READ THIS: the tests are the spec and are RED by design —
-``publish`` is a scaffold raising ``AssertionError``. DC-32 turns it green via the
-``iot-data`` client's ``publish``. Do not weaken the payload byte-identity check.
+IF YOU'RE AN AGENT, READ THIS: the tests are the spec. ``publish`` calls the
+``iot-data`` client's ``publish`` with the raw body. Do not weaken the payload
+byte-identity check.
 """
 
 from __future__ import annotations
@@ -23,10 +23,6 @@ _HEADERS = {
     "Linear-Signature": "deadbeef",
     "User-Agent": "Linear-Webhook",
 }
-
-
-def test_module_is_marked_as_scaffold():
-    assert iot_publisher.__SCAFFOLD__ is True
 
 
 def test_publishes_byte_identical_payload_to_the_topic(stubbed_iot):

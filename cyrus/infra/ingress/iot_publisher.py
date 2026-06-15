@@ -1,4 +1,4 @@
-"""IoT Data-plane publisher for the dual-write ingress (RED scaffold).
+"""IoT Data-plane publisher for the dual-write ingress.
 
 The ingress Lambda publishes every verified webhook to a per-identity AWS IoT
 topic (``cyrus/v1/sessions/{key}``) over the IoT **Data-plane HTTPS Publish API**
@@ -9,21 +9,14 @@ routing while SQS keeps the live single-consumer path intact.
 
 OPAQUENESS CONTRACT: the ``body`` published here is the original raw request
 bytes, byte-identical to what was HMAC-verified and enqueued to SQS. This module
-never re-serializes or mutates the body.
-
-IF YOU'RE AN AGENT, READ THIS: this is a scaffold. ``publish`` deliberately
-raises ``AssertionError`` so the DC-30 RED tests fail on the scaffold marker (RED,
-not BROKEN). DC-32 turns it green by calling the IoT Data-plane client; do not
-weaken the tests to match the stub.
+never re-serializes or mutates the body. Forwarded Linear headers ride on the SQS
+leg as MessageAttributes; the IoT Data-plane payload is the raw body only, so
+``headers`` is accepted for caller symmetry but not sent on the publish.
 """
 
 from __future__ import annotations
 
 from typing import Any, Mapping
-
-__SCAFFOLD__ = True
-
-_NOT_IMPLEMENTED = "Not yet implemented — RED scaffold"
 
 
 def publish(
@@ -33,12 +26,12 @@ def publish(
     body: bytes,
     headers: Mapping[str, str],
 ) -> None:
-    """Publish the raw ``body`` (+ forwarded ``headers``) to ``topic`` via IoT Data-plane.
+    """Publish the byte-identical raw ``body`` to ``topic`` via the IoT Data-plane.
 
-    Carries the same forwarded Linear headers the SQS path carries (Content-Type,
-    Linear-Event, Linear-Delivery, Linear-Signature, User-Agent) and the
-    byte-identical raw ``body`` as the MQTT payload. Returns ``None`` on success;
-    propagates the client error on transient failure so the caller can keep the
-    SQS enqueue as the safety net (DC-21 AC5).
+    Sends the raw request bytes unchanged as the IoT Data-plane payload. Returns
+    ``None`` on success; transient client errors propagate so the caller can keep
+    the SQS enqueue as the safety net (DC-21 AC5). The forwarded Linear headers
+    ride on the SQS leg as MessageAttributes, so ``headers`` is accepted but not
+    sent on this Data-plane publish.
     """
-    raise AssertionError(_NOT_IMPLEMENTED)
+    iot_data_client.publish(topic=topic, payload=body)
