@@ -44,6 +44,7 @@ export async function apiFetch(
  * the upstream responded 401, otherwise return the Response unchanged so the
  * loader can keep consuming it.
  */
-export function assertAuthenticated(_response: Response): Response {
-  throw new Error("not implemented");
+export function assertAuthenticated(response: Response): Response {
+  if (response.status === 401) throw new ApiUnauthenticatedError();
+  return response;
 }
