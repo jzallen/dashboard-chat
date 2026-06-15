@@ -360,4 +360,31 @@ export class LineageGraph {
     cold.delete(id);
     return new LineageGraph(nodes, edgeList, cold, this.addedIds);
   }
+
+  /**
+   * Carry another graph's cold-storage store onto this one. A server
+   * revalidation rebuilds the active DAG from scratch via {@link from}, which
+   * starts with EMPTY cold storage — so a write-triggered revalidation (e.g.
+   * the revalidate-after-archive) would otherwise evict every archived source
+   * from the Cold Storage drawer. Merging the prior cold map back in keeps the
+   * drawer intact across the rebuild. Active nodes win: an id the rebuilt DAG
+   * now lists as live is dropped from the carried-over cold store (server truth
+   * says it is no longer archived). Returns `this` (a referential no-op) when
+   * nothing is carried over, so the catalog's commit guard suppresses a
+   * spurious render. NOT for project switches — cold storage is per-project and
+   * resets on switch (only same-scope, write-triggered revalidations preserve it).
+   */
+  withColdStorageFrom(prior: LineageGraph): LineageGraph {
+    let changed = false;
+    const cold = new Map(this.cold);
+    for (const [id, record] of prior.cold) {
+      if (this.nodes.has(id)) continue; // active wins — no longer archived
+      if (cold.get(id) === record) continue;
+      cold.set(id, record);
+      changed = true;
+    }
+    return changed
+      ? new LineageGraph(this.nodes, this.edgeList, cold, this.addedIds)
+      : this;
+  }
 }

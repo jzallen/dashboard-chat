@@ -304,12 +304,19 @@ describe("createDataCatalog — setModelName (pessimistic, confirm-gated)", () =
 });
 
 describe("createDataCatalog — archive/restore (optimistic write-through)", () => {
-  /** A primary backing one staging (dataset) node + spy-able archive/restore. */
+  /**
+   * A primary backing one staging (dataset) node + spy-able archive/restore.
+   * `getNodes` models server truth via an `archived` set: a RESOLVED archiveModel
+   * drops the node from the active listing (and restoreModel re-adds it), so the
+   * revalidate-after-archive re-read reflects the soft-delete rather than
+   * resurrecting the node. The provided spies still observe each call.
+   */
   function archivePrimary(opts: {
     archiveModel?: (id: string, kind: ModelKind) => Promise<void>;
     restoreModel?: (id: string, kind: ModelKind) => Promise<void>;
   }): PartialCatalogSource {
-    const nodes: Record<string, LineageNode> = {
+    const archived = new Set<string>();
+    const allNodes: Record<string, LineageNode> = {
       "ds.1": {
         id: "ds.1",
         label: "customers",
@@ -321,11 +328,26 @@ describe("createDataCatalog — archive/restore (optimistic write-through)", () 
     return {
       getCurrentProject: () =>
         Promise.resolve({ id: "p1", name: "P1", description: "" }),
-      getNodes: () => Promise.resolve(nodes),
+      getNodes: () =>
+        Promise.resolve(
+          Object.fromEntries(
+            Object.entries(allNodes).filter(([id]) => !archived.has(id)),
+          ),
+        ),
       getEdges: () => Promise.resolve([]),
       getAudit: () => Promise.resolve({}),
-      archiveModel: opts.archiveModel,
-      restoreModel: opts.restoreModel,
+      archiveModel: opts.archiveModel
+        ? async (id, kind) => {
+            await opts.archiveModel!(id, kind);
+            archived.add(id);
+          }
+        : undefined,
+      restoreModel: opts.restoreModel
+        ? async (id, kind) => {
+            await opts.restoreModel!(id, kind);
+            archived.delete(id);
+          }
+        : undefined,
     };
   }
 
@@ -381,6 +403,190 @@ describe("createDataCatalog — archive/restore (optimistic write-through)", () 
     await catalog.restoreSource("ds.1");
     expect(catalog.getNode("ds.1")).toBeUndefined(); // re-archived
     expect(catalog.listColdStorage().map((c) => c.id)).toContain("ds.1");
+  });
+});
+
+describe("createDataCatalog — archive → revalidate scope on success", () => {
+  /**
+   * A primary backing one dataset node whose `getNodes` reflects server truth
+   * via an `archived` set: a RESOLVED archiveModel marks the id archived, so the
+   * post-write revalidation reads the node out of the active DAG (mirroring the
+   * backend soft-delete + `?archived=true` listing). The scope hooks
+   * (invalidateScope/getCurrentProject) are spied so a test can observe that the
+   * revalidation actually ran. `archiveModel` is always a spy so call counts and
+   * rejections are controllable.
+   */
+  function revalidatingPrimary(opts?: {
+    archiveModel?: (id: string, kind: ModelKind) => Promise<void>;
+  }) {
+    const archived = new Set<string>();
+    const allNodes: Record<string, LineageNode> = {
+      "ds.1": {
+        id: "ds.1",
+        label: "customers",
+        sub: "staging",
+        layer: "staging",
+        ref: { fields: [] },
+      },
+    };
+    const invalidateScope = vi.fn();
+    const getCurrentProject = vi.fn(() =>
+      Promise.resolve({ id: "p1", name: "P1", description: "" }),
+    );
+    const archiveModel = vi.fn(
+      opts?.archiveModel ??
+        (async (id: string) => {
+          archived.add(id);
+        }),
+    );
+    const primary: PartialCatalogSource = {
+      invalidateScope,
+      getCurrentProject,
+      getNodes: () =>
+        Promise.resolve(
+          Object.fromEntries(
+            Object.entries(allNodes).filter(([id]) => !archived.has(id)),
+          ),
+        ),
+      getEdges: () => Promise.resolve([]),
+      getAudit: () => Promise.resolve({}),
+      archiveModel,
+    };
+    return { primary, invalidateScope, getCurrentProject, archiveModel };
+  }
+
+  async function scoped(primary: PartialCatalogSource) {
+    const catalog = await createDataCatalog(primary, makeSource());
+    await catalog.selectProject("p1");
+    await flush();
+    return catalog;
+  }
+
+  it("revalidates the scoped project exactly once after a successful archive", async () => {
+    const { primary, invalidateScope, getCurrentProject } =
+      revalidatingPrimary();
+    const catalog = await scoped(primary);
+    invalidateScope.mockClear();
+    getCurrentProject.mockClear();
+
+    await catalog.archiveSource(catalog.getNode("ds.1")!);
+    await flush();
+
+    // fresh:true → dropped the per-project cache for the scoped pid first…
+    expect(invalidateScope).toHaveBeenCalledWith("p1");
+    expect(invalidateScope).toHaveBeenCalledTimes(1);
+    // …then re-ran the project-scoped reads (mirrors the revalidateScope test).
+    expect(getCurrentProject).toHaveBeenCalled();
+  });
+
+  it("keeps the archived node in Cold Storage across the fresh-graph rebuild", async () => {
+    const { primary } = revalidatingPrimary();
+    const catalog = await scoped(primary);
+
+    await catalog.archiveSource(catalog.getNode("ds.1")!);
+    await flush();
+
+    // The design-tension guard: a fresh-graph revalidation must not evict the
+    // just-archived node from the drawer…
+    expect(catalog.listColdStorage().map((c) => c.id)).toContain("ds.1");
+    // …while server truth (archived) keeps it out of the active list.
+    expect(catalog.listNodes().map((n) => n.id)).not.toContain("ds.1");
+  });
+
+  it("drops the post-success revalidation when the scope changed mid-flight", async () => {
+    // Hold the backend write open so the scope can switch before it resolves.
+    let releaseArchive: () => void = () => {};
+    const archiveModel = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseArchive = resolve;
+        }),
+    );
+    const { primary, invalidateScope } = revalidatingPrimary({ archiveModel });
+    const catalog = await scoped(primary);
+    invalidateScope.mockClear();
+
+    // Archive on p1, then switch to p2 before the archive write resolves.
+    const pending = catalog.archiveSource(catalog.getNode("ds.1")!);
+    await catalog.selectProject("p2");
+    releaseArchive();
+    await pending;
+    await flush();
+
+    // The captured-pid guard dropped A's revalidation: no fresh-cache drop ran
+    // for the superseded scope (selectProject's own re-scope is not fresh).
+    expect(invalidateScope).not.toHaveBeenCalled();
+  });
+
+  it("does NOT revalidate and rolls back when archiveModel rejects", async () => {
+    const archiveModel = vi.fn().mockRejectedValue(new Error("down"));
+    const { primary, invalidateScope } = revalidatingPrimary({ archiveModel });
+    const catalog = await scoped(primary);
+    invalidateScope.mockClear();
+
+    await catalog.archiveSource(catalog.getNode("ds.1")!);
+    await flush();
+
+    expect(invalidateScope).not.toHaveBeenCalled(); // no revalidation on failure
+    expect(catalog.getNode("ds.1")).toBeDefined(); // optimistic archive rolled back
+    expect(catalog.listColdStorage()).toHaveLength(0);
+  });
+
+  it("no-ops (no backend write, no revalidation) for an absent node", async () => {
+    const { primary, invalidateScope, archiveModel } = revalidatingPrimary();
+    const catalog = await scoped(primary);
+    invalidateScope.mockClear();
+
+    await catalog.archiveSource({
+      id: "ghost",
+      label: "ghost",
+      sub: "staging",
+      layer: "staging",
+      ref: { fields: [] },
+    } as LineageNode);
+    await flush();
+
+    expect(archiveModel).not.toHaveBeenCalled();
+    expect(invalidateScope).not.toHaveBeenCalled();
+  });
+
+  it("no-ops (no backend write, no revalidation) for an already-archived node", async () => {
+    const { primary, invalidateScope, archiveModel } = revalidatingPrimary();
+    const catalog = await scoped(primary);
+    const node = catalog.getNode("ds.1")!;
+    await catalog.archiveSource(node); // first archive: one write + revalidation
+    await flush();
+    invalidateScope.mockClear();
+    archiveModel.mockClear();
+
+    // The node is now absent from the active graph — re-archiving is a no-op.
+    await catalog.archiveSource(node);
+    await flush();
+
+    expect(archiveModel).not.toHaveBeenCalled();
+    expect(invalidateScope).not.toHaveBeenCalled();
+  });
+
+  it("archives a source-layer node locally with no backend write or revalidation", async () => {
+    const { primary, invalidateScope, archiveModel } = revalidatingPrimary();
+    const catalog = await scoped(primary);
+    invalidateScope.mockClear();
+
+    // A source-layer node maps to no ModelKind → the local-only archive path.
+    catalog.addSource({
+      id: "src.x",
+      label: "raw",
+      sub: "source",
+      layer: "source",
+      schema: [],
+      files: [],
+    });
+    await catalog.archiveSource(catalog.getNode("src.x")!);
+    await flush();
+
+    expect(catalog.listColdStorage().map((c) => c.id)).toContain("src.x");
+    expect(archiveModel).not.toHaveBeenCalled();
+    expect(invalidateScope).not.toHaveBeenCalled();
   });
 });
 
