@@ -1,0 +1,33 @@
+# Project level
+
+Two kinds of Linear project exist in this workflow.
+
+## Proposals project (standing intake)
+
+One long-lived **Proposals** project holds **discussion-topic issues** (proposals),
+each labeled `wave:discuss`. No milestones live here.
+
+- **You** add a proposal issue (the topic / problem to explore).
+- **Delegate dc-cyrus** → it runs `nw-discuss` and enriches the issue: JTBD, user
+  stories, acceptance criteria — adding the **stories as sub-issues** of the proposal.
+- A validated proposal is then **promoted** to its own Feature project (see
+  `intake-and-promotion.md`).
+
+## Feature project (one per feature)
+
+A **Feature project** = one nwave **feature**. Created at **promotion** time, it owns:
+
+- a git **`feature/<slug>` branch** (cut from `main`),
+- **Release milestones** (see `milestone.md`),
+- the promoted **stories** (moved in from the proposal, labeled `wave:distill`).
+
+The project description holds the brief; the stories carry the detail.
+
+## Who creates/manages projects
+
+**The main-session assistant**, not cyrus. cyrus's built-in Linear MCP is **issue-only**
+(`create_issue`/`get_issue`/`update_issue`/`save_comment`) — it **cannot** create
+projects or milestones. The main session has the full Linear MCP (`save_project`,
+`save_milestone`, `save_issue`), so all project/milestone structure — and the promotion —
+is done from the main session. **cyrus thinks (waves); the main session structures.**
+See `intake-and-promotion.md`.

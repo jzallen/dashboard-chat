@@ -1,6 +1,6 @@
 # Parallelizing independent stories
 
-The feature-branch model is built for concurrency: many story branches can target the
+The feature-branch model is built for concurrency: many task branches can target the
 same `feature/<slug>` at once, each in its own cyrus worktree. The constraint is **not**
 the tooling — cyrus isolates every session — it's **story independence**. Slice and
 sequence stories so independent ones can run together and dependent ones can't collide.
@@ -11,7 +11,7 @@ Both must hold:
 
 1. **Disjoint code surface.** They don't edit the same files/modules. Different
    `area:*` labels are a strong proxy (`area:ui` vs `area:backend` rarely
-   collide); two `area:ui` work sub-issues need a closer look at which components/files
+   collide); two `area:ui` tasks need a closer look at which components/files
    each touches.
 2. **No data/contract dependency.** Neither needs the other's output — no shared new
    API contract, schema/migration, type, or fixture that one defines and the other
@@ -34,7 +34,7 @@ rebase on the now-advanced feature branch; CI re-runs on each merge).
 ## Distill-first de-risks parallelism
 
 Running the `wave:distill` (orchestrator) decomposition **before** parallelizing
-reveals shared interfaces: if two work sub-issues' AC checklists reference the same new
+reveals shared interfaces: if two tasks' AC checklists reference the same new
 type, contract, or fixture, they share a dependency — sequence them (the one defining
 it first) instead of running them together.
 

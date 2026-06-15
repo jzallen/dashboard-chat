@@ -5,20 +5,20 @@
 ```
 main
  └── feature/<slug>            ← Project (long-lived integration branch for one feature)
-      ├── <issue-id>-<slug>    ← work sub-issue (cyrus worktree branch)
+      ├── <issue-id>-<slug>    ← task (cyrus worktree branch)
       │     · commit  (AC checkbox 1)   ← one atomic commit per AC item, no branch
       │     · commit  (AC checkbox 2)
       │     └─ PR ──────────────────► merges INTO feature/<slug>   [slice CI gate]
-      └── <issue-id>-<slug>    ← another work sub-issue (may run in parallel)
+      └── <issue-id>-<slug>    ← another task (may run in parallel)
             └─ PR ────────────────► merges INTO feature/<slug>
  feature/<slug> ── PR ─────────────► merges INTO main             [full gate]
 ```
 
 **Branches exist at exactly two levels:** the project's `feature/<slug>` and a
 per-work-sub-issue branch. **AC checkboxes never get a branch** — each becomes one
-atomic commit on the work sub-issue's branch (e.g. `test(catalog): revalidate after
+atomic commit on the task's branch (e.g. `test(catalog): revalidate after
 archive (DC-6)`). This keeps the test → implement RED→GREEN history legible inside the
-PR, and a magic word in a commit / the PR closes the work sub-issue.
+PR, and a magic word in a commit / the PR closes the task.
 
 ## Where the gates run
 
@@ -70,4 +70,4 @@ session must branch off / target `feature/<slug>` rather than `main`. Options:
    `feature/<slug>` in GitHub/Linear. Cheap but manual.
 
 Create `feature/<slug>` **before** delegating the first story of a project (a
-project-kickoff step), so every story branch has a base to target.
+project-kickoff step), so every task branch has a base to target.

@@ -1,19 +1,17 @@
 # Linear structure, labels, routing, views
 
-## Primitive mapping
+## Primitive mapping (one file each)
 
-| Linear primitive | Maps to | Notes |
+| Linear primitive | Maps to | Reference |
 |---|---|---|
-| **Project** | nwave **feature** (`docs/feature/{slug}`) | Project doc = the brief/goal. Owns a `feature/<slug>` git branch. |
-| **Milestone** | **slice** (`MR-1 … MR-N`) | Logical grouping of stories; no branch of its own. |
-| **Orchestrator issue (story)** | the unit you delegate; it **decomposes** | `wave:distill` (orchestrator mode). Reads code, creates work sub-issues. Writes no code. |
-| **Work sub-issue** | a **build unit** | `wave:deliver`. One cyrus session, one story branch, one PR into the feature branch. Its **AC checklist** is the test spec. Orchestrator must set its `project` + `projectMilestone` = the parent's (the API/MCP does **not** auto-inherit them — see `tdd-ac-checklist.md`). |
-| **Cycle** | optional WIP bound for solo cadence | Skip if it's overhead. |
+| **Project** | Proposals (intake) or a Feature (= nwave feature) | `project.md` |
+| **Milestone** | a **Release** (shippable increment; 1:many stories) | `milestone.md` |
+| **Issue (story)** | an nwave **story** — `wave:distill`, decomposes into tasks | `story.md` |
+| **Sub-issue (task)** | a build unit — `wave:deliver`, one PR; AC checklist = tests | `task.md` |
+| **Cycle** | optional WIP bound for solo cadence | — skip if it's overhead |
 
-A work sub-issue's **acceptance criteria are a markdown checklist in its description**
-— port-to-port, happy + error paths — NOT grandchild issues. Each checkbox is a test
-the builder writes as an atomic commit; the checklist is the live RED→GREEN tracker
-(see `tdd-ac-checklist.md`).
+This file covers the cross-cutting **labels / routing / views**; see the per-level files
+above for the workflow at each level.
 
 ## Label taxonomy
 
@@ -26,7 +24,7 @@ Labels do double duty — human filtering **and** cyrus behavior (`labelPrompts`
 | `wave:design` | `/nw-design` | `readOnly` — C4/ADRs |
 | `wave:research` | `/nw-research` | `readOnly` |
 | `wave:document` | `/nw-document` | `readOnly` |
-| `wave:distill` | orchestrator mode | `coordinator` (read + create Linear sub-issues, **no code edits**) — decomposes the story into work sub-issues with AC checklists |
+| `wave:distill` | orchestrator mode | `coordinator` (read + create Linear sub-issues, **no code edits**) — decomposes the story into tasks with AC checklists |
 | `wave:deliver` | `/nw-deliver` | `all` — implements the AC checklist test-first, opens PR |
 | `wave:bugfix` | `/nw-bugfix` | `safe`/`all` |
 | `wave:refactor` | `/nw-refactor` | `safe`/`all` |
@@ -41,8 +39,8 @@ Read-only waves are safe to fire liberally — they cannot touch production code
 legacy `frontend/` tree was removed in favor of `ui/`.)
 
 ### `test:unit` / `test:integration`
-Optional **descriptors on a work sub-issue** indicating which test types its AC
-checklist contains (handy for filtering). No longer a separate issue level.
+Optional **descriptors on a task** indicating which test types its AC checklist
+contains (handy for filtering). No longer a separate issue level.
 
 ## Routing (cyrus)
 

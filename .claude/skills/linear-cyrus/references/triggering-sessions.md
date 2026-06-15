@@ -46,7 +46,7 @@ live at webhook time.)
 1. Issue is in a **Project** that has a `feature/<slug>` branch.
 2. Description is a real brief (template-based, opens with `/nw-*`).
 3. Labels: one `wave:*` + one `area:*`.
-4. For deliver: the **work sub-issue** with its AC checklist exists (run `wave:distill`
+4. For deliver: the **task** with its AC checklist exists (run `wave:distill`
    orchestrator on the story first).
 5. daemon + pump are **up** (`make status`).
 6. Delegate / @mention `@dashboard-chat`.
