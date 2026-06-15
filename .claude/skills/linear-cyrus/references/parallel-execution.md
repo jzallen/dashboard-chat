@@ -10,8 +10,8 @@ sequence stories so independent ones can run together and dependent ones can't c
 Both must hold:
 
 1. **Disjoint code surface.** They don't edit the same files/modules. Different
-   `area:*` labels are a strong proxy (`area:frontend` vs `area:backend` rarely
-   collide); two `area:frontend` stories need a closer look at which components/files
+   `area:*` labels are a strong proxy (`area:ui` vs `area:backend` rarely
+   collide); two `area:ui` work sub-issues need a closer look at which components/files
    each touches.
 2. **No data/contract dependency.** Neither needs the other's output — no shared new
    API contract, schema/migration, type, or fixture that one defines and the other
@@ -33,10 +33,10 @@ rebase on the now-advanced feature branch; CI re-runs on each merge).
 
 ## Distill-first de-risks parallelism
 
-Running the `wave:distill` (test-first) pass on candidate stories **before**
-parallelizing reveals shared interfaces: if two stories' test-case grandchildren
-reference the same new type, contract, or fixture, they share a dependency — sequence
-them (the one defining it first) instead of running them together.
+Running the `wave:distill` (orchestrator) decomposition **before** parallelizing
+reveals shared interfaces: if two work sub-issues' AC checklists reference the same new
+type, contract, or fixture, they share a dependency — sequence them (the one defining
+it first) instead of running them together.
 
 ## Collision handling
 

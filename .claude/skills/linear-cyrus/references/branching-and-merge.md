@@ -5,21 +5,20 @@
 ```
 main
  └── feature/<slug>            ← Project (long-lived integration branch for one feature)
-      ├── <issue-id>-<slug>    ← story sub-issue (cyrus worktree branch)
-      │     · commit  (test case A)   ← grandchild = ONE atomic commit, no branch
-      │     · commit  (test case B)
+      ├── <issue-id>-<slug>    ← work sub-issue (cyrus worktree branch)
+      │     · commit  (AC checkbox 1)   ← one atomic commit per AC item, no branch
+      │     · commit  (AC checkbox 2)
       │     └─ PR ──────────────────► merges INTO feature/<slug>   [slice CI gate]
-      └── <issue-id>-<slug>    ← another story (may run in parallel)
+      └── <issue-id>-<slug>    ← another work sub-issue (may run in parallel)
             └─ PR ────────────────► merges INTO feature/<slug>
  feature/<slug> ── PR ─────────────► merges INTO main             [full gate]
 ```
 
 **Branches exist at exactly two levels:** the project's `feature/<slug>` and a
-per-story branch. **Test-case grandchildren never get a branch** — each becomes one
-atomic commit on the story branch, message referencing its grandchild issue id
-(e.g. `test(rename): reject blank name (dc-124)`). This keeps the test → implement
-RED→GREEN history legible inside the PR and lets Linear close the grandchild via a
-magic word in that commit.
+per-work-sub-issue branch. **AC checkboxes never get a branch** — each becomes one
+atomic commit on the work sub-issue's branch (e.g. `test(catalog): revalidate after
+archive (DC-6)`). This keeps the test → implement RED→GREEN history legible inside the
+PR, and a magic word in a commit / the PR closes the work sub-issue.
 
 ## Where the gates run
 
