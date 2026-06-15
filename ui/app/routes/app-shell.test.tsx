@@ -44,7 +44,9 @@ const apiError = (status: number) =>
   new ApiError(status, null, `failed with status ${status}`);
 
 /** A client whose get/post default to empty resolves; programmable per test. */
-function makeClient(overrides: Partial<OnboardingClient> = {}): OnboardingClient {
+function makeClient(
+  overrides: Partial<OnboardingClient> = {},
+): OnboardingClient {
   return {
     get: overrides.get ?? vi.fn(async () => ({})),
     post: overrides.post ?? vi.fn(async () => ({})),

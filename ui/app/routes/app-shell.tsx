@@ -12,11 +12,31 @@
      by root.tsx). */
 import { useSelector } from "@xstate/react";
 import { useCallback, useEffect, useMemo } from "react";
-import { type LoaderFunctionArgs, Navigate, Outlet, useLocation } from "react-router";
+import {
+  type LoaderFunctionArgs,
+  Navigate,
+  Outlet,
+  redirect,
+  useLoaderData,
+  useLocation,
+} from "react-router";
 
 import { hasSession } from "../auth/tokenStorage";
-import type { Edge, LineageNode, OrgSettings, ProjectSummary } from "../catalog";
+import type {
+  Edge,
+  LineageNode,
+  OrgSettings,
+  ProjectSummary,
+} from "../catalog";
 import { apiGet, apiPost } from "../catalog/dataSources/backendClient";
+import {
+  type BackendOrg,
+  type BackendProject,
+  toOrgSettings,
+  toProjectSummary,
+  unwrapList,
+  unwrapSingle,
+} from "../catalog/dataSources/metadataMappers";
 import { Overlays } from "../components/AppShell/Overlays";
 import { useTheme } from "../components/AppShell/ThemeProvider";
 import { Topbar } from "../components/AppShell/Topbar";
@@ -25,7 +45,12 @@ import { useExport } from "../components/Export";
 import { useFlashedNode } from "../components/FlashedNodeProvider";
 import { LoadingSurface } from "../components/LoadingSurface/LoadingSurface";
 import { useUpload } from "../components/Upload";
-import { catalog, useCatalog } from "../components/useCatalog";
+import { catalog, seedOrgGlobal, useCatalog } from "../components/useCatalog";
+import {
+  apiFetch,
+  ApiUnauthenticatedError,
+  assertAuthenticated,
+} from "../lib/api-client";
 import { ChatProvider } from "../lib/chatContext";
 import { createLogger } from "../lib/log";
 import { useNavIntents } from "../lib/nav";
@@ -41,6 +66,12 @@ const defaultClient: OnboardingClient = {
   post: (path, body) => apiPost(path, body),
 };
 
+/** The org-global payload the server loader resolves into the hydration stream. */
+export interface OrgGlobalData {
+  projects: ProjectSummary[];
+  org: OrgSettings;
+}
+
 // The first authenticated entry point, now SERVER-SIDE (S2 / DC-9): fetch the
 // real org-global payloads (projects + org) in a server `loader` through S1's
 // `apiFetch` cookie→Bearer hop, so they are serialized into the initial document
@@ -48,14 +79,31 @@ const defaultClient: OnboardingClient = {
 // old `clientLoader` → `refreshOrgGlobal()` browser path. The component seeds the
 // catalog from `useLoaderData()`.
 //
-// SKELETON STUB (DC-26): signature + return shape only. The implementation tasks
-// (DC-27 fetch+map, DC-28 401→/login redirect) fill this in; the RED tests in
-// app-shell.loader.test.ts define the contract.
+// `apiFetch` returns the RAW upstream Response (no envelope-unwrap, unlike the
+// browser `apiGet`), so we `.json()` + unwrap the JSON:API envelope here and map
+// to the catalog DTOs with the shared pure mappers. AC2 (decision #5): a 401
+// surfaces as ApiUnauthenticatedError, which we turn into a redirect to /login
+// rather than letting a client 401 surface.
 export async function loader({
   request,
-}: LoaderFunctionArgs): Promise<{ projects: ProjectSummary[]; org: OrgSettings }> {
-  void request;
-  throw new Error("not implemented");
+}: LoaderFunctionArgs): Promise<OrgGlobalData> {
+  let projectsRes: Response;
+  let orgRes: Response;
+  try {
+    [projectsRes, orgRes] = await Promise.all([
+      apiFetch(request, "/projects").then(assertAuthenticated),
+      apiFetch(request, "/orgs/me").then(assertAuthenticated),
+    ]);
+  } catch (err) {
+    if (err instanceof ApiUnauthenticatedError) throw redirect("/login");
+    throw err;
+  }
+
+  const projects = unwrapList<BackendProject>(await projectsRes.json()).map(
+    toProjectSummary,
+  );
+  const org = toOrgSettings(unwrapSingle<BackendOrg>(await orgRes.json()));
+  return { projects, org };
 }
 
 // AC3 (decision #2): org-global data does not change with in-app navigation, so
@@ -102,7 +150,12 @@ function Chrome() {
   return (
     <div className={rootClassName + (orgOpen ? " org-open" : "")}>
       <div className="main">
-        <Topbar upload={upload} exporter={exporter} cold={cold} models={models} />
+        <Topbar
+          upload={upload}
+          exporter={exporter}
+          cold={cold}
+          models={models}
+        />
         <div className="content">
           <div className="frame">
             <Outlet context={{ onOpenNode }} />
@@ -201,6 +254,16 @@ export default function AppShell({
   /** Test seam: inject the Phase-B probe's HTTP port; defaults to the backend. */
   client?: OnboardingClient;
 }) {
+  // Seed the catalog from the server loader's org-global payload (replacing the
+  // old clientLoader → refreshOrgGlobal() entry path) so child routes (the home
+  // redirect, the project layout) read real projects/org off the SSR-hydrated
+  // data, not the fixture seed. `undefined` when the route carries no loader
+  // (the route/onboarding tests render AppShell without one) — then it's a no-op.
+  const data = useLoaderData() as OrgGlobalData | undefined;
+  useEffect(() => {
+    if (data) seedOrgGlobal(data.projects, data.org);
+  }, [data]);
+
   if (!hasSession()) return <Navigate to="/login" replace />;
   return <OnboardingGate client={client} />;
 }

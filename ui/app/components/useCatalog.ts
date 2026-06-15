@@ -22,7 +22,9 @@ import {
   type DataCatalog,
   fixtureSource,
   metadataApiSource,
+  type OrgSettings,
   type PartialCatalogSource,
+  type ProjectSummary,
 } from "../catalog";
 
 /**
@@ -59,7 +61,10 @@ export async function initCatalog(): Promise<void> {
     // Auth rides the httpOnly cookie now; the catalog can neither read nor
     // forward the token, so getToken yields null (no Bearer header is ever
     // built). The dep is kept to preserve metadataApiSource's interface.
-    metadataApiSource({ getToken: () => null, getProjectId: () => scopedProjectId }),
+    metadataApiSource({
+      getToken: () => null,
+      getProjectId: () => scopedProjectId,
+    }),
     fixtureSource,
   );
 }
@@ -84,6 +89,20 @@ export function selectProject(projectId: string): Promise<void> {
  */
 export function refreshOrgGlobal(): Promise<void> {
   return catalog.refreshOrgGlobal();
+}
+
+/**
+ * Seed the org-global payloads (projects + org) from the app-shell server
+ * loader's data (S2/DC-9) — the module entry point the shell calls with
+ * `useLoaderData()`, mirroring how {@link refreshOrgGlobal} delegates. Commits
+ * already-fetched values (no round-trip), so real projects replace the fixture
+ * seed straight off the SSR-hydrated payload.
+ */
+export function seedOrgGlobal(
+  projects: ProjectSummary[],
+  org: OrgSettings,
+): void {
+  catalog.seedOrgGlobal(projects, org);
 }
 
 /** The scoped pid the test seam exposes so a primary can read it (mirrors the

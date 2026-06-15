@@ -1,16 +1,14 @@
-// @vitest-environment happy-dom
+// @vitest-environment node
 //
 // app-shell server `loader` — the S2/DC-9 seam: org-global reads (projects +
 // org settings) move OFF the client `clientLoader`/`refreshOrgGlobal` ONTO a
 // server `loader` that reaches the backend through S1's `apiFetch` cookie→Bearer
 // hop, so the data is serialized into the initial document payload.
 //
-// Env note (reconciles DC-26's "node env, mirroring api-client.test.ts"):
-// `app-shell.tsx` is a framework-mode ROUTE module — importing its `loader`
-// pulls the route's React component tree (providers, Topbar, …). The existing
-// `app-shell.test.tsx` already proves happy-dom is the env that imports this
-// module cleanly, so the loader unit runs under happy-dom too. The network is
-// still stubbed at the global-`fetch` port exactly like `api-client.test.ts`.
+// Node env (per DC-26, mirroring api-client.test.ts): the loader is server-side
+// BFF code and the `cookie` it forwards is a FORBIDDEN header a browser env
+// (happy-dom) strips off a Request — only node's undici keeps it, matching the
+// RRv7 server runtime. The network is stubbed at the global-`fetch` port.
 //
 // One `it(...)` per AC checkbox on DC-26:
 //   AC1 — fetches /api/projects + /api/orgs/me via apiFetch (forwarding the
@@ -56,7 +54,11 @@ function listEnvelope(
   type: string,
   resources: { id: string; attributes: Record<string, unknown> }[],
 ): Response {
-  const data = resources.map((r) => ({ type, id: r.id, attributes: r.attributes }));
+  const data = resources.map((r) => ({
+    type,
+    id: r.id,
+    attributes: r.attributes,
+  }));
   return new Response(JSON.stringify({ data }), {
     status: 200,
     headers: { "content-type": "application/json" },
