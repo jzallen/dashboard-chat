@@ -66,24 +66,24 @@ const defaultClient: OnboardingClient = {
   post: (path, body) => apiPost(path, body),
 };
 
-/** The org-global payload the server loader resolves into the hydration stream. */
+/** The org-global payload the server loader returns for the initial document. */
 export interface OrgGlobalData {
   projects: ProjectSummary[];
   org: OrgSettings;
 }
 
-// The first authenticated entry point, now SERVER-SIDE (S2 / DC-9): fetch the
-// real org-global payloads (projects + org) in a server `loader` through S1's
-// `apiFetch` cookie→Bearer hop, so they are serialized into the initial document
-// payload (SSR hydration stream) instead of being fetched post-hydration by the
-// old `clientLoader` → `refreshOrgGlobal()` browser path. The component seeds the
-// catalog from `useLoaderData()`.
-//
-// `apiFetch` returns the RAW upstream Response (no envelope-unwrap, unlike the
-// browser `apiGet`), so we `.json()` + unwrap the JSON:API envelope here and map
-// to the catalog DTOs with the shared pure mappers. AC2 (decision #5): a 401
-// surfaces as ApiUnauthenticatedError, which we turn into a redirect to /login
-// rather than letting a client 401 surface.
+/**
+ * Fetch the org-global payloads — the project list and org settings — server-side
+ * so the chrome renders with real projects/org in the initial document rather
+ * than fetching them after hydration. The component seeds the catalog from this
+ * via `useLoaderData()`.
+ *
+ * Reaches the backend through the server `/api` client (the cookie→Bearer hop),
+ * which returns the raw upstream Response — so each body is read and unwrapped
+ * from its JSON:API envelope here, then mapped to the catalog DTOs. An
+ * unauthenticated (401) response becomes a redirect to /login rather than a
+ * client-surfaced error.
+ */
 export async function loader({
   request,
 }: LoaderFunctionArgs): Promise<OrgGlobalData> {
@@ -106,9 +106,11 @@ export async function loader({
   return { projects, org };
 }
 
-// AC3 (decision #2): org-global data does not change with in-app navigation, so
-// the loader runs ONCE — `shouldRevalidate` stays false (the dedup seam that
-// preserves the old run-once `refreshOrgGlobal` memo).
+/**
+ * Org-global data (projects, org settings) does not change with in-app
+ * navigation, so the loader runs once per document load and is never
+ * revalidated — re-fetching it on every navigation would be redundant.
+ */
 export function shouldRevalidate() {
   return false;
 }
@@ -254,11 +256,9 @@ export default function AppShell({
   /** Test seam: inject the Phase-B probe's HTTP port; defaults to the backend. */
   client?: OnboardingClient;
 }) {
-  // Seed the catalog from the server loader's org-global payload (replacing the
-  // old clientLoader → refreshOrgGlobal() entry path) so child routes (the home
-  // redirect, the project layout) read real projects/org off the SSR-hydrated
-  // data, not the fixture seed. `undefined` when the route carries no loader
-  // (the route/onboarding tests render AppShell without one) — then it's a no-op.
+  // Seed the catalog from the loader's org-global payload so child routes (the
+  // home redirect, the project layout) read real projects/org rather than the
+  // fixture seed. Undefined when the route carries no loader — then it's a no-op.
   const data = useLoaderData() as OrgGlobalData | undefined;
   useEffect(() => {
     if (data) seedOrgGlobal(data.projects, data.org);

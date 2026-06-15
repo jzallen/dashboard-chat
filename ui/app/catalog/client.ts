@@ -655,11 +655,11 @@ export async function createDataCatalog(
     refreshOrgGlobal: (): Promise<void> => revalidateOrgGlobal(),
 
     /**
-     * Seed the org-global payloads (projects + org) from data ALREADY fetched —
-     * the S2/DC-9 server `loader`'s contribution. Where {@link refreshOrgGlobal}
-     * fetches client-side, this commits values the server loader resolved into
-     * the hydration stream, so real projects replace the fixture seed without a
-     * second round-trip. A single commit bumps the version once.
+     * Seed the org-global payloads (projects + org) from data already fetched
+     * elsewhere. Where {@link refreshOrgGlobal} fetches client-side, this commits
+     * values resolved server-side (the app-shell loader's), so real projects
+     * replace the fixture seed without a second round-trip. One commit, one
+     * version bump.
      */
     seedOrgGlobal: (projects: ProjectSummary[], org: OrgSettings): void => {
       commit({ projects, org });

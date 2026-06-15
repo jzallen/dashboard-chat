@@ -1,21 +1,13 @@
 // @vitest-environment node
 //
-// app-shell server `loader` — the S2/DC-9 seam: org-global reads (projects +
-// org settings) move OFF the client `clientLoader`/`refreshOrgGlobal` ONTO a
-// server `loader` that reaches the backend through S1's `apiFetch` cookie→Bearer
-// hop, so the data is serialized into the initial document payload.
+// The app-shell server loader fetches the org-global payloads (projects + org
+// settings) through the server /api client and returns them for the initial
+// document, redirecting to /login on an unauthenticated response.
 //
-// Node env (per DC-26, mirroring api-client.test.ts): the loader is server-side
-// BFF code and the `cookie` it forwards is a FORBIDDEN header a browser env
-// (happy-dom) strips off a Request — only node's undici keeps it, matching the
-// RRv7 server runtime. The network is stubbed at the global-`fetch` port.
-//
-// One `it(...)` per AC checkbox on DC-26:
-//   AC1 — fetches /api/projects + /api/orgs/me via apiFetch (forwarding the
-//         inbound credential) and returns the mapped { projects, org }.   [RED]
-//   AC2 — a 401 upstream → throws redirect("/login") (decision #5).        [RED]
-//   AC3 — shouldRevalidate() stays false so org-global isn't re-fetched
-//         on in-app navigation (decision #2).                  [green: preserved]
+// Node env (not happy-dom): the loader forwards the inbound `cookie`, a forbidden
+// header a browser environment strips from a Request — only node's undici
+// preserves it, matching the server runtime. The network is stubbed at the
+// global `fetch` boundary.
 import type { LoaderFunctionArgs } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -105,7 +97,7 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("app-shell loader — org-global reads via the server /api hop", () => {
-  it("AC1: fetches /api/projects + /api/orgs/me via apiFetch, forwards the credential, and returns the mapped { projects, org }", async () => {
+  it("fetches /api/projects and /api/orgs/me, forwards the inbound credential, and returns the mapped projects + org", async () => {
     const calls = stubFetch((url) => {
       if (url.endsWith("/api/projects")) {
         return listEnvelope("projects", [
@@ -157,7 +149,7 @@ describe("app-shell loader — org-global reads via the server /api hop", () => 
     });
   });
 
-  it("AC2: a 401 upstream throws redirect('/login') instead of surfacing a client 401 (decision #5)", async () => {
+  it("redirects to /login when the upstream responds 401 instead of surfacing a client error", async () => {
     stubFetch(() => new Response("Unauthorized", { status: 401 }));
 
     let thrown: unknown;
@@ -173,7 +165,7 @@ describe("app-shell loader — org-global reads via the server /api hop", () => 
     expect(response.headers.get("Location")).toBe("/login");
   });
 
-  it("AC3: shouldRevalidate() returns false so org-global data is not re-fetched on navigation (decision #2)", () => {
+  it("does not revalidate org-global data on navigation (shouldRevalidate is false)", () => {
     expect(shouldRevalidate()).toBe(false);
   });
 });

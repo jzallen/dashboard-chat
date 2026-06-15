@@ -93,10 +93,10 @@ export function refreshOrgGlobal(): Promise<void> {
 
 /**
  * Seed the org-global payloads (projects + org) from the app-shell server
- * loader's data (S2/DC-9) — the module entry point the shell calls with
- * `useLoaderData()`, mirroring how {@link refreshOrgGlobal} delegates. Commits
- * already-fetched values (no round-trip), so real projects replace the fixture
- * seed straight off the SSR-hydrated payload.
+ * loader's data — the module entry point the shell calls with `useLoaderData()`,
+ * mirroring how {@link refreshOrgGlobal} delegates. Commits already-fetched
+ * values (no round-trip), so real projects replace the fixture seed straight off
+ * the hydrated payload.
  */
 export function seedOrgGlobal(
   projects: ProjectSummary[],
