@@ -28,31 +28,15 @@ import { hasSession } from "../auth/tokenStorage";
 import { ApiError } from "../catalog/dataSources/backendClient";
 import { ThemeProvider } from "../components/AppShell/ThemeProvider";
 import { FlashedNodeProvider } from "../components/FlashedNodeProvider";
-import {
-  installCatalogForTest,
-  refreshOrgGlobal,
-} from "../components/useCatalog";
+import { installCatalogForTest } from "../components/useCatalog";
 import { scriptedStateProxy } from "../lib/_stateProxyTestKit";
 import type { OnboardingClient } from "../lib/onboarding-driver";
 import { type StateProxy } from "../lib/state-proxy";
 import { StateProxyProvider } from "../lib/StateProxyProvider";
 import { fixtureFallback, NO_PRIMARY } from "./_fixtureCatalog";
-import AppShell, { clientLoader } from "./app-shell";
+import AppShell from "./app-shell";
 
 vi.mock("../auth/tokenStorage", () => ({ hasSession: vi.fn() }));
-// Keep the REAL catalog machinery (the chrome reads the live `catalog` binding)
-// but stub the org-global refresh — the loader tests assert its gating.
-vi.mock("../components/useCatalog", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("../components/useCatalog")>();
-  return {
-    ...actual,
-    get catalog() {
-      return actual.catalog;
-    },
-    refreshOrgGlobal: vi.fn(async () => {}),
-  };
-});
 
 afterEach(() => vi.clearAllMocks());
 
@@ -66,20 +50,6 @@ function makeClient(overrides: Partial<OnboardingClient> = {}): OnboardingClient
     post: overrides.post ?? vi.fn(async () => ({})),
   };
 }
-
-describe("app-shell clientLoader — org-global fetch gated on the session", () => {
-  it("fetches org-global data when hasSession() is true", async () => {
-    vi.mocked(hasSession).mockReturnValue(true);
-    await clientLoader();
-    expect(refreshOrgGlobal).toHaveBeenCalledTimes(1);
-  });
-
-  it("does NOT fetch when hasSession() is false (no 401s on the login round-trip)", async () => {
-    vi.mocked(hasSession).mockReturnValue(false);
-    await clientLoader();
-    expect(refreshOrgGlobal).not.toHaveBeenCalled();
-  });
-});
 
 describe("AppShell gate", () => {
   it("redirects to /login when there is no session", () => {

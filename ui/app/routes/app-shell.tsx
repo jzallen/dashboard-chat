@@ -12,10 +12,10 @@
      by root.tsx). */
 import { useSelector } from "@xstate/react";
 import { useCallback, useEffect, useMemo } from "react";
-import { Navigate, Outlet, useLocation } from "react-router";
+import { type LoaderFunctionArgs, Navigate, Outlet, useLocation } from "react-router";
 
 import { hasSession } from "../auth/tokenStorage";
-import type { Edge, LineageNode } from "../catalog";
+import type { Edge, LineageNode, OrgSettings, ProjectSummary } from "../catalog";
 import { apiGet, apiPost } from "../catalog/dataSources/backendClient";
 import { Overlays } from "../components/AppShell/Overlays";
 import { useTheme } from "../components/AppShell/ThemeProvider";
@@ -25,7 +25,7 @@ import { useExport } from "../components/Export";
 import { useFlashedNode } from "../components/FlashedNodeProvider";
 import { LoadingSurface } from "../components/LoadingSurface/LoadingSurface";
 import { useUpload } from "../components/Upload";
-import { catalog, refreshOrgGlobal, useCatalog } from "../components/useCatalog";
+import { catalog, useCatalog } from "../components/useCatalog";
 import { ChatProvider } from "../lib/chatContext";
 import { createLogger } from "../lib/log";
 import { useNavIntents } from "../lib/nav";
@@ -41,16 +41,26 @@ const defaultClient: OnboardingClient = {
   post: (path, body) => apiPost(path, body),
 };
 
-// The first authenticated entry point: fetch the real org-global payloads
-// (projects/org) so they replace the fixture seed before any child route (the
-// home redirect, the project layout) reads them. Gated on the session flag so it
-// never fires during the unauthenticated login round-trip. Runs once —
-// shouldRevalidate returns false (org-global data doesn't change with navigation).
-export async function clientLoader() {
-  if (hasSession()) await refreshOrgGlobal();
-  return null;
+// The first authenticated entry point, now SERVER-SIDE (S2 / DC-9): fetch the
+// real org-global payloads (projects + org) in a server `loader` through S1's
+// `apiFetch` cookie→Bearer hop, so they are serialized into the initial document
+// payload (SSR hydration stream) instead of being fetched post-hydration by the
+// old `clientLoader` → `refreshOrgGlobal()` browser path. The component seeds the
+// catalog from `useLoaderData()`.
+//
+// SKELETON STUB (DC-26): signature + return shape only. The implementation tasks
+// (DC-27 fetch+map, DC-28 401→/login redirect) fill this in; the RED tests in
+// app-shell.loader.test.ts define the contract.
+export async function loader({
+  request,
+}: LoaderFunctionArgs): Promise<{ projects: ProjectSummary[]; org: OrgSettings }> {
+  void request;
+  throw new Error("not implemented");
 }
 
+// AC3 (decision #2): org-global data does not change with in-app navigation, so
+// the loader runs ONCE — `shouldRevalidate` stays false (the dedup seam that
+// preserves the old run-once `refreshOrgGlobal` memo).
 export function shouldRevalidate() {
   return false;
 }
