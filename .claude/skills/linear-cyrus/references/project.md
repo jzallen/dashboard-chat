@@ -8,8 +8,10 @@ One long-lived **Proposals** project holds **discussion-topic issues** (proposal
 each labeled `wave:discuss`. No milestones live here.
 
 - **You** add a proposal issue (the topic / problem to explore).
-- **Delegate dc-cyrus** → it runs `nw-discuss` and enriches the issue: JTBD, user
-  stories, acceptance criteria — adding the **stories as sub-issues** of the proposal.
+- **Delegate dc-cyrus** → it runs `nw-discuss` (read-only) and **produces** the JTBD /
+  user stories / acceptance criteria **as analysis in the issue thread**. It does NOT
+  create issues (readOnly mode has no `create_issue`) — the main session materializes the
+  stories as issues at promotion.
 - A validated proposal is then **promoted** to its own Feature project (see
   `intake-and-promotion.md`).
 

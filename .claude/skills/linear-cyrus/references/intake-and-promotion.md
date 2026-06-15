@@ -9,7 +9,7 @@ Proposals project
   └ Proposal issue (wave:discuss)
         │   delegate dc-cyrus → nw-discuss
         ▼
-     proposal enriched + Story sub-issues added (JTBD, stories, AC)
+     proposal enriched + stories produced as ANALYSIS in the thread (JTBD, stories, AC)
         │   [main session] PROMOTE
         ▼
   New Feature project
@@ -26,7 +26,7 @@ Proposals project
 
 | Actor | Linear MCP | Owns |
 |---|---|---|
-| **dc-cyrus** | issue-only (`create_issue`/`update_issue`/`get_issue`/`save_comment`) | the **waves** in-session: `nw-discuss` (→ stories), `nw-distill` (→ tasks), `nw-deliver` (→ code) |
+| **dc-cyrus** | issue-only (`create_issue`/`update_issue`/`get_issue`/`save_comment`) | the **waves** in-session: `nw-discuss` (→ stories **as thread analysis** — read-only mode, no issue creation), `nw-distill` (→ task sub-issues — coordinator mode), `nw-deliver` (→ code) |
 | **main-session assistant** | full (`save_project`, `save_milestone`, `save_issue`) | the **structure**: create/manage projects + Release milestones + their git branches, **promotion** |
 
 **cyrus thinks; the main session structures.** cyrus literally can't create projects or
@@ -43,9 +43,9 @@ it via the full Linear MCP:
 2. `save_milestone` (×N) — create the Release milestones from the discuss release-slicing
    (`Release 1` = the first / thinnest increment — NOT a "walking skeleton"; that's the
    per-story Skeleton task).
-3. `save_issue` (per story) — **move** the existing story sub-issues into the Feature
-   project + their Release milestone (pass `id` to move, so IDs/history/comments
-   survive — do NOT recreate), set `wave:distill` + `area:*`.
+3. `save_issue` (per story) — **create** the story issues in the Feature project from the
+   discuss analysis (the thread is read-only output, so there are no story sub-issues to
+   move): `team` = DC, `project`, `milestone` = its Release, `wave:distill` + `area:*`.
 4. Cut a git branch **per Release**: `git branch <slug>/release-1 main && git push -u
    origin <slug>/release-1` (story PRs target it; later Releases rebase on `main` after
    the prior one merges — see `branching-and-merge.md`).

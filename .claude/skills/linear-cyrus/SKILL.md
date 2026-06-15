@@ -32,7 +32,7 @@ gastown merge queue (retired 2026-06-15; parked in `.claude/retired-skills/gasto
 ## The levels (one file each in `references/`)
 
 ```
-Proposals project ── wave:discuss ──►  proposal + Story sub-issues   (cyrus: nw-discuss)
+Proposals project ── wave:discuss ──►  proposal enriched + stories as ANALYSIS in thread   (cyrus: nw-discuss, read-only)
       │  [main session] PROMOTE
       ▼
 Feature project   = nwave feature
@@ -59,7 +59,8 @@ Feature project   = nwave feature
 ## Canonical lifecycle
 
 1. Add a **proposal** issue to the **Proposals** project (`wave:discuss`).
-2. Delegate dc-cyrus → `nw-discuss` enriches it + adds **story sub-issues**.
+2. Delegate dc-cyrus → `nw-discuss` (read-only) **produces the stories as analysis in the
+   thread** — it can't create issues; the main session materializes them at promotion.
 3. **Promote** (main session): Feature project + **Release milestones + `<slug>/<release>`
    branches**; move stories in (on their Release, `wave:distill`).
 4. Per story: assign dc-cyrus → `nw-distill` decomposes into a **Skeleton task + impl
