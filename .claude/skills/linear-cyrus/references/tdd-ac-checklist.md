@@ -26,7 +26,22 @@ Orchestrator issue (story)          wave:distill — decomposes, writes NO code
 
 ## What a good work sub-issue looks like
 
-The orchestrator should produce sub-issues in this shape (DC-6 is the exemplar):
+The orchestrator should produce sub-issues in this shape (DC-6 is the exemplar).
+
+**Create-call metadata** — set these on the `mcp__linear__create_issue` call itself,
+every time (not just in the body):
+
+- `parentId` = the story / orchestrator issue.
+- `projectId` **and** `projectMilestoneId` = **the parent's**. Linear auto-inherits
+  these only for sub-issues created in the UI *editor*, **NOT** via the API/MCP — so the
+  orchestrator MUST pass them explicitly, or the sub-issue lands orphaned from the
+  project + milestone (as DC-6 did until it was backfilled). This is a fixed part of the
+  create contract, like `state` below — not something to remember case-by-case.
+- `state` = `"To Do"` (never Triage).
+- `labels` = `wave:deliver` + the relevant `area:*` (optionally `test:unit` /
+  `test:integration` descriptors).
+
+**Description body:**
 
 - **PR target branch** stated (`feature/<slug>`, not `main`).
 - **Objective** — tightly scoped; explicitly list what is already built and must NOT

@@ -7,7 +7,7 @@
 | **Project** | nwave **feature** (`docs/feature/{slug}`) | Project doc = the brief/goal. Owns a `feature/<slug>` git branch. |
 | **Milestone** | **slice** (`MR-1 … MR-N`) | Logical grouping of stories; no branch of its own. |
 | **Orchestrator issue (story)** | the unit you delegate; it **decomposes** | `wave:distill` (orchestrator mode). Reads code, creates work sub-issues. Writes no code. |
-| **Work sub-issue** | a **build unit** | `wave:deliver`. One cyrus session, one story branch, one PR into the feature branch. Its **AC checklist** is the test spec. |
+| **Work sub-issue** | a **build unit** | `wave:deliver`. One cyrus session, one story branch, one PR into the feature branch. Its **AC checklist** is the test spec. Orchestrator must set its `project` + `projectMilestone` = the parent's (the API/MCP does **not** auto-inherit them — see `tdd-ac-checklist.md`). |
 | **Cycle** | optional WIP bound for solo cadence | Skip if it's overhead. |
 
 A work sub-issue's **acceptance criteria are a markdown checklist in its description**
