@@ -43,6 +43,25 @@ the sub-tasks — skeleton (RED tests land) then implementation (RED → green, 
 commit per AC checkbox**), marking each sub-issue Done — and opens **one story PR** into
 the Release branch. Sub-issues are the **plan**, never individually delegated.
 
+## Every story body ends with an `AGENT INSTRUCTION:` section (required)
+
+**The issue body IS the agent's prompt.** A cyrus session keys off the description; if it
+doesn't name the skill/wave, the agent just presses straight to implementation (observed
+on DC-8 — it skipped distill and opened a PR). So every story description ends with a
+short block like:
+
+```
+---
+**AGENT INSTRUCTION:** Reference the `linear-cyrus` skill for the workflow. While labeled
+`wave:distill`, run `nw-distill` to DECOMPOSE this into a Skeleton task + implementation
+sub-issues — create issues only, do NOT implement. When relabeled `wave:deliver`, run
+`nw-deliver` to implement the AC checklist test-first and open ONE story PR into the
+Release branch. Do not skip distill and jump straight to implementation.
+```
+
+The main session adds this when it materializes stories at promotion (see
+`intake-and-promotion.md`).
+
 ## Iron Rule
 
 The AC checklists are the spec. A deliver session may NOT weaken or delete a checkbox to

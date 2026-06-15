@@ -46,6 +46,9 @@ it via the full Linear MCP:
 3. `save_issue` (per story) — **create** the story issues in the Feature project from the
    discuss analysis (the thread is read-only output, so there are no story sub-issues to
    move): `team` = DC, `project`, `milestone` = its Release, `wave:distill` + `area:*`.
+   **End every story body with the `AGENT INSTRUCTION:` section** (see `story.md`) — the
+   issue body is the agent's prompt; without it the deliver agent skips distill and
+   implements directly.
 4. Cut a git branch **per Release**: `git branch <slug>/release-1 main && git push -u
    origin <slug>/release-1` (story PRs target it; later Releases rebase on `main` after
    the prior one merges — see `branching-and-merge.md`).
