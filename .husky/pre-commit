@@ -5,10 +5,10 @@ set -euo pipefail
 (cd backend && uv run ruff format . && uv run ruff check --fix .)
 
 # Auto-fix JS/TS lint issues (scoped to match Bazel lint targets: //reverse-proxy:lint, //agent:lint)
-npx eslint --fix frontend/src agent/ ui/app
+npx eslint --fix agent/ ui/app
 
 # Verify nothing unfixable remains (same commands as //reverse-proxy:lint, //agent:lint, //backend:lint)
-npx eslint frontend/src agent/ ui/app
+npx eslint agent/ ui/app
 (cd backend && uv run ruff check . && uv run ruff format --check .)
 
 # Report auto-fixes WITHOUT staging them. The previous hook ran `git add -u`, which
