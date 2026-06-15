@@ -11,8 +11,15 @@ session.
   AgentSession is created → Linear POSTs the signed event → it reaches cyrus → a
   Claude Code session runs and **streams activity back into the issue thread**.
 - The issue's **description is the task prompt** (`fetchFullIssueDetails`). Whatever is
-  in the body is what the agent works on — so the body must be a real brief. Per-wave
-  issue templates (opening with the matching `/nw-*` command) make this automatic.
+  in the body is what the agent works on — so the body must be a real brief. The deliver
+  comment (below) rides in the thread as additional marching orders, so keep the story's
+  `## Delivery` section consistent with it.
+- **Each delegate/@mention mints a NEW session**, and the mode comes from the issue's
+  **current labels** at that moment. So on a story: the first delegation (`wave:distill`)
+  runs the orchestrator; after you **relabel the story `wave:deliver`**, an @mention
+  **comment** mints a fresh **builder** session that delivers the whole story. Relabel
+  BEFORE commenting — a comment on a still-`wave:distill` story runs read-only and can't
+  implement (see `story.md`).
 
 ## Prerequisites (devpod ops)
 
@@ -41,12 +48,14 @@ selects the `labelPrompts` mode + tool scope. (If routing ever misbehaves, a
 `[repo=dashboard-chat]` tag in the description is the highest-priority override, read
 live at webhook time.)
 
-## Quick checklist before delegating
+## Quick checklist
 
-1. Issue is in a **Project** that has a `feature/<slug>` branch.
-2. Description is a real brief (template-based, opens with `/nw-*`).
-3. Labels: one `wave:*` + one `area:*`.
-4. For deliver: the **task** with its AC checklist exists (run `wave:distill`
-   orchestrator on the story first).
-5. daemon + pump are **up** (`make status`).
-6. Delegate / @mention `@dashboard-chat`.
+**Distill a story:** (1) story is in a Feature project + on a Release that has a
+`<slug>/<release>` branch; (2) labels `wave:distill` + `area:*`; (3) daemon + pump **up**
+(`make status`); (4) assign / @mention `@dashboard-chat`.
+
+**Deliver a story:** (1) the breakdown (Skeleton + impl tasks) exists and looks right;
+(2) the story description has a `## Delivery` section (target the Release branch);
+(3) **relabel the story `wave:distill` → `wave:deliver`**; (4) **@mention `@dashboard-chat`
+in a story comment** with the deliver instruction (iterate sub-tasks, skeleton first, mark
+Done, one PR into `<slug>/<release>`).

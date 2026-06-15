@@ -24,13 +24,18 @@ Labels do double duty — human filtering **and** cyrus behavior (`labelPrompts`
 | `wave:design` | `/nw-design` | `readOnly` — C4/ADRs |
 | `wave:research` | `/nw-research` | `readOnly` |
 | `wave:document` | `/nw-document` | `readOnly` |
-| `wave:distill` | orchestrator mode | `coordinator` (read + create Linear sub-issues, **no code edits**) — decomposes the story into tasks with AC checklists |
-| `wave:deliver` | `/nw-deliver` | `all` — implements the AC checklist test-first, opens PR |
+| `wave:distill` | orchestrator mode | `coordinator` (read + create Linear sub-issues, **no code edits**) — decomposes a story into a Skeleton task + impl tasks |
+| `wave:deliver` | `/nw-deliver` | `all` — builder; on a **story** it delivers the whole story in one session (one story PR) |
 | `wave:bugfix` | `/nw-bugfix` | `safe`/`all` |
 | `wave:refactor` | `/nw-refactor` | `safe`/`all` |
 
 Read-only waves are safe to fire liberally — they cannot touch production code.
 `wave:deliver|bugfix|refactor` are the gated ones (they open PRs).
+
+**On a story, the `wave:*` label is a phase flag:** `wave:distill` (awaiting breakdown,
+orchestrator) → relabel `wave:deliver` (approved, builder). Mode is read from the story's
+label, so flipping it is how you move from planning to building (see `story.md`). Task
+sub-issues stay `wave:deliver` as the plan — they're never individually delegated.
 
 ### `area:*` — subtree filtering (mirrors the CI gate's subtree routing)
 `area:ui` (the `ui/` frontend tree), `area:backend`, `area:agent`, `area:ui-state`,

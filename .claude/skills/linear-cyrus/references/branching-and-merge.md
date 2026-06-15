@@ -1,73 +1,58 @@
 # Branching, gates, and merge
 
-## The two-level branch model
+## Branch model
 
 ```
 main
- └── feature/<slug>            ← Project (long-lived integration branch for one feature)
-      ├── <issue-id>-<slug>    ← task (cyrus worktree branch)
-      │     · commit  (AC checkbox 1)   ← one atomic commit per AC item, no branch
-      │     · commit  (AC checkbox 2)
-      │     └─ PR ──────────────────► merges INTO feature/<slug>   [slice CI gate]
-      └── <issue-id>-<slug>    ← another task (may run in parallel)
-            └─ PR ────────────────► merges INTO feature/<slug>
- feature/<slug> ── PR ─────────────► merges INTO main             [full gate]
+ └ <feature-slug>/<release>          ← milestone (Release) branch — created at promotion
+     └ <story branch>                ← cyrus worktree branch for the story's deliver session
+         · skeleton commits (scaffold + signatures + RED tests)
+         · implementation commits (RED → GREEN, one per AC checkbox)
+         └ PR ─────────────────────► merges INTO <feature-slug>/<release>   [story PR — the gate]
+ <feature-slug>/<release> ── merge, NO PR ──► main   [when all the Release's story PRs merged]
 ```
 
-**Branches exist at exactly two levels:** the project's `feature/<slug>` and a
-per-work-sub-issue branch. **AC checkboxes never get a branch** — each becomes one
-atomic commit on the task's branch (e.g. `test(catalog): revalidate after
-archive (DC-6)`). This keeps the test → implement RED→GREEN history legible inside the
-PR, and a magic word in a commit / the PR closes the task.
+- **Milestone (Release) branches** are the integration branches — one per Release,
+  e.g. `dataset-bff/release-1`. The **main session** creates them at promotion (cut from
+  `main`).
+- **Story branch** — one cyrus worktree branch per story deliver session. The whole story
+  (skeleton + implementation) is built here, so **RED is transient on this branch**.
+- **No task branches, no task PRs.** Tasks are the deliver session's internal plan
+  (sub-issues it marks Done), realized as commits — not branches.
 
-## Where the gates run
+## Where the gate runs
 
 | Merge | Gate | Why here |
 |---|---|---|
-| story PR → `feature/<slug>` | **slice CI** — subtree-aware `test.sh --auto` on the changed `area:*` | fast feedback per story; the feature branch stays green as sub-issues complete |
-| `feature/<slug>` → `main` | **full gate** — broader suite / integration + acceptance for the feature | one place to catch cross-story interactions before they hit trunk |
+| **story branch → `<feature>/<release>`** | **story PR** — subtree-aware `test.sh --auto` | the one review + CI gate; sees only the GREEN end-state (RED was transient on the branch) |
+| **`<feature>/<release>` → `main`** | none — merge, **no PR** | already reviewed via the story PRs; this is just integration |
 
-This is the replacement for the retired refinery gate. The refinery used to run
-`test.sh --auto` before a local-only merge; now **PR-triggered CI** runs it and
-Linear shows the result in the PR's **checks** column, so an approver sees green
-before merging from the diff view.
+Per-task work has **no** gate — tasks land as commits inside one session. That's exactly
+what lets the skeleton commit honest **RED** tests: nothing gates the transient RED, only
+the assembled green **story**.
 
-> **Setup follow-up (not yet built):** a GitHub Actions workflow that runs
-> `test.sh --auto` on PRs into `feature/**` and a fuller run on PRs into `main`.
-> Until that exists, the green signal must come from the cyrus session running the
-> suite before it opens a non-draft PR. Track this as its own issue.
+## Releases are sequential
 
-## Status automation (free, via the GitHub integration)
+Milestone branches are cut from `main`. Release N merges to `main` when done, then
+Release N+1 is (re)based on the updated `main`, so later Releases build on earlier ones.
+If you cut all Release branches at promotion, **rebase** a later one onto `main` after the
+prior Release merges.
 
-Branch names carry the Linear issue id (use **Copy git branch name**:
-`<issue-id>-<slug>`), so:
+## Status automation (Linear ↔ GitHub)
 
-- branch created → **In Progress**
-- PR opened → **In Review**
-- PR merged → **Done**
-
-Works regardless of PR base, so story PRs targeting `feature/<slug>` still drive the
-sub-issue's status. The feature branch's own PR into `main` drives the Project to
-done when merged.
+Branch names carry the issue id → branch = In Progress, PR = In Review, merge = Done. The
+**story PR** drives the story's status; closing all of a Release's stories advances the
+Release milestone; merging the Release branch to `main` is the ship.
 
 ## Review in Linear
 
-PRs surface in Linear with changed files, checks, and comments kept in sync with
-GitHub ([diffs](https://linear.app/docs/diffs)): unified/split views, inline comments,
-and **approve + merge directly from Linear**. This is the coordination surface that
-justified dropping the local-only refinery model.
+The **story PR** is the review unit ([diffs](https://linear.app/docs/diffs)) — changed
+files, checks, inline comments, approve + merge from Linear. One coherent PR per story
+beats many tiny task PRs.
 
-## cyrus `baseBranch` caveat (important)
+## cyrus `baseBranch` caveat
 
-cyrus's `baseBranch` is configured **per-repository, not per-project**, and its
-worktree is cut from that base. To get per-project feature branches, the deliver
-session must branch off / target `feature/<slug>` rather than `main`. Options:
-
-1. **Instruct in-context (preferred):** the project doc / issue template states the
-   feature branch name and tells the session to base its branch on it and open the PR
-   **into** `feature/<slug>`. The agent sets the PR base accordingly.
-2. **Retarget after the fact:** let cyrus base on `main`, then change the PR base to
-   `feature/<slug>` in GitHub/Linear. Cheap but manual.
-
-Create `feature/<slug>` **before** delegating the first story of a project (a
-project-kickoff step), so every task branch has a base to target.
+cyrus's `baseBranch` is global (`main`). A story's deliver session must **base its
+worktree on, and open its PR into, the Release branch** `<feature>/<release>` — state this
+in the story's `## Delivery` section and the deliver comment. Create the Release branch
+(main session) before delivering the first story of that Release.

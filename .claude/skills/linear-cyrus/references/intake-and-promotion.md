@@ -13,13 +13,13 @@ Proposals project
         │   [main session] PROMOTE
         ▼
   New Feature project
-    + git feature/<slug> branch
-    + Release milestones (from the discuss release-slicing)
+    + Release milestones (from the discuss release-slicing) + a git <slug>/<release> branch each
     + stories moved in (on their Release milestone, wave:distill)
-        │   per story: delegate dc-cyrus → nw-distill  → task sub-issues (wave:deliver)
-        │   per task:  delegate dc-cyrus → nw-deliver  → PR into feature branch
+        │   per story: assign dc-cyrus → nw-distill → Skeleton task + impl tasks (wave:deliver)
+        │   review breakdown → relabel story wave:deliver → @mention comment
+        │   → ONE builder session delivers the whole story → ONE story PR into the Release branch
         ▼
-     review + merge in Linear; Release done → feature branch → main
+     review + merge story PRs in Linear; Release done → <slug>/<release> → main (no PR)
 ```
 
 ## Division of labor (set by tool capability)
@@ -27,7 +27,7 @@ Proposals project
 | Actor | Linear MCP | Owns |
 |---|---|---|
 | **dc-cyrus** | issue-only (`create_issue`/`update_issue`/`get_issue`/`save_comment`) | the **waves** in-session: `nw-discuss` (→ stories), `nw-distill` (→ tasks), `nw-deliver` (→ code) |
-| **main-session assistant** | full (`save_project`, `save_milestone`, `save_issue`) | the **structure**: create/manage projects + Release milestones, **promotion**, cut the feature branch |
+| **main-session assistant** | full (`save_project`, `save_milestone`, `save_issue`) | the **structure**: create/manage projects + Release milestones + their git branches, **promotion** |
 
 **cyrus thinks; the main session structures.** cyrus literally can't create projects or
 milestones (no tools for it — that's why DC-6 came back with no project/milestone), so
@@ -41,14 +41,19 @@ it via the full Linear MCP:
 1. `save_project` — create the Feature project (name = feature slug, team = DC), seed
    the description from the proposal.
 2. `save_milestone` (×N) — create the Release milestones from the discuss release-slicing
-   (`Release 1` = walking skeleton).
+   (`Release 1` = the first / thinnest increment — NOT a "walking skeleton"; that's the
+   per-story Skeleton task).
 3. `save_issue` (per story) — **move** the existing story sub-issues into the Feature
    project + their Release milestone (pass `id` to move, so IDs/history/comments
    survive — do NOT recreate), set `wave:distill` + `area:*`.
-4. Cut the git branch: `git branch feature/<slug> main && git push -u origin …`.
+4. Cut a git branch **per Release**: `git branch <slug>/release-1 main && git push -u
+   origin <slug>/release-1` (story PRs target it; later Releases rebase on `main` after
+   the prior one merges — see `branching-and-merge.md`).
 5. Leave the original proposal issue in Proposals as the record (link or close it).
 
-Then hand each story to dc-cyrus (`nw-distill`), and each resulting task (`nw-deliver`).
+Then per story: assign dc-cyrus (`nw-distill`) to decompose, review, relabel
+`wave:deliver`, and @mention a comment to deliver the whole story in one session (see
+`story.md`).
 
 ## When to skip the funnel
 

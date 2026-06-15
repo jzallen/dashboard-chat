@@ -17,9 +17,10 @@ each labeled `wave:discuss`. No milestones live here.
 
 A **Feature project** = one nwave **feature**. Created at **promotion** time, it owns:
 
-- a git **`feature/<slug>` branch** (cut from `main`),
-- **Release milestones** (see `milestone.md`),
-- the promoted **stories** (moved in from the proposal, labeled `wave:distill`).
+- **Release milestones**, each with its own git **`<slug>/<release>` branch** (see
+  `milestone.md` + `branching-and-merge.md`) — there's no single feature branch,
+- the promoted **stories** (moved in from the proposal, labeled `wave:distill`,
+  assigned to a Release).
 
 The project description holds the brief; the stories carry the detail.
 

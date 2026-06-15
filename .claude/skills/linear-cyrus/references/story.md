@@ -1,47 +1,50 @@
 # Story level
 
-A **story** = an nwave user story (a DISCUSS output). In Linear it's an **issue** in a
-Feature project, assigned to a **Release** milestone, labeled **`wave:distill`** + an
-`area:*`. (Stories are created during DISCUSS and moved into the Feature project at
-promotion.)
+A **story** = an nwave user story. In Linear it's an **issue** in a Feature project,
+assigned to a **Release** milestone. Its `wave:*` label is a **phase flag**:
 
-## Action: `nw-distill` (orchestrator mode) — decompose into tasks
+| Story label | Phase | A session on the story runs as |
+|---|---|---|
+| `wave:distill` | awaiting breakdown | **orchestrator** (coordinator — reads code, creates sub-issues, **no code edits**) |
+| `wave:deliver` | breakdown approved, building | **builder** (`all` tools — implements) |
 
-Delegate dc-cyrus on a story → it reads the real code and **decomposes the story into
-work tasks** (sub-issues). It writes **no code** (coordinator tools). One story → its
-own set of task sub-issues.
+The session mode comes from the **story's** label, *not* the sub-issues' — so the label
+**is** how you move the story from planning to building.
 
-## Each task is created with this contract
+## Phase 1 — distill (story is `wave:distill`)
 
-The orchestrator's `create_issue` for every task sub-issue:
+Assign dc-cyrus → it reads the real code and **decomposes the story into task
+sub-issues** (writes no code). It creates:
 
-- `parentId` = the story.
-- `project` = the Feature project. (Set it explicitly — the API does not auto-inherit;
-  only the UI editor does.)
-- **No `milestone`** — cyrus's `create_issue` can't set one, and we don't need it:
-  milestone progress is tracked at the story level (see `milestone.md`).
-- `state` = `"To Do"` (never Triage).
-- `labels` = `wave:deliver` + the story's `area:*` (optionally `test:unit` /
-  `test:integration` descriptors).
+- a **Skeleton task first** (`skeleton-task.md`) — scaffold + signatures + RED tests;
+- then **implementation tasks**, each one AC, **`blocked by`** the skeleton task.
 
-## Acceptance criteria are a CHECKLIST (not grandchild issues)
+Each task `create_issue`: `parentId` = the story, `project` = the Feature project,
+labels `wave:deliver` + the story's `area:*`, `state: "To Do"`, and an **AC checklist** in
+its description. (No `milestone` — tracked at story level.)
 
-A task's spec lives as a **markdown checklist in the task's description** — each checkbox
-is a test the builder writes as an atomic commit (see `task.md`). No separate "test
-case" issues. A good task (DC-6 is the exemplar):
+It ends the **story description** with a short **`## Delivery`** section: base on / PR
+into `<feature>/<release>`, iterate sub-tasks in order (skeleton first), mark each Done,
+one story PR.
 
-- **PR target branch** stated (`feature/<slug>`, not `main`).
-- **Objective** — tightly scoped; list what's already built and must NOT be re-done.
-- **Context** — the **driving port** (entry point the behavior runs through), the
-  **reference pattern** to mirror, and any **design tension** named as a guarded hazard.
-- **Acceptance Criteria** — the checklist. Each item is **port-to-port** (names the
-  driving port), covers **error/edge paths** (not just happy path), and says what to
-  assert concretely enough to write the test from.
-- **Dependencies** — Linear "blocked by" links, or "none".
-- **Technical Notes** — exact files, the run command, a verification block.
+## Phase 2 — deliver (you relabel the story `wave:deliver`)
+
+When you're satisfied with the breakdown:
+
+1. **Relabel the story `wave:distill` → `wave:deliver`.** (Mode is label-driven, so this
+   flips a session on the story into builder mode — without it, the next session would
+   run read-only and couldn't implement.)
+2. **@mention dc-cyrus in a story comment:** "iterate the sub-tasks in order, `nw-deliver`
+   each, mark each sub-issue Done as you go; skeleton first; one PR into
+   `<feature>/<release>`."
+
+That mints **one builder session** on the story. In its single worktree it works through
+the sub-tasks — skeleton (RED tests land) then implementation (RED → green, **one atomic
+commit per AC checkbox**), marking each sub-issue Done — and opens **one story PR** into
+the Release branch. Sub-issues are the **plan**, never individually delegated.
 
 ## Iron Rule
 
-The checklist is the spec. A deliver session may NOT weaken or delete a checkbox to go
-green. If an item can't be met, it stays unchecked and the task stays open. After 3
-failed attempts on one item, revert and escalate (`needs-human`).
+The AC checklists are the spec. A deliver session may NOT weaken or delete a checkbox to
+go green. Unmet → the box stays unchecked, the sub-issue stays open, the story PR isn't
+ready. After 3 failed attempts on one item, revert and escalate (`needs-human`).
