@@ -63,7 +63,7 @@ import type {
 const log = createLogger("catalog");
 
 const modelKindForLayer = (layer: Layer): ModelKind | undefined =>
-  ({ staging: "dataset", intermediate: "view", mart: "report" } as const)[
+  (({ staging: "dataset", intermediate: "view", mart: "report" }) as const)[
     layer as "staging" | "intermediate" | "mart"
   ];
 
@@ -260,7 +260,11 @@ export async function createDataCatalog(
     }
     if (primary.getNodes && primary.getEdges && primary.getAudit) {
       tasks.push(
-        Promise.all([primary.getNodes(), primary.getEdges(), primary.getAudit()])
+        Promise.all([
+          primary.getNodes(),
+          primary.getEdges(),
+          primary.getAudit(),
+        ])
           .then(([n, e, a]) => {
             if (!stillCurrent()) return;
             const rebuilt = LineageGraph.from(n, e, a);
@@ -649,6 +653,17 @@ export async function createDataCatalog(
      * fallback). Safe to call repeatedly.
      */
     refreshOrgGlobal: (): Promise<void> => revalidateOrgGlobal(),
+
+    /**
+     * Seed the org-global payloads (projects + org) from data already fetched
+     * elsewhere. Where {@link refreshOrgGlobal} fetches client-side, this commits
+     * values resolved server-side (the app-shell loader's), so real projects
+     * replace the fixture seed without a second round-trip. One commit, one
+     * version bump.
+     */
+    seedOrgGlobal: (projects: ProjectSummary[], org: OrgSettings): void => {
+      commit({ projects, org });
+    },
 
     /* ─── project re-scope (project-in-path) ─────────────────────────────── */
     /**

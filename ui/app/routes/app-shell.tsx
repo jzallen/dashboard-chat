@@ -12,11 +12,31 @@
      by root.tsx). */
 import { useSelector } from "@xstate/react";
 import { useCallback, useEffect, useMemo } from "react";
-import { Navigate, Outlet, useLocation } from "react-router";
+import {
+  type LoaderFunctionArgs,
+  Navigate,
+  Outlet,
+  redirect,
+  useLoaderData,
+  useLocation,
+} from "react-router";
 
 import { hasSession } from "../auth/tokenStorage";
-import type { Edge, LineageNode } from "../catalog";
+import type {
+  Edge,
+  LineageNode,
+  OrgSettings,
+  ProjectSummary,
+} from "../catalog";
 import { apiGet, apiPost } from "../catalog/dataSources/backendClient";
+import {
+  type BackendOrg,
+  type BackendProject,
+  toOrgSettings,
+  toProjectSummary,
+  unwrapList,
+  unwrapSingle,
+} from "../catalog/dataSources/metadataMappers";
 import { Overlays } from "../components/AppShell/Overlays";
 import { useTheme } from "../components/AppShell/ThemeProvider";
 import { Topbar } from "../components/AppShell/Topbar";
@@ -25,7 +45,12 @@ import { useExport } from "../components/Export";
 import { useFlashedNode } from "../components/FlashedNodeProvider";
 import { LoadingSurface } from "../components/LoadingSurface/LoadingSurface";
 import { useUpload } from "../components/Upload";
-import { catalog, refreshOrgGlobal, useCatalog } from "../components/useCatalog";
+import { catalog, seedOrgGlobal, useCatalog } from "../components/useCatalog";
+import {
+  apiFetch,
+  ApiUnauthenticatedError,
+  assertAuthenticated,
+} from "../lib/api-client";
 import { ChatProvider } from "../lib/chatContext";
 import { createLogger } from "../lib/log";
 import { useNavIntents } from "../lib/nav";
@@ -41,16 +66,51 @@ const defaultClient: OnboardingClient = {
   post: (path, body) => apiPost(path, body),
 };
 
-// The first authenticated entry point: fetch the real org-global payloads
-// (projects/org) so they replace the fixture seed before any child route (the
-// home redirect, the project layout) reads them. Gated on the session flag so it
-// never fires during the unauthenticated login round-trip. Runs once —
-// shouldRevalidate returns false (org-global data doesn't change with navigation).
-export async function clientLoader() {
-  if (hasSession()) await refreshOrgGlobal();
-  return null;
+/** The org-global payload the server loader returns for the initial document. */
+export interface OrgGlobalData {
+  projects: ProjectSummary[];
+  org: OrgSettings;
 }
 
+/**
+ * Fetch the org-global payloads — the project list and org settings — server-side
+ * so the chrome renders with real projects/org in the initial document rather
+ * than fetching them after hydration. The component seeds the catalog from this
+ * via `useLoaderData()`.
+ *
+ * Reaches the backend through the server `/api` client (the cookie→Bearer hop),
+ * which returns the raw upstream Response — so each body is read and unwrapped
+ * from its JSON:API envelope here, then mapped to the catalog DTOs. An
+ * unauthenticated (401) response becomes a redirect to /login rather than a
+ * client-surfaced error.
+ */
+export async function loader({
+  request,
+}: LoaderFunctionArgs): Promise<OrgGlobalData> {
+  let projectsRes: Response;
+  let orgRes: Response;
+  try {
+    [projectsRes, orgRes] = await Promise.all([
+      apiFetch(request, "/projects").then(assertAuthenticated),
+      apiFetch(request, "/orgs/me").then(assertAuthenticated),
+    ]);
+  } catch (err) {
+    if (err instanceof ApiUnauthenticatedError) throw redirect("/login");
+    throw err;
+  }
+
+  const projects = unwrapList<BackendProject>(await projectsRes.json()).map(
+    toProjectSummary,
+  );
+  const org = toOrgSettings(unwrapSingle<BackendOrg>(await orgRes.json()));
+  return { projects, org };
+}
+
+/**
+ * Org-global data (projects, org settings) does not change with in-app
+ * navigation, so the loader runs once per document load and is never
+ * revalidated — re-fetching it on every navigation would be redundant.
+ */
 export function shouldRevalidate() {
   return false;
 }
@@ -92,7 +152,12 @@ function Chrome() {
   return (
     <div className={rootClassName + (orgOpen ? " org-open" : "")}>
       <div className="main">
-        <Topbar upload={upload} exporter={exporter} cold={cold} models={models} />
+        <Topbar
+          upload={upload}
+          exporter={exporter}
+          cold={cold}
+          models={models}
+        />
         <div className="content">
           <div className="frame">
             <Outlet context={{ onOpenNode }} />
@@ -191,6 +256,14 @@ export default function AppShell({
   /** Test seam: inject the Phase-B probe's HTTP port; defaults to the backend. */
   client?: OnboardingClient;
 }) {
+  // Seed the catalog from the loader's org-global payload so child routes (the
+  // home redirect, the project layout) read real projects/org rather than the
+  // fixture seed. Undefined when the route carries no loader — then it's a no-op.
+  const data = useLoaderData() as OrgGlobalData | undefined;
+  useEffect(() => {
+    if (data) seedOrgGlobal(data.projects, data.org);
+  }, [data]);
+
   if (!hasSession()) return <Navigate to="/login" replace />;
   return <OnboardingGate client={client} />;
 }
