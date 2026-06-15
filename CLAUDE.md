@@ -155,6 +155,10 @@ npm run dev                          # start all services
   delimited by a line like `IF YOU'RE AN AGENT, READ THIS:`. Keep it short and use it
   for rules (e.g. "tests are the spec — don't weaken assertions"), never for running
   commentary. Human-facing description goes above it.
+- Code prose is **timeless**: never put ticket/issue IDs, branch names, PR numbers,
+  "decision #N" references, or change-history narration in comments, docstrings, or test
+  names — those live in git history and the linked issue. State the *reason*, not where
+  it was decided. See the [`docstrings`](.claude/skills/docstrings/SKILL.md) skill.
 
 ## Domain Modeling (TS: `type` / `interface` / `class` / Zod)
 
