@@ -6,14 +6,22 @@ Dashboard Chat — full-stack web app for chat-driven data table operations. Use
 
 ## Architecture
 
+> **⚠️ READ FIRST — `frontend/` was REMOVED 2026-06-15 in favor of `ui/`.** `ui/` is the
+> canonical frontend source tree (RRv7 framework mode under `ui/app/`). The old
+> `frontend/` tree no longer exists in the working tree — to compare against the old
+> implementation, use git history (it was last present at the commit before its removal).
+> **When planning or doing any frontend work, read `ui/`, never `frontend/`.** Note: some
+> docker/compose/Bazel/`package.json`-workspaces wiring still names `frontend/`; that is
+> known-dangling and intentionally not yet repointed.
+
 Source-tree directories are named for the **body of source they contain**. Docker-compose service names are named for the **runtime role of the container**. The two layers are decoupled (ADR-033). When they differ, the divergence is intentional and the source-tree name is the canonical reference.
 
-- **Frontend** (`frontend/`) — React 18 + React Router v7 source tree. RRv7 framework mode lives under `frontend/app/` (`root.tsx` + `routes.ts` + `lib/` + `routes/`) per ADR-034; the SPA hydration entry is `frontend/main.tsx` mounting `<HydratedRouter />`. The same source body produces TWO compose-service-bound OCI images via `frontend/BUILD.bazel`: (1) **`reverse-proxy`** — nginx serving `dist/client/` static + routing `/api/*`, `/worker/*`, `/api/channels/:id/presentation-state`, `/health`, `/assets/*`, and proxying all other paths to (2) **`web-ssr`** — Hono container hosting the RRv7 SSR request handler. Source-tree / compose-topology separation per ADR-033 + ADR-034; `ui-presentation/` was dissolved at MR-0 and its scaffolds migrated into `frontend/app/routes/` (DWD-4).
+- **Frontend** (`ui/`) — React 18 + React Router v7 source tree; RRv7 framework mode lives under `ui/app/` (`root.tsx` + `routes.ts` + `lib/` + `routes/` + `catalog/` + `components/`). The old `frontend/` tree (which produced the `reverse-proxy` nginx + `web-ssr` Hono images via `frontend/BUILD.bazel`, per ADR-033/034) was removed 2026-06-15; its build/compose wiring is not yet repointed to `ui/`.
 - **UI-State** (`ui-state/`) — Hono + XState v5 actor system holding flow state across machines (ADR-027/028/030). Architecturally a **backend-for-frontend service** (Hono + Redis), sibling of `agent/` and `auth-proxy/`; named for its consumer surface rather than its layer. Redis key prefix `ui-state:`.
 - **Backend** (`backend/`) — FastAPI + SQLAlchemy (async) + DuckDB + Alembic migrations
 - **Agent** (`agent/`) — Hono (Node.js) chat API with SSE streaming via Groq
 - **Auth-Proxy** (`auth-proxy/`) — Hono ingress: JWT verification, M2M token mint, identity-header injection, multi-upstream routing
-- **Shared** (`shared/chat/`) — Single source of truth for the chat event schema (`@dashboard-chat/shared-chat`); imported by both `agent/` and `frontend/`. Future cross-cutting chat types/handlers/prompts go here.
+- **Shared** (`shared/chat/`) — Single source of truth for the chat event schema (`@dashboard-chat/shared-chat`); imported by both `agent/` and `ui/`. Future cross-cutting chat types/handlers/prompts go here.
 
 ## Development Methodology — nwave-ai waves
 

@@ -1,9 +1,0 @@
-/* AppShell layout styles */
-
-.shell {
-  @apply flex h-screen bg-surface-secondary;
-}
-
-.viewWindow {
-  @apply flex-1 flex flex-col overflow-hidden;
-}
