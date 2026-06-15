@@ -5,6 +5,22 @@ description: Use when running tests for specific files or modules. Maps source f
 
 # Test-Driven Development — Targeted Test Execution
 
+## Read first — rules and practices
+
+Before writing or refactoring tests, read the references in
+[`references/`](references/) — they hold the conventions to follow, not just how to run
+tests:
+
+- [`references/general_rules_for_testing.md`](references/general_rules_for_testing.md) —
+  test-as-specification, docstrings over comment diaries, one aggregate assertion per
+  test, building expected values from literals (not the input's fixtures), builders for
+  repeated construction, and pytest helper-naming/fixture rules.
+- [`references/aws.python.md`](references/aws.python.md) — mocking `boto3` with the
+  `botocore` Stubber: client injection, queuing responses, asserting request params, and
+  `assert_no_pending_responses()`.
+
+Add new reference files here as more specific guidance emerges.
+
 ## Workflow
 
 Before editing any source file:

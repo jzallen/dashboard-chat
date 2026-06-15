@@ -135,6 +135,19 @@ npm run dev                          # start all services
 - **TypeScript**: strict mode, Prettier
 - **Python**: Black, type hints throughout
 
+### Docstrings over comment diaries
+
+- Prefer well-formatted docstrings on **modules, classes, and functions** to explain
+  intent, behavior, and contracts. Reach for a docstring first; reach for an inline
+  comment only for a genuinely non-obvious local detail.
+- Do **not** narrate code with a running diary of inline comments. Let the code (and
+  for tests, the assertions) carry the meaning. In tests especially, the test *is* the
+  spec — drop step-by-step `# Behavior N:` style comments.
+- Module/file-level docstrings may carry an **agent section** for agent process rules,
+  delimited by a line like `IF YOU'RE AN AGENT, READ THIS:`. Keep it short and use it
+  for rules (e.g. "tests are the spec — don't weaken assertions"), never for running
+  commentary. Human-facing description goes above it.
+
 ## Domain Modeling (TS: `type` / `interface` / `class` / Zod)
 
 When modeling a concept, the **hexagonal layer** + the **DDD building block** pick the
