@@ -3,7 +3,7 @@
 #
 # Usage:
 #   bazel run //tools/test -- --backend           # backend pytest
-#   bazel run //tools/test -- --backend --ui      # backend + frontend
+#   bazel run //tools/test -- --backend --ui      # backend + ui
 #   bazel run //tools/test -- --all               # backend + ui + agent
 #   bazel run //tools/test -- --backend --integration   # include integration suite
 #   bazel run //tools/test -- --acceptance=<feature>    # one acceptance suite
@@ -14,7 +14,7 @@
 #   --backend       cd backend && (ruff check + ruff format --check) then
 #                   pytest -x --tb=short [--ignore=tests/integration]
 #                   (lint runs first; tests skip if lint fails)
-#   --ui            cd frontend && npx vitest run
+#   --ui            cd ui && npx vitest run
 #   --ui-state      cd ui-state && npx vitest run
 #   --agent         npm run test:agent
 #   --all           shorthand for --backend --ui --ui-state --agent
@@ -25,7 +25,7 @@
 #                     docs-only diff             → skip (exit 0)
 #                     touches backend/           → --backend
 #                     touches ui-state/          → --ui-state
-#                     touches frontend/          → --ui
+#                     touches ui/                → --ui
 #                     touches agent/             → --agent
 #                     touches shared/ or other   → --backend (safe default)
 #                   Multiple subtrees compose: a diff touching both
@@ -109,7 +109,7 @@ if [ $auto -eq 1 ]; then
           auto_docs_only=0
           ui_state=1
           ;;
-        frontend/*)
+        ui/*)
           auto_docs_only=0
           ui=1
           ;;
@@ -194,7 +194,7 @@ fi
 
 if [ $ui -eq 1 ] && [ $rc -eq 0 ]; then
   echo "▶ ui"
-  ( cd frontend && npx vitest run ) || rc=$?
+  ( cd ui && npx vitest run ) || rc=$?
 fi
 
 if [ $agent -eq 1 ] && [ $rc -eq 0 ]; then
