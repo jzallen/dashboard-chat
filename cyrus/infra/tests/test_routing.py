@@ -5,9 +5,9 @@ extractor returns the ``_unrouted`` sentinel so the handler never drops an event
 The load-bearing invariant is opaqueness: extraction must read a COPY of the body
 and leave the caller's bytes untouched.
 
-IF YOU'RE AN AGENT, READ THIS: the tests are the spec and are RED by design —
-``extract_routing_key`` is a scaffold raising ``AssertionError``. DC-31 turns it
-green WITHOUT mutating the input bytes. Do not weaken the byte-identity assertion.
+IF YOU'RE AN AGENT, READ THIS: the tests are the spec. ``extract_routing_key``
+reads the creator id WITHOUT mutating the input bytes. Do not weaken the
+byte-identity assertion.
 """
 
 from __future__ import annotations
@@ -17,10 +17,6 @@ import json
 from conftest import CREATOR_ID, routable_body  # noqa: F401 — used as a fixture
 
 import routing
-
-
-def test_module_is_marked_as_scaffold():
-    assert routing.__SCAFFOLD__ is True
 
 
 def test_extracts_creator_id_as_the_routing_key():
