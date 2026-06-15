@@ -1,16 +1,15 @@
-// Server-side authenticated `/api` client, reached through auth-proxy's `/api/*`
-// prefix. Runs ONLY in RRv7 server loaders/actions (the ui/ BFF) — the
-// cookie→Bearer hop for the backend `/api` upstream, sibling of the agent's
-// `/worker` hop (`agent-client.ts`). Both share the one forwarding primitive in
-// `proxy-fetch.ts` (decision #4) — no duplicated cookie-copy logic.
-//
-// `apiFetch` returns the raw upstream Response (no body read, no
-// `credentials:"include"` browser fetch). On a 401 the route can surface an
-// unauthenticated signal it turns into a `/login` redirect — see
-// `ApiUnauthenticatedError` / `assertAuthenticated`.
-//
-// SKELETON (DC-16): signatures only. The impl tasks (DC-18 AC1, DC-19 AC2) fill
-// these in over the shared primitive.
+/**
+ * Server-side authenticated `/api` client, reached through auth-proxy's `/api/*`
+ * prefix. Runs ONLY in RRv7 server loaders/actions (the ui/ BFF) — the cookie→Bearer
+ * hop for the backend `/api` upstream, sibling of the agent's `/worker` hop
+ * ({@link agentFetch}). Both share the one forwarding primitive {@link proxyFetch} —
+ * no duplicated cookie-copy logic.
+ *
+ * {@link apiFetch} returns the raw upstream Response (no body read, no
+ * `credentials:"include"` browser fetch). On a 401 the route surfaces an
+ * unauthenticated signal it turns into a `/login` redirect — see
+ * {@link ApiUnauthenticatedError} / {@link assertAuthenticated}.
+ */
 import { proxyFetch, type ProxyFetchOptions } from "./proxy-fetch";
 
 /** The prefix auth-proxy strips before proxying to the backend `/api` upstream. */
@@ -18,7 +17,7 @@ const API_PREFIX = "/api";
 
 /**
  * Thrown when an `/api` call comes back 401. A loader catches it and turns it into
- * a redirect to `/login` (the unauthenticated signal — AC2).
+ * a redirect to `/login` — the unauthenticated signal.
  */
 export class ApiUnauthenticatedError extends Error {
   constructor(message = "Unauthenticated: auth-proxy returned 401") {

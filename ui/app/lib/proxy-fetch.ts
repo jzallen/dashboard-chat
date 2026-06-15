@@ -1,17 +1,16 @@
-// The ONE shared server-side forwarding primitive (decision #4): both downstream
-// hops — the agent's `/worker/*` (`agent-client.ts`) and the new `/api/*`
-// (`api-client.ts`) — proxy through auth-proxy via this single function, so the
-// cookie→Bearer credential-forwarding logic lives in exactly one place.
-//
-// Runs ONLY in RRv7 server loaders/actions (the ui/ BFF). It reads the inbound
-// USER credential off the Request (`cookie` + `authorization`) and FORWARDS it to
-// auth-proxy, which re-verifies the session and injects X-User-Id / X-Org-Id
-// downstream. The raw upstream Response is returned unmodified (no body read) so
-// the caller decides how to consume it.
-//
-// SKELETON (DC-16): signatures only. `proxyFetch` is stubbed and throws; the impl
-// task (DC-17, AC3) lifts the real forwarding logic here from `agent-client.ts`
-// and refactors `agentFetch` onto it.
+/**
+ * proxyFetch — the one shared server-side credential-forwarding primitive. Both
+ * downstream hops — the agent's `/worker/*` ({@link agentFetch} in
+ * `agent-client.ts`) and the backend's `/api/*` ({@link apiFetch} in
+ * `api-client.ts`) — proxy through auth-proxy via this single function, so the
+ * cookie→Bearer forwarding logic lives in exactly one place.
+ *
+ * Runs ONLY in RRv7 server loaders/actions (the ui/ BFF): it reads the inbound
+ * USER credential off the Request (`cookie` + `authorization`) and forwards it to
+ * auth-proxy, which re-verifies the session and injects X-User-Id / X-Org-Id
+ * downstream. The raw upstream Response is returned unmodified (no body read) so
+ * the caller decides how to consume it.
+ */
 
 /** The auth-proxy origin. In dev (vite) this is http://localhost:1042; in compose
  *  it is the in-network auth-proxy service. Read lazily (not at module-eval) so a
@@ -60,7 +59,10 @@ export async function proxyFetch(
 ): Promise<Response> {
   const { method = "GET", body = null, headers, timeoutMs } = options;
   const url = new URL(`${prefix}${path}`, authProxyUrl());
-  const outboundHeaders = withForwardedCredential(request, new Headers(headers));
+  const outboundHeaders = withForwardedCredential(
+    request,
+    new Headers(headers),
+  );
 
   const init: RequestInit = { method, headers: outboundHeaders };
   if (body !== null) init.body = body;
