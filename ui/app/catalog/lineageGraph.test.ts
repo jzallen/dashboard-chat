@@ -194,6 +194,37 @@ describe("LineageGraph — archive / restore", () => {
   });
 });
 
+describe("LineageGraph — withColdStorageFrom (carry cold across a rebuild)", () => {
+  it("carries the prior cold store onto a freshly-rebuilt graph", () => {
+    // The prior graph has src.orders archived; the rebuilt graph (server truth
+    // after the soft-delete) no longer lists it as active and starts cold-empty.
+    const prior = makeGraph().archive("src.orders", 1000);
+    const rebuilt = LineageGraph.from(
+      { "mart.revenue": NODES["mart.revenue"] },
+      [],
+      {},
+    );
+
+    const merged = rebuilt.withColdStorageFrom(prior);
+
+    expect(merged.coldStorage().map((c) => c.id)).toEqual(["src.orders"]);
+    expect(merged.getNode("src.orders")).toBeUndefined(); // still not active
+  });
+
+  it("drops a carried cold record whose id is active in the rebuilt graph (active wins)", () => {
+    // Server truth says src.orders is live again → it must not also sit in cold.
+    const prior = makeGraph().archive("src.orders", 1000);
+    const rebuilt = makeGraph(); // active DAG includes src.orders
+
+    expect(rebuilt.withColdStorageFrom(prior).coldStorage()).toEqual([]);
+  });
+
+  it("is a referential no-op when nothing is carried over", () => {
+    const rebuilt = makeGraph();
+    expect(rebuilt.withColdStorageFrom(makeGraph())).toBe(rebuilt);
+  });
+});
+
 describe("LineageGraph — immutability", () => {
   it("reducers return a new instance and never mutate the receiver", () => {
     const graph = makeGraph();

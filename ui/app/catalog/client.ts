@@ -196,11 +196,14 @@ export async function createDataCatalog(
    *
    * Note: because this builds a fresh graph, per-project working mutations
    * (rename/archive/live-add) and cold storage reset on switch — correct, since
-   * they're per-project.
+   * they're per-project. The one exception is `preserveCold`: a same-scope,
+   * write-triggered revalidation (the revalidate-after-archive) carries the
+   * current cold-storage store forward so the just-archived node is not evicted
+   * from the Cold Storage drawer by the fresh-graph rebuild.
    */
   const revalidateScoped = async (
     requestedPid: string,
-    opts?: { fresh?: boolean },
+    opts?: { fresh?: boolean; preserveCold?: boolean },
   ): Promise<void> => {
     // A write-triggered revalidation must see fresh server state, so drop the
     // source's per-project cache first. A project SWITCH leaves it cached (SWR).
@@ -260,7 +263,12 @@ export async function createDataCatalog(
         Promise.all([primary.getNodes(), primary.getEdges(), primary.getAudit()])
           .then(([n, e, a]) => {
             if (!stillCurrent()) return;
-            commit({ graph: LineageGraph.from(n, e, a) });
+            const rebuilt = LineageGraph.from(n, e, a);
+            commit({
+              graph: opts?.preserveCold
+                ? rebuilt.withColdStorageFrom(snapshot.graph)
+                : rebuilt,
+            });
           })
           .catch((err) =>
             log.warn("read.lineage.failed", {
@@ -432,6 +440,13 @@ export async function createDataCatalog(
      * instant feedback, then POST the soft-delete via `primary.archiveModel`
      * (datasets only; other kinds no-op server-side); on rejection, restore it.
      * Source-layer nodes have no backend entity, so they stay local-only.
+     *
+     * On success, revalidate the scoped project (mirrors {@link toggleAudit}) so
+     * the derived views (lineage/preview/staging SQL) refetch from server truth.
+     * The revalidation passes `preserveCold` so the fresh-graph rebuild does NOT
+     * evict the just-archived node from the Cold Storage drawer, and is fenced
+     * by a captured-pid guard so a project switch mid-flight drops the stale
+     * commit against the superseded scope.
      */
     archiveSource: async (src: LineageNode): Promise<void> => {
       const archived = snapshot.graph.archive(src.id, Date.now());
@@ -440,10 +455,19 @@ export async function createDataCatalog(
 
       const kind = modelKindForLayer(src.layer);
       if (!primary.archiveModel || kind === undefined) return; // local-only
+      const requestedPid = currentScopedPid;
       log.info("write.archive", { id: src.id, kind });
       try {
         await primary.archiveModel(src.id, kind);
         log.debug("write.archive.ok", { id: src.id });
+        // Revalidate only if still on the project the archive targeted; fresh so
+        // derived views re-fetch, preserveCold so the drawer keeps the node.
+        if (requestedPid !== undefined && requestedPid === currentScopedPid) {
+          await revalidateScoped(requestedPid, {
+            fresh: true,
+            preserveCold: true,
+          });
+        }
       } catch (err) {
         log.warn("write.archive.rollback", { id: src.id, err: String(err) });
         commit({ graph: snapshot.graph.restore(src.id) });
