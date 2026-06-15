@@ -21,16 +21,23 @@ A **Feature project** = one nwave **feature**. Created at **promotion** time, it
 
 - **Release milestones**, each with its own git **`<slug>/<release>` branch** (see
   `milestone.md` + `branching-and-merge.md`) — there's no single feature branch,
-- the promoted **stories** (moved in from the proposal, labeled `wave:distill`,
-  assigned to a Release).
+- the promoted **stories** (created at promotion from the discuss analysis, labeled
+  `wave:distill`, assigned to a Release).
 
 The project description holds the brief; the stories carry the detail.
 
-## Who creates/manages projects
+## Who creates what
 
-**The main-session assistant**, not cyrus. cyrus's built-in Linear MCP is **issue-only**
-(`create_issue`/`get_issue`/`update_issue`/`save_comment`) — it **cannot** create
-projects or milestones. The main session has the full Linear MCP (`save_project`,
-`save_milestone`, `save_issue`), so all project/milestone structure — and the promotion —
-is done from the main session. **cyrus thinks (waves); the main session structures.**
-See `intake-and-promotion.md`.
+cyrus's built-in Linear MCP is **issue-only** (`create_issue` / `get_issue` /
+`update_issue` / `save_comment`), so the split is by Linear level:
+
+| Level | Creator |
+|---|---|
+| Project, Release milestones (+ their git branches) | **main session** (full MCP: `save_project`/`save_milestone`) |
+| **Stories** | **main session**, at promotion (from the discuss analysis) |
+| **Task sub-issues** | **dc-cyrus**, during **`nw-distill`** — it *does* create the Skeleton task + impl sub-issues (orchestrator/coordinator mode, `create_issue`) |
+
+So cyrus **can and does** create issue-level structure (the task sub-issues at distill);
+it just **cannot** create projects or milestones, and in `nw-discuss` (read-only mode) it
+can't create any issues. **cyrus thinks (waves) + creates the task sub-issues; the main
+session creates the project/milestone/story scaffolding.** See `intake-and-promotion.md`.

@@ -24,7 +24,9 @@ gastown merge queue (retired 2026-06-15; parked in `.claude/retired-skills/gasto
 **cyrus thinks; the main session structures.** Tool-enforced:
 
 - **dc-cyrus** has an **issue-only** Linear MCP → runs the **waves** (`nw-discuss`,
-  `nw-distill`, `nw-deliver`); **cannot** create projects or milestones.
+  `nw-distill`, `nw-deliver`). It **does create the task sub-issues** during `nw-distill`
+  (`create_issue`); it **cannot** create projects or milestones (and creates no issues in
+  read-only `nw-discuss`).
 - The **main-session assistant** has the **full** Linear MCP (`save_project`,
   `save_milestone`, `save_issue`) → owns **structure**: projects, Release milestones +
   their git branches, **promotion**.
