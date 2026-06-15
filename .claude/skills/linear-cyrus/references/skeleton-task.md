@@ -24,6 +24,10 @@ exactly like a single-session TDD flow has a transient RED phase before green.
 
 ## Where it sits
 
+- **On the story branch, not its own.** The Skeleton is a *task*, so it has no branch of
+  its own — even though Linear auto-generates a `gitBranchName` for the Skeleton sub-issue,
+  ignore it. Triggering a deliver session "on the Skeleton issue" means *build on the parent
+  **story branch***, starting from the skeleton's scope (see `branching-and-merge.md`).
 - **Per story, never per release** — you only scaffold a story when you distill *that*
   story, so you never write all the scaffolding/tests for a feature up front.
 - It is the orchestrator's **first** task sub-issue; the implementation tasks are

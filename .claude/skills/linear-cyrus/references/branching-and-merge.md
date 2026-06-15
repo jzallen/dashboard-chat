@@ -19,6 +19,13 @@ main
   (skeleton + implementation) is built here, so **RED is transient on this branch**.
 - **No task branches, no task PRs.** Tasks are the deliver session's internal plan
   (sub-issues it marks Done), realized as commits — not branches.
+- **Sub-issue branch names are decoys — ignore them.** Linear auto-generates a
+  `gitBranchName` for *every* issue, including the Skeleton task and implementation
+  sub-issues. Do **not** base a worktree on, check out, or commit to a sub-issue's branch.
+  All of a story's work (skeleton + every impl task) lands on the **parent story branch**.
+  When a deliver session is triggered on a sub-issue (e.g. "start with the Skeleton issue"),
+  it still builds on the parent **story branch** — the sub-issue is just the unit of work to
+  start from, not a branch to switch to.
 
 ## Where the gate runs
 
