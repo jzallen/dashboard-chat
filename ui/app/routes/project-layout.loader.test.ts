@@ -194,21 +194,23 @@ describe("project-layout loader — project-scoped reads via the server /api hop
     expect(result.audit["d-p1"]).toHaveLength(1);
   });
 
-  // AC2 — the loader-level surface is the revalidation predicate only. Whether
-  // RRv7 actually re-runs the loader on a project change (and the component
-  // re-seeds the new scope) is runtime behaviour validated by integration/manual
-  // UI testing, not observable in a loader unit; per-pid scoping of the returned
-  // data is already covered by AC1. What IS unit-testable here is the predicate
-  // RRv7 consults: revalidate iff the path project changed — so a project switch
-  // re-scopes, but same-project navigation (a `?view=` toggle, a nested resource
-  // route) does not needlessly re-fetch.
-  it("shouldRevalidate re-runs the loader only when the path project changes", () => {
+  // AC2 — at the loader level the only unit-testable surface is the revalidation
+  // predicate RRv7 consults (RRv7 itself is the caller — no first-party code calls
+  // shouldRevalidate). Revalidate iff the path project changed, so a project switch
+  // re-scopes but same-project navigation (a `?view=` toggle, a nested route) does
+  // not needlessly re-fetch. The actual re-run/re-seed on a switch is the router's
+  // behaviour, proven through the caller by a navigation integration test once the
+  // loader is real (DC-37); per-pid data scoping is covered by AC1.
+  it("revalidates when the path project changes", () => {
     expect(
       shouldRevalidate({
         currentParams: { projectId: "p1" },
         nextParams: { projectId: "p2" },
       }),
     ).toBe(true);
+  });
+
+  it("does not revalidate when the path project is unchanged", () => {
     expect(
       shouldRevalidate({
         currentParams: { projectId: "p1" },
