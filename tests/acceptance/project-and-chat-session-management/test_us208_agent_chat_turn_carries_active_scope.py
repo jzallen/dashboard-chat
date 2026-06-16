@@ -1,13 +1,12 @@
 """US-208 — Every J-002-originating chat turn carries X-Active-Scope from
 the projection; agent rejects missing org_id / project_id with 400;
-rejects header.org_id != jwt.org_id with 403; falls back to body during
-the migration window; compile-time sunset enforces flag removal.
+rejects header.org_id != jwt.org_id with 403. The X-Active-Scope header is
+the exclusive source of scope: the legacy body.project_id migration
+fallback and its hard compile-time sunset have been retired.
 
 Gherkin SSOT: `docs/feature/project-and-chat-session-management/distill/features/us-208-agent-chat-turn-carries-active-scope.feature`
 
-MR-4. Validates IC-J002-7 + DWD-3 contract. The compile-time sunset
-scenario is a STARTUP test (the agent's `npm start` fails fast if the
-date has passed AND the flag is on).
+MR-4. Validates IC-J002-7 + DWD-3 contract.
 """
 
 from __future__ import annotations
@@ -210,65 +209,52 @@ def test_ts_harness_asserts_agent_received_scope_on_every_turn(
         assert scope.get("project_id") == project_id
 
 
-@pytest.mark.degraded
-def test_during_migration_window_agent_falls_back_to_body_project_id_with_observability_event(
+@pytest.mark.error_path
+def test_legacy_body_only_client_without_header_is_rejected_with_400(
     requires_compose_stack: None,
     driver: J002Driver,
 ) -> None:
-    """SCOPE_HEADER_FALLBACK_ENABLED=true; legacy client w/o header but body.project_id →
-    agent proceeds; emits scope_header_fallback_used { calling_client: User-Agent }."""
+    """The migration body-fallback path is retired. A legacy client that omits
+    X-Active-Scope and sends only body.project_id is rejected with 400 — there
+    is no env flag that resurrects the fallback."""
     project_id, _ = _bootstrap_project(driver)
-    # NO X-Active-Scope header — relies on the body fallback path.
+    # NO X-Active-Scope header — the only accepted source of scope.
     probe = driver.post_agent_chat(
         bearer=driver.mint_dev_jwt(),
         active_scope=None,
         body={
             "messages": [{"role": "user", "content": "ping"}],
             "project_id": project_id,
-            "thread_id": "us208-degraded",
+            "thread_id": "us208-no-header",
         },
     )
-    # The agent SHOULD accept (since the flag is on by default in MR-4).
-    # In strict post-sunset deployments the flag is off and we'd get 400;
-    # this scenario is explicitly @degraded so the flag-on path is exercised.
-    if probe.status == 400:
-        pytest.skip(
-            "agent rejected body fallback (SCOPE_HEADER_FALLBACK_ENABLED is off); "
-            "this @degraded scenario requires the flag enabled."
-        )
-    assert probe.status == 200, (
-        f"expected fallback to succeed, got {probe.status}: {probe.body[:300]}"
+    assert probe.status == 400, (
+        f"expected body-only client to be rejected with 400, got {probe.status}: "
+        f"{probe.body[:300]}"
     )
 
 
-@pytest.mark.error_path
 @pytest.mark.boundary
-def test_compile_time_sunset_check_fails_agent_startup_after_date_with_flag_on(
+def test_agent_scope_module_loads_cleanly_past_sunset_date_with_flag_on(
     requires_compose_stack: None,
     driver: J002Driver,
 ) -> None:
-    """Past sunset + flag=true → agent process fails at module load; HTTP server never binds.
+    """Terminal state of the X-Active-Scope migration: the agent boots cleanly
+    past the former 2026-06-25 sunset even with SCOPE_HEADER_FALLBACK_ENABLED on.
 
-    Implementation: spawn `node --input-type=module -e <script>` that imports
-    `assertScopeHeaderFallbackSunset` from agent/lib/chat/scope.ts and calls
-    it with a past `nowFn` + flag=on, asserting it throws. This is the
-    cleanest port-to-port check that doesn't require a full agent container
-    rebuild for every test run.
+    The hard compile-time sunset time-bomb has been removed along with the
+    body-fallback path. This spawns `tsx` to import the boot-path scope module
+    with the clock set past the old sunset and the retired flag on, asserting
+    the module loads without throwing and no longer exports the sunset
+    assertion. Port-to-port check that doesn't require a full container rebuild.
     """
     script = """
-import { assertScopeHeaderFallbackSunset } from './agent/lib/chat/scope.ts';
-try {
-  assertScopeHeaderFallbackSunset({
-    flag: 'true',
-    nowFn: () => new Date('2099-01-01').getTime(),
-    sunset: new Date('2026-06-25'),
-  });
-  console.log(JSON.stringify({ threw: false }));
-  process.exit(1);
-} catch (err) {
-  console.log(JSON.stringify({ threw: true, message: err.message }));
-  process.exit(0);
-}
+import * as scope from './agent/lib/chat/scope.ts';
+const hasSunset =
+  'assertScopeHeaderFallbackSunset' in scope ||
+  'SCOPE_HEADER_FALLBACK_SUNSET' in scope;
+console.log(JSON.stringify({ loaded: true, hasSunset }));
+process.exit(0);
 """
     repo_root = Path(__file__).resolve().parents[3]
     result = subprocess.run(
@@ -277,17 +263,23 @@ try {
         capture_output=True,
         text=True,
         timeout=60,
+        env={
+            **os.environ,
+            "SCOPE_HEADER_FALLBACK_ENABLED": "true",
+            # Old sunset was 2026-06-25; prove the clock no longer matters.
+            "TZ": "UTC",
+        },
     )
-    if result.returncode not in (0, 1):
+    if result.returncode != 0:
         pytest.skip(
             f"tsx invocation failed (returncode={result.returncode}); "
             f"workspace may not have JS deps installed: {result.stderr[:300]}"
         )
-    assert "threw" in result.stdout, f"unexpected output: {result.stdout!r}"
     payload = json.loads([ln for ln in result.stdout.splitlines() if ln.startswith("{")][-1])
-    assert payload.get("threw") is True, (
-        f"compile-time sunset assertion did not throw past-date+flag-on: {payload}"
+    assert payload.get("loaded") is True, (
+        f"scope module failed to load cleanly: {result.stdout!r} / {result.stderr[:300]}"
     )
-    assert "SCOPE_HEADER_FALLBACK_SUNSET" in payload.get("message", ""), (
-        f"expected diagnostic mentioning sunset; got {payload.get('message')!r}"
+    assert payload.get("hasSunset") is False, (
+        "the hardcoded sunset time-bomb must be removed: scope.ts still exports "
+        "a sunset constant/assertion"
     )

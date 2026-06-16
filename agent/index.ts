@@ -10,19 +10,10 @@ import { authMiddleware } from "./lib/auth";
 import { createChatHandler } from "./lib/chat";
 import { selectPresentationStateLog } from "./lib/chat/presentationStateDispatch";
 import { createPresentationStateRoutes } from "./lib/chat/presentationStateRoutes";
-import { assertScopeHeaderFallbackSunset } from "./lib/chat/scope";
 import { selectThreadPersister } from "./lib/chat/threadPersisterDispatch";
 import { registerInspectionRoutes } from "./lib/inspection/inspection";
 import { createOpenApiRoutes } from "./lib/openapi";
 import { logImageIdentity } from "./version";
-
-// DWD-3 — fail boot fast if the X-Active-Scope body-fallback migration
-// window has elapsed AND the flag is still on. The agent process exits
-// before binding the HTTP server, forcing the team to land the flag-
-// removal PR (a one-line delete) before re-deploying. Two import-sites
-// (here + handleChat.ts) so a future refactor that drops one doesn't
-// silently extend the window.
-assertScopeHeaderFallbackSunset();
 
 logImageIdentity("dashboard-agent");
 

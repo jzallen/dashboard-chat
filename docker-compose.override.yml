@@ -64,11 +64,6 @@ services:
       # US-207/US-208 harness scenarios that read from `/debug/request-log`
       # see zero entries even though chat turns succeeded.
       NWAVE_HARNESS_KNOBS: "true"
-      # Migration-window flag per DWD-3: enable the body.project_id fallback
-      # path so US-208's @degraded scenario exercises the legacy-client
-      # surface. The compile-time sunset (SCOPE_HEADER_FALLBACK_SUNSET
-      # 2026-06-25) forces removal of the flag before the window closes.
-      SCOPE_HEADER_FALLBACK_ENABLED: "true"
       # The agent's authMiddleware verifies bearer tokens against backend's
       # dev JWKS. Without this override the lazy JWKS resolver targets
       # `http://localhost:8000/.well-known/jwks.json` (the agent/lib/auth.ts
