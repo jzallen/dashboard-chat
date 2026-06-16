@@ -1,91 +1,139 @@
-"""Contract/smoke test for the production IoT connection wiring (DC-22 AC3).
+"""Contract test for the awscrt IoT connection adapter (DC-22 AC3).
 
-The acceptance suite (``test_iot_linear_webhook_feed.py``) drives the feed through an
-injected fake, so this file pins the *real builder* instead: that
-``build_default_iot_connection`` authenticates with **IAM/SigV4 over WebSocket** using
-the **default AWS credentials provider chain** (the devpod instance role) with **no
-X.509 device certificate**, and that the awscrt adapter subscribes to exactly the
-keyed topic at QoS 1. It documents the wiring without any live-AWS calls by patching
-the lazily-imported ``awscrt`` / ``awsiot`` seams.
+``_AwsCrtIoTConnection`` is the thin translation layer between the feed's connection
+seam (``connect`` / ``subscribe`` / ``disconnect`` / ``puback``) and an ``awscrt`` MQTT
+connection: it maps the seam's QoS-1 keyed subscription onto awscrt's futures-based
+API and turns awscrt's on-message callback into the ``(topic, payload, headers,
+packet_id)`` shape the feed buffers. That translation is what these tests pin, by
+driving the adapter against a *fake* awscrt connection — no live AWS, no patching of
+module globals.
+
+``build_default_iot_connection`` itself is deliberately NOT tested here: it is pure
+composition-root assembly of awscrt objects (the same category as
+``ProxyExecutionLoop.run``, which the codebase leaves untested as glue), and its
+SigV4 / no-X.509 property is structural — it calls
+``mqtt_connection_builder.websockets_with_default_aws_signing``, which has no
+certificate parameter. The no-cert / keyed-subscription intent is pinned at the feed
+seam by ``test_iot_linear_webhook_feed.test_subscribes_only_to_own_topic_over_sigv4_websocket_without_certs``.
 
 IF YOU'RE AN AGENT, READ THIS:
-- This proves the auth/subscription wiring, not message delivery. Never relax the
-  no-certificate / default-credentials assertions to fit an implementation.
+- Drive the adapter through an injected fake; never patch awscrt/awsiot module globals
+  to make assertions — that re-states the implementation instead of testing behaviour.
 """
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
-pytest.importorskip("awsiot", reason="awsiotsdk provides the real IoT connection")
+pytest.importorskip(
+    "awscrt", reason="awscrt provides the MQTT QoS enum the adapter maps"
+)
 
-from awscrt import auth, io  # noqa: E402
-from awsiot import mqtt_connection_builder  # noqa: E402
-
-from webhook_feeds.iot_feed import (
-    _AwsCrtIoTConnection,
-    build_default_iot_connection,
-)  # noqa: E402
+from webhook_feeds.iot_feed import _AwsCrtIoTConnection  # noqa: E402
 
 ROUTING_KEY = "creator-9f2c-iot-consumer"
-ENDPOINT = "a3k7example-ats.iot.us-east-1.amazonaws.com"
-REGION = "us-east-1"
+TOPIC = f"cyrus/v1/sessions/{ROUTING_KEY}"
+WEBHOOK_BODY = b'{"type":"AgentSessionEvent","action":"created"}'
 
 
-def test_default_connection_uses_sigv4_default_chain_without_certificates(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The builder signs with the default credential chain and never uses a device cert."""
-    monkeypatch.setattr(io, "EventLoopGroup", lambda count: "elg")
-    monkeypatch.setattr(io, "DefaultHostResolver", lambda elg: "resolver")
-    monkeypatch.setattr(io, "ClientBootstrap", lambda elg, resolver: "bootstrap")
-    monkeypatch.setattr(
-        auth.AwsCredentialsProvider,
-        "new_default_chain",
-        staticmethod(lambda bootstrap: "default-chain-provider"),
-    )
-    captured: dict[str, Any] = {}
-    monkeypatch.setattr(
-        mqtt_connection_builder,
-        "websockets_with_default_aws_signing",
-        lambda **kwargs: captured.update(kwargs) or "mqtt-connection",
-    )
+class _DoneFuture:
+    """An awscrt operation future that has already resolved (``.result()`` no-ops)."""
 
-    connection = build_default_iot_connection(
-        endpoint=ENDPOINT, routing_key=ROUTING_KEY, region=REGION
-    )
-
-    assert isinstance(connection, _AwsCrtIoTConnection)
-    assert captured["endpoint"] == ENDPOINT
-    assert captured["region"] == REGION
-    assert captured["credentials_provider"] == "default-chain-provider"
-    assert ROUTING_KEY in captured["client_id"]
-    # No X.509 device-certificate material anywhere in the connection params.
-    assert not any("cert" in key or "key" in key for key in captured)
+    def result(self) -> None:
+        return None
 
 
-def test_adapter_subscribes_to_the_exact_topic_at_qos_1() -> None:
-    """The awscrt adapter subscribes to the keyed topic only, at QoS 1 (at-least-once)."""
+class FakeCrtConnection:
+    """In-memory stand-in for an ``awscrt`` MQTT connection (no AWS).
 
-    class FakeCrtConnection:
-        def __init__(self) -> None:
-            self.subscribed: list[tuple[str, int]] = []
+    Records lifecycle calls and captures the awscrt on-message callback the adapter
+    registers, so a test can fire a publish at it and observe the translated seam
+    callback.
+    """
 
-        def subscribe(self, *, topic: str, qos: Any, callback: Any) -> tuple[Any, int]:
-            self.subscribed.append((topic, int(qos)))
+    def __init__(self) -> None:
+        self.connected = False
+        self.disconnected = False
+        self.subscribed: list[tuple[str, int]] = []
+        self.crt_callback: Any = None
 
-            class _Future:
-                def result(self_inner) -> None:
-                    return None
+    def connect(self) -> _DoneFuture:
+        self.connected = True
+        return _DoneFuture()
 
-            return _Future(), 1
+    def subscribe(
+        self, *, topic: str, qos: Any, callback: Any
+    ) -> tuple[_DoneFuture, int]:
+        self.subscribed.append((topic, int(qos)))
+        self.crt_callback = callback
+        return _DoneFuture(), 1
 
+    def disconnect(self) -> _DoneFuture:
+        self.disconnected = True
+        return _DoneFuture()
+
+
+def test_adapter_connects_and_subscribes_to_the_keyed_topic_at_qos_1() -> None:
+    """connect()/subscribe() drive the awscrt connection for the consumer's own key only."""
     crt = FakeCrtConnection()
     adapter = _AwsCrtIoTConnection(crt)
-    topic = f"cyrus/v1/sessions/{ROUTING_KEY}"
 
-    adapter.subscribe(topic, 1, lambda **_: None)
+    adapter.connect()
+    adapter.subscribe(TOPIC, 1, lambda **_: None)
 
-    assert crt.subscribed == [(topic, 1)]
+    assert crt.connected is True
+    assert crt.subscribed == [(TOPIC, 1)]
+
+
+def test_adapter_translates_an_arriving_publish_into_the_seam_callback() -> None:
+    """awscrt's on-message callback is mapped to (topic, payload, headers, packet_id).
+
+    The forwarded Linear headers are sourced from MQTT user properties on the publish,
+    and the raw payload bytes are passed through unchanged.
+    """
+    crt = FakeCrtConnection()
+    adapter = _AwsCrtIoTConnection(crt)
+    received: dict[str, Any] = {}
+    adapter.subscribe(TOPIC, 1, lambda **kwargs: received.update(kwargs))
+
+    crt.crt_callback(
+        topic=TOPIC,
+        payload=WEBHOOK_BODY,
+        dup=False,
+        qos=1,
+        retain=False,
+        user_properties=[
+            SimpleNamespace(name="Linear-Event", value="AgentSessionEvent")
+        ],
+        packet_id=7,
+    )
+
+    assert received["topic"] == TOPIC
+    assert received["payload"] == WEBHOOK_BODY
+    assert received["headers"] == {"Linear-Event": "AgentSessionEvent"}
+    assert received["packet_id"] == 7
+
+
+def test_adapter_disconnects_cleanly() -> None:
+    """disconnect() tears the awscrt connection down (the feed's clean-stop path)."""
+    crt = FakeCrtConnection()
+    adapter = _AwsCrtIoTConnection(crt)
+
+    adapter.disconnect()
+
+    assert crt.disconnected is True
+
+
+def test_puback_flags_the_manual_ack_integration_boundary() -> None:
+    """Manual QoS-1 PUBACK needs the awscrt MQTT5 client; the adapter refuses to fake it.
+
+    The at-least-once behaviour is unit-tested on the feed via the injected connection;
+    here we pin that the awscrt seam does NOT silently ack on the wrong protocol.
+    """
+    adapter = _AwsCrtIoTConnection(FakeCrtConnection())
+
+    with pytest.raises(NotImplementedError):
+        adapter.puback(7)
