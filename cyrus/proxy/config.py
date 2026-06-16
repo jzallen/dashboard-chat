@@ -132,16 +132,9 @@ class CanaryConfig(_ConfigDecorator):
         return cls(**settings)
 
 
-# RED scaffold marker: IoTConfig's shape is fixed below, but its from_env is not yet
-# implemented (it raises AssertionError) so the new selection tests are honest RED.
-# Downstream DC-22 sub-issues replace the raising body. Existing sqs/canary selection
-# is unaffected.
-_IOT_NOT_IMPLEMENTED = "Not yet implemented — RED scaffold"
-
-
 @dataclass(frozen=True)
 class IoTConfig(_ConfigDecorator):
-    """Core config extended with AWS IoT feed settings (scaffold; ``from_env`` is RED).
+    """Core config extended with AWS IoT feed settings.
 
     ``iot_routing_key`` is this consumer's ``creator.id`` — the feed subscribes only
     to ``cyrus/v1/sessions/<iot_routing_key>``. ``iot_endpoint`` is the IoT data-plane
@@ -157,12 +150,19 @@ class IoTConfig(_ConfigDecorator):
     def from_env(cls, env: Optional[Mapping[str, str]] = None) -> "IoTConfig":
         """Read the IoT endpoint and routing key from ``CYRUS_PROXY_IOT_*`` env vars.
 
-        Scaffold: raises ``AssertionError`` until implemented downstream. The target
-        reads ``CYRUS_PROXY_IOT_ENDPOINT`` and ``CYRUS_PROXY_IOT_ROUTING_KEY``
-        (required) and the optional ``CYRUS_PROXY_IOT_REGION`` alongside the core
-        settings.
+        Reads ``CYRUS_PROXY_IOT_ENDPOINT`` and ``CYRUS_PROXY_IOT_ROUTING_KEY``
+        (both required) and the optional ``CYRUS_PROXY_IOT_REGION`` alongside the core
+        settings, mirroring ``SqsConfig.from_env``.
         """
-        raise AssertionError(_IOT_NOT_IMPLEMENTED)
+        env = os.environ if env is None else env
+        settings: dict[str, Any] = {
+            "core": CoreConfig.from_env(env),
+            "iot_endpoint": env["CYRUS_PROXY_IOT_ENDPOINT"],
+            "iot_routing_key": env["CYRUS_PROXY_IOT_ROUTING_KEY"],
+        }
+        if "CYRUS_PROXY_IOT_REGION" in env:
+            settings["iot_region"] = env["CYRUS_PROXY_IOT_REGION"]
+        return cls(**settings)
 
 
 FeedConfig = Union[SqsConfig, CanaryConfig, IoTConfig]
