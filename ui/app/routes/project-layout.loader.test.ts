@@ -150,21 +150,6 @@ function stubProjectReads(pid: string): () => Captured[] {
   });
 }
 
-/**
- * Run the loader and return the value it THREW — the loader is the unit under
- * test, so the failure-path tests assert against its actual thrown value (a
- * redirect `Response`, or a read `Error`), not a normalized stand-in. Fails the
- * test if the loader resolves instead of throwing.
- */
-async function loaderThrew(projectId: string): Promise<unknown> {
-  try {
-    await loader(loaderArgs(authedRequest(), projectId));
-  } catch (err) {
-    return err;
-  }
-  throw new Error("expected the loader to throw, but it resolved a catalog");
-}
-
 beforeEach(() => {
   process.env.AUTH_PROXY_URL = AUTH_PROXY_URL;
 });
@@ -265,11 +250,16 @@ describe("project-layout loader — project-scoped reads via the server /api hop
     // The loader attempts the reads, and a non-401 failure among them aborts to
     // the ErrorBoundary: it throws (no resolved partial catalog) having actually
     // fetched, and what it throws is NOT a /login redirect (that's the 401 case).
-    const thrown = await loaderThrew("p1");
-    expect({
-      attemptedReads: calls().length > 0,
-      threwRedirect: thrown instanceof Response && thrown.status === 302,
-    }).toEqual({ attemptedReads: true, threwRedirect: false });
+    // expect.assertions guarantees the catch ran — a silent resolve fails the test.
+    expect.assertions(1);
+    try {
+      await loader(loaderArgs(authedRequest(), "p1"));
+    } catch (thrown) {
+      expect({
+        attemptedReads: calls().length > 0,
+        threwRedirect: thrown instanceof Response && thrown.status === 302,
+      }).toEqual({ attemptedReads: true, threwRedirect: false });
+    }
   });
 
   // AC3 — a 401 is the unauthenticated signal, turned into a /login redirect
@@ -278,12 +268,17 @@ describe("project-layout loader — project-scoped reads via the server /api hop
     stubFetch(() => new Response("Unauthorized", { status: 401 }));
 
     // The loader throws the redirect Response itself (RRv7's `redirect("/login")`),
-    // so assert against that thrown value's real status + Location.
-    const thrown = await loaderThrew("p1");
-    expect(
-      thrown instanceof Response
-        ? { status: thrown.status, location: thrown.headers.get("Location") }
-        : thrown,
-    ).toEqual({ status: 302, location: "/login" });
+    // so assert against that thrown value's real status + Location. expect.assertions
+    // guarantees the catch ran — a silent resolve fails the test.
+    expect.assertions(1);
+    try {
+      await loader(loaderArgs(authedRequest(), "p1"));
+    } catch (thrown) {
+      expect(
+        thrown instanceof Response
+          ? { status: thrown.status, location: thrown.headers.get("Location") }
+          : thrown,
+      ).toEqual({ status: 302, location: "/login" });
+    }
   });
 });
