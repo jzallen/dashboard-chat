@@ -42,7 +42,6 @@ import type {
   ChatHistoryItem,
   CurrentProject,
   DbtFile,
-  OrgMember,
   OrgSettings,
   ProjectSummary,
 } from "../models";
@@ -54,6 +53,12 @@ import type {
   BackendView,
 } from "./lineageMappers";
 import { toLineageGraph } from "./lineageMappers";
+import {
+  type BackendOrg,
+  type BackendProject,
+  toOrgSettings,
+  toProjectSummary,
+} from "./metadataMappers";
 import type { BackendSession } from "./sessionMappers";
 import { toChatHistoryItem } from "./sessionMappers";
 import type { PartialCatalogSource, SourceUpload } from "./source";
@@ -110,51 +115,6 @@ function toSourceUpload(upload: BackendUpload): SourceUpload {
     rows: upload.row_count ?? null,
     when: formatUploadWhen(upload.created_at),
     status: upload.status,
-  };
-}
-
-/** A project resource as the backend returns it (post envelope-unwrap). */
-interface BackendProject {
-  id: string;
-  name: string;
-  description?: string | null;
-  datasets?: unknown[];
-}
-
-/**
- * The org-settings resource as the backend returns it (post envelope-unwrap):
- * snake_case attributes, flat alongside the resource `id`. Mapped to the
- * camelCase {@link OrgSettings} by {@link toOrgSettings}.
- */
-interface BackendOrg {
-  id: string;
-  name: string;
-  slug: string;
-  region: string;
-  plan: string;
-  seats: number;
-  used_seats: number;
-  created_at: string;
-  members: OrgMember[];
-  defaults: { engine: string; materialization: string; model_prefix: string };
-}
-
-/** Map the backend org payload (snake_case) to the catalog's {@link OrgSettings}. */
-function toOrgSettings(org: BackendOrg): OrgSettings {
-  return {
-    name: org.name,
-    slug: org.slug,
-    region: org.region,
-    plan: org.plan,
-    seats: org.seats,
-    usedSeats: org.used_seats,
-    created: org.created_at,
-    members: org.members,
-    defaults: {
-      engine: org.defaults.engine,
-      materialization: org.defaults.materialization,
-      modelPrefix: org.defaults.model_prefix,
-    },
   };
 }
 
@@ -241,20 +201,6 @@ export interface MetadataApiSourceDeps {
 function dataId(body: unknown): string {
   const data = (body as { data?: { id?: unknown } } | undefined)?.data;
   return String(data?.id);
-}
-
-/**
- * Map a backend project to the catalog's project-list DTO. `models` is 0 (not yet
- * backed by the API); `datasets` is the count of attached datasets.
- */
-function toProjectSummary(project: BackendProject): ProjectSummary {
-  return {
-    id: project.id,
-    name: project.name,
-    desc: project.description ?? "",
-    datasets: project.datasets?.length ?? 0,
-    models: 0,
-  };
 }
 
 export function metadataApiSource(
@@ -452,7 +398,10 @@ export function metadataApiSource(
         .map((s) => toChatHistoryItem(s, now));
     },
 
-    async toggleAuditEntry(auditEntryId: string, enabled: boolean): Promise<void> {
+    async toggleAuditEntry(
+      auditEntryId: string,
+      enabled: boolean,
+    ): Promise<void> {
       // The catalog's first WRITE: PATCH the project-scoped audit entry. The
       // backend resolves the transform via the reversed FK and flips its status
       // (recompiling the staging SQL on read). Project-scoped like the reads;
@@ -620,9 +569,7 @@ export function metadataApiSource(
         headers: { "Content-Type": file.type },
       });
       if (!response.ok) {
-        throw new Error(
-          `PUT to storage failed with status ${response.status}`,
-        );
+        throw new Error(`PUT to storage failed with status ${response.status}`);
       }
     },
 

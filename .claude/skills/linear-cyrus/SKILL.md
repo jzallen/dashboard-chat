@@ -51,7 +51,9 @@ Feature project   = nwave feature
   label.
 - **One PR per story** (story branch → Release branch); **no task branches/PRs** — tasks
   are the deliver session's plan, landed as commits. RED is transient on the story branch;
-  the story PR gates the green end-state.
+  the story PR gates the green end-state. Linear auto-generates a branch name for every
+  sub-issue (Skeleton + impl tasks); **ignore it** — starting a session "on the Skeleton
+  issue" still builds on the parent **story branch** (`branching-and-merge.md`).
 - **Skeleton-first:** the first task scaffolds + stubs signatures + writes the AC checklist
   as honest **RED tests**; implementation tasks turn them green (`skeleton-task.md`).
 - **Release → main with no PR** (already reviewed via story PRs). Milestone progress
