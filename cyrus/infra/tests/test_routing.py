@@ -12,32 +12,26 @@ byte-identity assertion.
 
 from __future__ import annotations
 
-import json
-
-from conftest import CREATOR_ID, routable_body  # noqa: F401 — used as a fixture
-
 import routing
 
 
 def test_extracts_creator_id_as_the_routing_key():
-    body = json.dumps({"agentSession": {"creator": {"id": CREATOR_ID}}}).encode("utf-8")
-    assert routing.extract_routing_key(body) == CREATOR_ID
+    body = b'{"agentSession": {"creator": {"id": "user-xyz"}}}'
+    assert routing.extract_routing_key(body) == "user-xyz"
 
 
 def test_returns_unrouted_when_creator_id_is_absent():
-    body = json.dumps({"type": "AgentSessionEvent"}).encode("utf-8")
-    assert routing.extract_routing_key(body) == routing.UNROUTED
+    body = b'{"type": "AgentSessionEvent"}'
+    assert routing.extract_routing_key(body) == "_unrouted"
 
 
 def test_returns_unrouted_when_body_is_unparseable():
-    assert routing.extract_routing_key(b"not json{{{") == routing.UNROUTED
+    assert routing.extract_routing_key(b"not json{{{") == "_unrouted"
 
 
 def test_does_not_mutate_the_input_body_bytes():
     """Opaqueness: the bytes covered by Linear-Signature are left untouched."""
-    original = json.dumps({"agentSession": {"creator": {"id": CREATOR_ID}}}).encode(
-        "utf-8"
-    )
+    original = b'{"agentSession": {"creator": {"id": "user-xyz"}}}'
     body = bytes(original)  # an independent object to compare against
 
     routing.extract_routing_key(body)
