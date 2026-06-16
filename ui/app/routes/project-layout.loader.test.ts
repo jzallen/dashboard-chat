@@ -212,15 +212,19 @@ describe("project-layout loader — project-scoped reads via the server /api hop
     stubProjectReads("p1");
     const first = await loader(loaderArgs(authedRequest(), "p1"));
     expect(first.projectId).toBe("p1");
-    expect(first.chats.map((c) => c.title)).toEqual(["Chat p1"]);
 
     vi.unstubAllGlobals();
     stubProjectReads("p2");
     const second = await loader(loaderArgs(authedRequest(), "p2"));
+
+    // On a new project selection the prior scope is ejected and the new one
+    // replaces it wholesale: the re-run is a different payload that identifies as
+    // p2 and carries no p1-scoped id in ANY field (the fixtures namespace every id
+    // by pid, so any leakage would surface a "p1" substring). Per-field content of
+    // the new scope is already covered by the AC1 test — here we test the swap.
     expect(second.projectId).toBe("p2");
-    // The re-run surfaces the NEW project's data — no stale prior-scope leakage.
-    expect(second.chats.map((c) => c.title)).toEqual(["Chat p2"]);
-    expect(Object.keys(second.nodes)).not.toContain("d-p1");
+    expect(second).not.toEqual(first);
+    expect(JSON.stringify(second)).not.toContain("p1");
   });
 
   // AC3
