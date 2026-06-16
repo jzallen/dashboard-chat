@@ -168,7 +168,14 @@ class IoTLinearWebhookFeed:
         (e.g. its forward failed) is redelivered by the broker — the at-least-once
         contract mirroring the SQS adapter.
         """
-        raise AssertionError("Not yet implemented — RED scaffold")
+        packet_id = message["raw"]["packet_id"]
+        try:
+            self._connection.puback(packet_id)
+        except Exception as exc:
+            logger.warning("IoT PUBACK failed: %s", exc, exc_info=True)
+            return {"type": "failed_message_acknowledge", "reason": str(exc)}
+        logger.debug("acknowledged IoT packet %s", packet_id)
+        return None
 
     def stop(self) -> None:
         """Disconnect the IoT connection cleanly (idempotent best-effort)."""
