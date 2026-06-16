@@ -195,7 +195,7 @@ describe("project-layout loader — project-scoped reads via the server /api hop
   });
 
   // AC2
-  it("re-runs for the new scope on projectId change (shouldRevalidate gates it) and returns the new project's data, not the prior scope's", async () => {
+  it("swaps to the new project's scope when projectId changes", async () => {
     expect(
       shouldRevalidate({
         currentParams: { projectId: "p1" },
