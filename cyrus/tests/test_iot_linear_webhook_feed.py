@@ -60,21 +60,13 @@ class FakeIoTConnection:
 
     Models the surface a downstream adapter drives — ``connect()``,
     ``subscribe(topic, qos, callback)``, ``disconnect()``, and ``puback(packet_id)``
-    — and records how it was authenticated so a test can assert IAM/SigV4 over
-    WebSocket with no X.509 device certificate. ``deliver`` simulates the broker
-    pushing a publish on a topic, routing it to the registered subscription callback
-    (or buffering it until one is registered) so the push-to-poll bridge can be
-    exercised once implemented.
+    — recording the subscriptions and PUBACKs so a test can verify what the feed drove
+    at the connection boundary. ``deliver`` simulates the broker pushing a publish on a
+    topic, routing it to the registered subscription callback (or buffering it until one
+    is registered) so the push-to-poll bridge can be exercised once implemented.
     """
 
-    def __init__(
-        self,
-        *,
-        auth_mode: str = "sigv4-websocket",
-        uses_x509_cert: bool = False,
-    ) -> None:
-        self.auth_mode = auth_mode
-        self.uses_x509_cert = uses_x509_cert
+    def __init__(self) -> None:
         self.connected = False
         self.subscriptions: list[tuple[str, int]] = []
         self.pubacked_packet_ids: list[int] = []
@@ -179,12 +171,15 @@ def test_received_message_is_byte_identical_and_passes_signature_verification() 
     )
 
 
-def test_subscribes_only_to_own_topic_over_sigv4_websocket_without_certs() -> None:
-    """AC3: auth is IAM/SigV4-over-WebSocket (no X.509) and the subscription is keyed.
+def test_subscribes_only_to_its_own_keyed_topic_on_the_first_receive() -> None:
+    """AC3: the first ``receive()`` subscribes to exactly the consumer's key, no wildcard.
 
-    The first ``receive()`` connects and subscribes; the subscription must target
-    exactly ``cyrus/v1/sessions/<routing-key>`` (no wildcard) over an instance-role
-    SigV4 WebSocket connection that uses no device certificate.
+    The subscription target is the feed's behaviour, verified at the connection
+    boundary: it must be ``cyrus/v1/sessions/<routing-key>`` at QoS 1, never a
+    wildcard. The IAM/SigV4-over-WebSocket auth with no X.509 certificate is a
+    structural property of how ``build_default_iot_connection`` builds the connection
+    (``websockets_with_default_aws_signing`` takes no certificate), not something the
+    feed decides — so it is not asserted on the injected double here.
     """
     connection = FakeIoTConnection()
     feed = make_feed(connection)
@@ -192,8 +187,6 @@ def test_subscribes_only_to_own_topic_over_sigv4_websocket_without_certs() -> No
     feed.receive()
 
     assert connection.subscriptions == [(f"cyrus/v1/sessions/{ROUTING_KEY}", 1)]
-    assert connection.auth_mode == "sigv4-websocket"
-    assert connection.uses_x509_cert is False
 
 
 def test_failed_forward_leaves_message_unacknowledged_for_redelivery() -> None:

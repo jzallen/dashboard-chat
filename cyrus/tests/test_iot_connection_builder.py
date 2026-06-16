@@ -2,11 +2,11 @@
 
 ``_AwsCrtIoTConnection`` is the thin translation layer between the feed's connection
 seam (``connect`` / ``subscribe`` / ``disconnect`` / ``puback``) and an ``awscrt`` MQTT
-connection: it maps the seam's QoS-1 keyed subscription onto awscrt's futures-based
-API and turns awscrt's on-message callback into the ``(topic, payload, headers,
-packet_id)`` shape the feed buffers. That translation is what these tests pin, by
-driving the adapter against a *fake* awscrt connection — no live AWS, no patching of
-module globals.
+connection: it forwards each seam call onto the awscrt connection (waiting on the
+returned future) and turns awscrt's on-message callback into the ``(topic, payload,
+headers, packet_id)`` shape the feed buffers. These tests pin that forwarding by
+driving the adapter against a ``MagicMock`` connection and asserting the underlying
+method fired — no live AWS, no patching of module globals.
 
 ``build_default_iot_connection`` itself is deliberately NOT tested here: it is pure
 composition-root assembly of awscrt objects (the same category as
@@ -17,20 +17,24 @@ certificate parameter. The no-cert / keyed-subscription intent is pinned at the 
 seam by ``test_iot_linear_webhook_feed.test_subscribes_only_to_own_topic_over_sigv4_websocket_without_certs``.
 
 IF YOU'RE AN AGENT, READ THIS:
-- Drive the adapter through an injected fake; never patch awscrt/awsiot module globals
-  to make assertions — that re-states the implementation instead of testing behaviour.
+- The adapter only delegates, so verify it at the boundary: assert the underlying
+  connection method was called. Never assert on a hand-rolled fake's own state — that
+  tests the double, not the adapter.
 """
 
 from __future__ import annotations
 
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import ANY, MagicMock
 
 import pytest
 
 pytest.importorskip(
     "awscrt", reason="awscrt provides the MQTT QoS enum the adapter maps"
 )
+
+from awscrt import mqtt  # noqa: E402
 
 from webhook_feeds.iot_feed import _AwsCrtIoTConnection  # noqa: E402
 
@@ -39,59 +43,31 @@ TOPIC = f"cyrus/v1/sessions/{ROUTING_KEY}"
 WEBHOOK_BODY = b'{"type":"AgentSessionEvent","action":"created"}'
 
 
-class _DoneFuture:
-    """An awscrt operation future that has already resolved (``.result()`` no-ops)."""
-
-    def result(self) -> None:
-        return None
-
-
-class FakeCrtConnection:
-    """In-memory stand-in for an ``awscrt`` MQTT connection (no AWS).
-
-    Records lifecycle calls and captures the awscrt on-message callback the adapter
-    registers, so a test can fire a publish at it and observe the translated seam
-    callback.
-    """
-
-    def __init__(self) -> None:
-        self.connected = False
-        self.disconnected = False
-        self.subscribed: list[tuple[str, int]] = []
-        self.crt_callback: Any = None
-
-    def connect(self) -> _DoneFuture:
-        self.connected = True
-        return _DoneFuture()
-
-    def subscribe(
-        self, *, topic: str, qos: Any, callback: Any
-    ) -> tuple[_DoneFuture, int]:
-        self.subscribed.append((topic, int(qos)))
-        self.crt_callback = callback
-        return _DoneFuture(), 1
-
-    def disconnect(self) -> _DoneFuture:
-        self.disconnected = True
-        return _DoneFuture()
+def make_connection() -> MagicMock:
+    """A mock awscrt connection whose subscribe() returns the (future, packet_id) tuple."""
+    connection = MagicMock()
+    connection.subscribe.return_value = (MagicMock(), 1)
+    return connection
 
 
 def test_adapter_connect_opens_the_underlying_connection() -> None:
-    """connect() drives the awscrt connection's connect (and waits on the future)."""
-    crt = FakeCrtConnection()
+    """connect() forwards to the awscrt connection's connect()."""
+    connection = make_connection()
 
-    _AwsCrtIoTConnection(crt).connect()
+    _AwsCrtIoTConnection(connection).connect()
 
-    assert crt.connected is True
+    connection.connect.assert_called_once_with()
 
 
 def test_adapter_subscribes_to_the_keyed_topic_at_qos_1() -> None:
-    """subscribe() targets exactly the consumer's own key at QoS 1 (no wildcards)."""
-    crt = FakeCrtConnection()
+    """subscribe() forwards to the connection for exactly the consumer's key at QoS 1."""
+    connection = make_connection()
 
-    _AwsCrtIoTConnection(crt).subscribe(TOPIC, 1, lambda **_: None)
+    _AwsCrtIoTConnection(connection).subscribe(TOPIC, 1, lambda **_: None)
 
-    assert crt.subscribed == [(TOPIC, 1)]
+    connection.subscribe.assert_called_once_with(
+        topic=TOPIC, qos=mqtt.QoS(1), callback=ANY
+    )
 
 
 def test_adapter_translates_an_arriving_publish_into_the_seam_callback() -> None:
@@ -100,12 +76,14 @@ def test_adapter_translates_an_arriving_publish_into_the_seam_callback() -> None
     The forwarded Linear headers are sourced from MQTT user properties on the publish,
     and the raw payload bytes are passed through unchanged.
     """
-    crt = FakeCrtConnection()
-    adapter = _AwsCrtIoTConnection(crt)
+    connection = make_connection()
     received: dict[str, Any] = {}
-    adapter.subscribe(TOPIC, 1, lambda **kwargs: received.update(kwargs))
+    _AwsCrtIoTConnection(connection).subscribe(
+        TOPIC, 1, lambda **kwargs: received.update(kwargs)
+    )
+    on_crt_message = connection.subscribe.call_args.kwargs["callback"]
 
-    crt.crt_callback(
+    on_crt_message(
         topic=TOPIC,
         payload=WEBHOOK_BODY,
         dup=False,
@@ -125,14 +103,13 @@ def test_adapter_translates_an_arriving_publish_into_the_seam_callback() -> None
     }
 
 
-def test_adapter_disconnects_cleanly() -> None:
-    """disconnect() tears the awscrt connection down (the feed's clean-stop path)."""
-    crt = FakeCrtConnection()
-    adapter = _AwsCrtIoTConnection(crt)
+def test_adapter_disconnect_closes_the_underlying_connection() -> None:
+    """disconnect() forwards to the awscrt connection's disconnect() (clean-stop path)."""
+    connection = make_connection()
 
-    adapter.disconnect()
+    _AwsCrtIoTConnection(connection).disconnect()
 
-    assert crt.disconnected is True
+    connection.disconnect.assert_called_once_with()
 
 
 def test_puback_flags_the_manual_ack_integration_boundary() -> None:
@@ -141,7 +118,5 @@ def test_puback_flags_the_manual_ack_integration_boundary() -> None:
     The at-least-once behaviour is unit-tested on the feed via the injected connection;
     here we pin that the awscrt seam does NOT silently ack on the wrong protocol.
     """
-    adapter = _AwsCrtIoTConnection(FakeCrtConnection())
-
     with pytest.raises(NotImplementedError):
-        adapter.puback(7)
+        _AwsCrtIoTConnection(make_connection()).puback(7)
