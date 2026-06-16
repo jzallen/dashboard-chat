@@ -150,6 +150,28 @@ function stubProjectReads(pid: string): () => Captured[] {
   });
 }
 
+/**
+ * Run the loader and normalize the result to a plain, comparable outcome: whether
+ * it rejected (vs resolved a catalog), and — for a thrown redirect Response — where
+ * it redirects. Keeps the failure-path tests to one aggregate assertion each and
+ * doesn't over-constrain HOW a non-redirect failure is thrown (Error or non-302
+ * Response both normalize to `redirectedTo: null`).
+ */
+async function loaderOutcome(
+  projectId: string,
+): Promise<{ rejected: boolean; redirectedTo: string | null }> {
+  try {
+    await loader(loaderArgs(authedRequest(), projectId));
+    return { rejected: false, redirectedTo: null };
+  } catch (err) {
+    const redirectedTo =
+      err instanceof Response && err.status === 302
+        ? err.headers.get("Location")
+        : null;
+    return { rejected: true, redirectedTo };
+  }
+}
+
 beforeEach(() => {
   process.env.AUTH_PROXY_URL = AUTH_PROXY_URL;
 });
@@ -219,42 +241,34 @@ describe("project-layout loader — project-scoped reads via the server /api hop
     ).toBe(false);
   });
 
-  // AC3
-  it("throws (→ ErrorBoundary) on a non-401 read failure and redirects to /login on a 401 — never a silent empty catalog", async () => {
-    // A non-401 backend failure on one read must reject the whole loader rather
-    // than resolve a partial/empty catalog.
-    stubFetch((url) => {
-      if (url.endsWith("/api/projects/p1/audit")) {
-        return new Response("boom", { status: 500 });
-      }
-      return listEnvelope("any", []);
+  // AC3 — a non-401 read failure surfaces on the ErrorBoundary, not as a silent
+  // empty catalog: the loader rejects (no resolved partial catalog) and does NOT
+  // mask the failure as a /login redirect (that's reserved for the 401 case below).
+  it("rejects a non-401 read failure rather than resolving a partial catalog", async () => {
+    const calls = stubFetch((url) =>
+      url.endsWith("/api/projects/p1/audit")
+        ? new Response("boom", { status: 500 })
+        : listEnvelope("any", []),
+    );
+
+    // The loader attempts the reads, and a non-401 failure among them aborts to
+    // the ErrorBoundary: it rejects (no resolved partial catalog) having actually
+    // fetched, and does NOT mask the failure as a /login redirect.
+    expect({ attemptedReads: calls().length > 0, ...(await loaderOutcome("p1")) }).toEqual({
+      attemptedReads: true,
+      rejected: true,
+      redirectedTo: null,
     });
+  });
 
-    let thrown: unknown;
-    try {
-      await loader(loaderArgs(authedRequest(), "p1"));
-    } catch (err) {
-      thrown = err;
-    }
-    expect(thrown).toBeDefined();
-    // Not a redirect: a read failure surfaces the error boundary, not /login.
-    expect(
-      thrown instanceof Response && thrown.status === 302,
-    ).toBe(false);
-
-    // A 401 is the unauthenticated signal → redirect to /login (as in app-shell).
-    vi.unstubAllGlobals();
+  // AC3 — a 401 is the unauthenticated signal, turned into a /login redirect
+  // (mirroring the app-shell loader), not surfaced as a read error.
+  it("redirects to /login when a project-scoped read returns 401", async () => {
     stubFetch(() => new Response("Unauthorized", { status: 401 }));
 
-    let redirected: unknown;
-    try {
-      await loader(loaderArgs(authedRequest(), "p1"));
-    } catch (err) {
-      redirected = err;
-    }
-    expect(redirected).toBeInstanceOf(Response);
-    const response = redirected as Response;
-    expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/login");
+    expect(await loaderOutcome("p1")).toEqual({
+      rejected: true,
+      redirectedTo: "/login",
+    });
   });
 });
