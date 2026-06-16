@@ -3,17 +3,19 @@
 The handler's job: HMAC-verify a Linear webhook arriving at the Function URL and,
 only when valid, enqueue the raw body plus the headers Cyrus needs onto SQS. The
 ``send_message`` wire contract (body + MessageAttributes) is pinned by the
-botocore Stubber's expected params; each test then asserts the HTTP-shaped result.
+botocore Stubber's expected params; the enqueue tests then assert the HTTP-shaped
+result.
 
-IF YOU'RE AN AGENT, READ THIS: the tests are the spec. The rejection tests
-activate the Stubber with NO queued response on purpose — any SQS call then raises
-— so they prove an unverified webhook enqueues nothing. Don't weaken that by
-giving the Stubber a stray response.
+IF YOU'RE AN AGENT, READ THIS: the tests are the spec. The enqueue tests pin the
+``send_message`` wire contract with the Stubber; the rejection tests inject a
+``MagicMock`` client and assert it is never called, proving an unverified webhook
+enqueues nothing. Don't weaken either check.
 """
 
 from __future__ import annotations
 
 import base64
+from unittest.mock import MagicMock
 
 from conftest import QUEUE_URL, SECRET, make_function_url_event
 
@@ -53,25 +55,25 @@ def test_process_enqueues_a_validly_signed_webhook(webhook_body, linear_headers,
     assert result == {"statusCode": 200, "body": "queued"}
 
 
-def test_process_rejects_a_webhook_with_an_invalid_signature(webhook_body, linear_headers, stubbed_sqs):
-    client, stubber = stubbed_sqs
-    stubber.activate()  # no response queued: any SQS call raises
+def test_process_rejects_a_webhook_with_an_invalid_signature(webhook_body, linear_headers):
+    client = MagicMock()
 
     tampered = {**linear_headers, "linear-signature": "00" * 32}
     event = make_function_url_event(webhook_body, tampered)
     result = process(event, queue_url=QUEUE_URL, secret=SECRET, sqs_client=client)
 
+    client.send_message.assert_not_called()
     assert result == {"statusCode": 401, "body": "invalid signature"}
 
 
-def test_process_rejects_a_webhook_with_no_signature(webhook_body, linear_headers, stubbed_sqs):
-    client, stubber = stubbed_sqs
-    stubber.activate()  # no response queued: any SQS call raises
+def test_process_rejects_a_webhook_with_no_signature(webhook_body, linear_headers):
+    client = MagicMock()
 
     unsigned = {k: v for k, v in linear_headers.items() if k != "linear-signature"}
     event = make_function_url_event(webhook_body, unsigned)
     result = process(event, queue_url=QUEUE_URL, secret=SECRET, sqs_client=client)
 
+    client.send_message.assert_not_called()
     assert result == {"statusCode": 401, "body": "missing signature"}
 
 

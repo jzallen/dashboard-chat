@@ -112,14 +112,10 @@ def test_published_and_enqueued_bytes_are_identical_to_the_received_body(
     )
 
 
-def test_invalid_signature_neither_publishes_nor_enqueues(
-    routable_body, stubbed_sqs, stubbed_iot
-):
-    """Bad sig → 401, no IoT publish, no SQS enqueue (both stubbers stay armed)."""
-    sqs, sqs_stub = stubbed_sqs
-    iot, iot_stub = stubbed_iot
-    sqs_stub.activate()  # no response queued: any call raises
-    iot_stub.activate()
+def test_invalid_signature_neither_publishes_nor_enqueues(routable_body):
+    """Bad sig → 401, and neither client is called."""
+    iot = MagicMock()
+    sqs = MagicMock()
 
     tampered = {**headers_for(routable_body), "linear-signature": "00" * 32}
     event = make_function_url_event(routable_body, tampered)
@@ -127,6 +123,8 @@ def test_invalid_signature_neither_publishes_nor_enqueues(
         event, queue_url=QUEUE_URL, secret=SECRET, sqs_client=sqs, iot_data_client=iot
     )
 
+    iot.publish.assert_not_called()
+    sqs.send_message.assert_not_called()
     assert result == {"statusCode": 401, "body": "invalid signature"}
 
 
