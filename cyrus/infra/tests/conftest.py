@@ -20,11 +20,27 @@ from botocore.stub import Stubber
 
 SECRET = "test-linear-secret"
 QUEUE_URL = "https://sqs.us-east-1.amazonaws.com/000000000000/cyrus-linear-webhooks"
+IOT_ENDPOINT = "abc123-ats.iot.us-east-1.amazonaws.com"
+TOPIC_PREFIX = "cyrus/v1/sessions/"
+CREATOR_ID = "user-xyz"
 
 
 def sign(body: str) -> str:
     """Independent reference HMAC-SHA256 hex digest for ``body`` under ``SECRET``."""
-    return hmac.new(SECRET.encode("utf-8"), body.encode("utf-8"), hashlib.sha256).hexdigest()
+    return hmac.new(
+        SECRET.encode("utf-8"), body.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+
+
+def headers_for(body: str) -> dict[str, str]:
+    """Linear's lowercased Function URL headers, signed correctly for ``body``."""
+    return {
+        "content-type": "application/json; charset=utf-8",
+        "linear-event": "AgentSessionEvent",
+        "linear-delivery": "d-123",
+        "linear-signature": sign(body),
+        "user-agent": "Linear-Webhook",
+    }
 
 
 def make_function_url_event(
@@ -46,6 +62,19 @@ def webhook_body() -> str:
     """The raw webhook body string exactly as Linear would POST it."""
     return json.dumps(
         {"type": "AgentSessionEvent", "action": "created", "organizationId": "org-1"}
+    )
+
+
+@pytest.fixture
+def routable_body() -> str:
+    """A webhook body carrying ``agentSession.creator.id`` for routing (``CREATOR_ID``)."""
+    return json.dumps(
+        {
+            "type": "AgentSessionEvent",
+            "action": "created",
+            "organizationId": "org-1",
+            "agentSession": {"creator": {"id": CREATOR_ID}},
+        }
     )
 
 
@@ -78,6 +107,27 @@ def stubbed_sqs() -> Any:
     client = boto3.client(
         "sqs",
         region_name="us-east-1",
+        aws_access_key_id="testing",
+        aws_secret_access_key="testing",
+    )
+    stubber = Stubber(client)
+    yield client, stubber
+    stubber.deactivate()
+
+
+@pytest.fixture
+def stubbed_iot() -> Any:
+    """A real boto3 IoT Data-plane client with a botocore Stubber attached.
+
+    Yields ``(client, stubber)`` mirroring ``stubbed_sqs``. The dual-write tests
+    queue the expected ``publish`` (exact topic + byte payload) before activating;
+    an activated stubber with no queued response raises on any call, which is how
+    the rejection tests prove nothing is published.
+    """
+    client = boto3.client(
+        "iot-data",
+        region_name="us-east-1",
+        endpoint_url=f"https://{IOT_ENDPOINT}",
         aws_access_key_id="testing",
         aws_secret_access_key="testing",
     )

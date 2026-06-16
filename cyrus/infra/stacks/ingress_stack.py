@@ -12,6 +12,8 @@ policy.
 
 from __future__ import annotations
 
+import os
+
 from constructs import Construct
 
 from aws_cdk import CfnOutput, Duration, Stack, SymlinkFollowMode
@@ -57,6 +59,14 @@ class CyrusIngressStack(Stack):
             description="Linear webhook signing secret (the Linear-Signature HMAC key)",
         )
 
+        # The AWS IoT Data-plane endpoint host the handler publishes to. Sourced
+        # from CDK context (``cdk deploy -c iot_endpoint=...``) or the IOT_ENDPOINT
+        # environment variable, never a hardcoded region/account.
+        iot_endpoint = (
+            self.node.try_get_context("iot_endpoint")
+            or os.environ.get("IOT_ENDPOINT", "")
+        )
+
         handler_fn = lambda_.Function(
             self,
             "CyrusIngressHandler",
@@ -73,10 +83,40 @@ class CyrusIngressStack(Stack):
             environment={
                 "QUEUE_URL": queue.queue_url,
                 "SECRET_ARN": secret.secret_arn,
+                "IOT_ENDPOINT": iot_endpoint,
             },
         )
         queue.grant_send_messages(handler_fn)
         secret.grant_read(handler_fn)
+
+        # Least-privilege publish-only grant scoped to the per-identity session
+        # topics (cyrus/v1/sessions/*). Partition stays literal so the ARN renders
+        # as a plain string; region/account are wildcards rather than hardcoded, so
+        # the grant is region-agnostic without widening to topic/*.
+        session_topic_arn = self.format_arn(
+            service="iot",
+            partition="aws",
+            region="*",
+            account="*",
+            resource="topic",
+            resource_name="cyrus/v1/sessions/*",
+        )
+        iot_publish_policy = iam.Policy(
+            self,
+            "CyrusIngressIotPublishPolicy",
+            roles=[handler_fn.role],
+            statements=[
+                iam.PolicyStatement(
+                    actions=["iot:Publish"],
+                    resources=[session_topic_arn],
+                )
+            ],
+        )
+        # CDK collapses a single-action statement to a scalar; keep Action as a
+        # JSON array so the grant reads as an explicit, extensible action list.
+        iot_publish_policy.node.default_child.add_property_override(
+            "PolicyDocument.Statement.0.Action", ["iot:Publish"]
+        )
 
         function_url = handler_fn.add_function_url(
             auth_type=lambda_.FunctionUrlAuthType.NONE,
