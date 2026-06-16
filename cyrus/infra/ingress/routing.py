@@ -4,7 +4,7 @@ The dual-write ingress derives an IoT routing key from the webhook's user
 identity — ``agentSession.creator.id`` — so a verified webhook lands on
 ``cyrus/v1/sessions/{key}``. When that field is absent or the body is
 unparseable, extraction returns the ``_unrouted`` sentinel so the handler
-publishes to a catch-all and never drops the event (DC-21 AC4).
+publishes to a catch-all and never drops the event.
 
 OPAQUENESS CONTRACT (load-bearing): the bytes covered by ``Linear-Signature``
 must never be mutated. ``extract_routing_key`` therefore parses a **separate
@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 
 #: Catch-all routing key used when ``agentSession.creator.id`` is absent or the
-#: body cannot be parsed — the handler still dual-writes, never drops (AC4).
+#: body cannot be parsed — the handler still dual-writes, never drops.
 UNROUTED = "_unrouted"
 
 

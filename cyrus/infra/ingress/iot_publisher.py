@@ -3,9 +3,9 @@
 The ingress Lambda publishes every verified webhook to a per-identity AWS IoT
 topic (``cyrus/v1/sessions/{key}``) over the IoT **Data-plane HTTPS Publish API**
 — ``boto3.client("iot-data").publish(topic=..., payload=...)`` — so there is NO
-MQTT client in the Lambda. This sits beside the existing SQS enqueue as the
-dual-write migration safety net (see DC-21): the IoT publish proves identity
-routing while SQS keeps the live single-consumer path intact.
+MQTT client in the Lambda. This sits beside the existing SQS enqueue: the IoT
+publish proves identity routing while SQS keeps the live single-consumer path
+intact, so a failed publish must never take down the SQS enqueue.
 
 OPAQUENESS CONTRACT: the ``body`` published here is the original raw request
 bytes, byte-identical to what was HMAC-verified and enqueued to SQS. This module
@@ -30,7 +30,7 @@ def publish(
 
     Sends the raw request bytes unchanged as the IoT Data-plane payload. Returns
     ``None`` on success; transient client errors propagate so the caller can keep
-    the SQS enqueue as the safety net (DC-21 AC5). The forwarded Linear headers
+    the SQS enqueue as the safety net. The forwarded Linear headers
     ride on the SQS leg as MessageAttributes, so ``headers`` is accepted but not
     sent on this Data-plane publish.
     """

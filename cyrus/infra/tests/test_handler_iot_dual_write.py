@@ -1,16 +1,14 @@
 """Specification for the dual-write ingress: IoT publish beside the SQS enqueue.
 
-These pin DC-21's behavior at the ``process`` boundary: a verified webhook is
+These pin the behavior at the ``process`` boundary: a verified webhook is
 published byte-identically to the per-identity IoT topic ``cyrus/v1/sessions/{key}``
 AND enqueued to SQS, with an ``_unrouted`` catch-all and a transient-failure
 safety net. Both wire contracts are pinned by botocore Stubbers — the IoT
 ``publish`` payload and topic, and the SQS ``send_message`` body and attributes.
 
-IF YOU'RE AN AGENT, READ THIS: the tests are the spec, and right now they are RED
-by design — ``routing.extract_routing_key`` and ``iot_publisher.publish`` are
-scaffolds that raise ``AssertionError("Not yet implemented — RED scaffold")``.
-DC-31/DC-32/DC-34 turn them green. Do NOT weaken these assertions (especially the
-byte-identity ones) or hand the Stubbers stray responses to mask the scaffold.
+IF YOU'RE AN AGENT, READ THIS: the tests are the spec. Do not weaken these
+assertions — especially the byte-identity ones — or hand the Stubbers stray
+responses to relax a wire contract.
 """
 
 from __future__ import annotations
@@ -56,7 +54,7 @@ def _sqs_params(body: str, headers: dict) -> dict:
 def test_valid_webhook_publishes_byte_identical_body_to_keyed_topic_and_enqueues(
     routable_body, stubbed_sqs, stubbed_iot
 ):
-    """AC1: valid sig → IoT publish to cyrus/v1/sessions/{key} + SQS enqueue → 200."""
+    """Valid sig → IoT publish to cyrus/v1/sessions/{key} + SQS enqueue → 200."""
     sqs, sqs_stub = stubbed_sqs
     iot, iot_stub = stubbed_iot
     headers = headers_for(routable_body)
@@ -90,7 +88,7 @@ def test_valid_webhook_publishes_byte_identical_body_to_keyed_topic_and_enqueues
 def test_published_and_enqueued_bytes_are_identical_to_the_received_body(
     routable_body, stubbed_sqs, stubbed_iot
 ):
-    """AC2: routing reads a COPY; what is published/enqueued is byte-identical input."""
+    """Routing reads a COPY; what is published/enqueued is byte-identical input."""
     sqs, sqs_stub = stubbed_sqs
     iot, iot_stub = stubbed_iot
     headers = headers_for(routable_body)
@@ -127,7 +125,7 @@ def test_published_and_enqueued_bytes_are_identical_to_the_received_body(
 def test_invalid_signature_neither_publishes_nor_enqueues(
     routable_body, stubbed_sqs, stubbed_iot
 ):
-    """AC3: bad sig → 401, no IoT publish, no SQS enqueue (both stubbers stay armed)."""
+    """Bad sig → 401, no IoT publish, no SQS enqueue (both stubbers stay armed)."""
     sqs, sqs_stub = stubbed_sqs
     iot, iot_stub = stubbed_iot
     sqs_stub.activate()  # no response queued: any call raises
@@ -145,7 +143,7 @@ def test_invalid_signature_neither_publishes_nor_enqueues(
 def test_missing_creator_id_publishes_to_unrouted_and_still_enqueues(
     webhook_body, stubbed_sqs, stubbed_iot
 ):
-    """AC4: absent agentSession.creator.id → publish to _unrouted catch-all + enqueue."""
+    """Absent agentSession.creator.id → publish to _unrouted catch-all + enqueue."""
     sqs, sqs_stub = stubbed_sqs
     iot, iot_stub = stubbed_iot
     headers = headers_for(webhook_body)  # webhook_body has no agentSession.creator
@@ -176,7 +174,7 @@ def test_missing_creator_id_publishes_to_unrouted_and_still_enqueues(
 def test_transient_iot_failure_still_enqueues_sqs_and_returns_200(
     routable_body, stubbed_sqs, stubbed_iot
 ):
-    """AC5: IoT publish errors transiently → SQS enqueue still succeeds, 200 returned."""
+    """IoT publish errors transiently → SQS enqueue still succeeds, 200 returned."""
     sqs, sqs_stub = stubbed_sqs
     iot, iot_stub = stubbed_iot
     headers = headers_for(routable_body)

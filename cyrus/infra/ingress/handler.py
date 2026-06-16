@@ -10,8 +10,9 @@ the request to a local Cyrus daemon.
 When an IoT Data-plane client is wired (``IOT_ENDPOINT`` set), the handler also
 publishes the byte-identical raw body to a per-identity topic
 ``cyrus/v1/sessions/{key}`` — identity-routed addressing proven alongside the
-live SQS path (DC-21 dual-write migration safety net). The routing key is derived
-from a COPY of the body so the signed bytes are never mutated.
+live SQS path, which stays the durable safety net if the publish fails. The
+routing key is derived from a COPY of the body so the signed bytes are never
+mutated.
 
 The handler is deliberately dependency-free at runtime: ``boto3`` ships in the
 Lambda runtime and everything else is stdlib, so the CDK asset zips this folder
@@ -109,9 +110,9 @@ def process(
     On a valid signature the raw body is enqueued to SQS. When ``iot_data_client``
     is supplied, the handler additionally publishes the **byte-identical** raw body
     to ``{topic_prefix}{key}`` via the IoT Data-plane API, where ``key`` is the
-    routing key extracted from a COPY of the body (DC-21 dual-write). When
-    ``iot_data_client`` is ``None`` the IoT leg is skipped and behavior is the
-    legacy SQS-only path. Returns ``{"statusCode": 200}`` on success.
+    routing key extracted from a COPY of the body. When ``iot_data_client`` is
+    ``None`` the IoT leg is skipped and behavior is the legacy SQS-only path.
+    Returns ``{"statusCode": 200}`` on success.
     """
     headers = {name.lower(): value for name, value in event.get("headers", {}).items()}
     signature = headers.get(_SIGNATURE_HEADER)
@@ -123,12 +124,12 @@ def process(
         return {"statusCode": 401, "body": "invalid signature"}
 
     if iot_data_client is not None:
-        # Dual-write IoT leg. Routing-key extraction reads a COPY of the body, so
-        # the byte-identical raw ``body`` enqueued below is what gets published.
-        # The IoT publish is the migration probe, not the system of record: any
-        # failure is caught and logged so it can NEVER take down the SQS safety
-        # net (AC5). ``extract_routing_key`` returns the ``_unrouted`` sentinel
-        # when the creator id is absent, so the publish still has a topic (AC4).
+        # Routing-key extraction reads a COPY of the body, so the byte-identical
+        # raw ``body`` enqueued below is what gets published. The IoT publish is a
+        # probe, not the system of record: any failure is caught and logged so it
+        # can never take down the SQS safety net. ``extract_routing_key`` returns
+        # the ``_unrouted`` sentinel when the creator id is absent, so the publish
+        # always has a topic.
         topic = f"{topic_prefix}{routing.extract_routing_key(body)}"
         try:
             iot_publisher.publish(

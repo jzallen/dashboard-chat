@@ -1,4 +1,4 @@
-"""Specification for opaqueness-safe routing-key extraction (DC-21 / DC-31).
+"""Specification for opaqueness-safe routing-key extraction.
 
 The routing key is ``agentSession.creator.id``; when absent or unparseable the
 extractor returns the ``_unrouted`` sentinel so the handler never drops an event.

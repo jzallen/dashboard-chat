@@ -1,4 +1,4 @@
-"""Specification for the IoT Data-plane publisher (DC-21 / DC-32).
+"""Specification for the IoT Data-plane publisher.
 
 The publisher pushes the byte-identical raw body to a per-identity topic over the
 IoT Data-plane HTTPS Publish API (boto3 ``iot-data`` client) — no MQTT client in

@@ -116,15 +116,14 @@ def test_exposes_url_queue_and_pump_policy_arn_as_outputs(template: Template):
     template.has_output("PumpConsumePolicyArn", Match.any_value())
 
 
-# --- DC-21 dual-write: IoT publish grant + endpoint env (RED until DC-33) -------
+# --- dual-write: IoT publish grant + endpoint env ------------------------------
 #
-# These pin AC6: the handler role must be able to publish to the per-identity
-# session topics, and the function must learn the IoT Data-plane host via env.
-# They are RED now — the stack grants neither yet; DC-33 turns them green.
+# The handler role must be able to publish to the per-identity session topics,
+# and the function must learn the IoT Data-plane host via env.
 
 
 def test_handler_role_may_publish_to_iot_session_topics(template: Template):
-    """AC6: the execution role is granted iot:Publish scoped to cyrus/v1/sessions/*."""
+    """The execution role is granted iot:Publish scoped to cyrus/v1/sessions/*."""
     template.has_resource_properties(
         "AWS::IAM::Policy",
         {
@@ -147,7 +146,7 @@ def test_handler_role_may_publish_to_iot_session_topics(template: Template):
 
 
 def test_handler_env_exposes_the_iot_endpoint(template: Template):
-    """AC6: the IoT Data-plane endpoint host is wired to the Lambda via IOT_ENDPOINT."""
+    """The IoT Data-plane endpoint host is wired to the Lambda via IOT_ENDPOINT."""
     template.has_resource_properties(
         "AWS::Lambda::Function",
         {
