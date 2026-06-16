@@ -12,6 +12,7 @@ import { type RouteObject } from "react-router";
 
 import { ThemeProvider } from "../components/AppShell/ThemeProvider";
 import { FlashedNodeProvider } from "../components/FlashedNodeProvider";
+import { selectProject } from "../components/useCatalog";
 import { scriptedStateProxy } from "../lib/_stateProxyTestKit";
 import { type StateProxy } from "../lib/state-proxy";
 import { StateProxyProvider } from "../lib/StateProxyProvider";
@@ -22,14 +23,17 @@ import DatasetDetailRoute from "./dataset-detail";
 import HomeRedirect from "./home-redirect";
 import LoginRoute from "./login";
 import OrgRoute from "./org";
-import ProjectLayout, { clientLoader as projectLoader } from "./project-layout";
+import ProjectLayout from "./project-layout";
 import QueryEnginesRoute from "./query-engines";
 import ReportDetailRoute from "./report-detail";
 import ViewDetailRoute from "./view-detail";
 import WorkspaceRoute from "./workspace";
 
 /** The runtime equivalent of app/routes.ts, for createMemoryRouter. The
- *  project layout's loader re-scopes the catalog, exercising the real seam. */
+ *  project layout re-scopes the catalog on entry, exercising the real seam.
+ *  Production drives this from the component (selectProject + seedProjectScoped
+ *  off the server loader's data); these route/nav tests carry no SSR payload, so
+ *  a thin loader re-scopes directly — the seam without the seeded data. */
 export const testRouteTree: RouteObject[] = [
   { path: "/login", element: <LoginRoute /> },
   { path: "/auth/callback", element: <AuthCallbackRoute /> },
@@ -42,8 +46,10 @@ export const testRouteTree: RouteObject[] = [
       {
         path: "project/:projectId",
         element: <ProjectLayout />,
-        loader: ({ params }) =>
-          projectLoader({ params: params as { projectId?: string } }),
+        loader: ({ params }) => {
+          selectProject((params as { projectId?: string }).projectId!);
+          return null;
+        },
         children: [
           { index: true, element: <WorkspaceRoute /> },
           { path: "dataset/:datasetId", element: <DatasetDetailRoute /> },

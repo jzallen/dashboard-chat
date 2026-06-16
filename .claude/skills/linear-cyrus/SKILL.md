@@ -71,7 +71,9 @@ Feature project   = nwave feature
    tasks** with AC checklists.
 5. Review the breakdown → **relabel the story `wave:deliver`** → **@mention a story
    comment** → one builder session delivers the whole story (skeleton-first), **one PR**
-   into the Release branch.
+   into the Release branch. As it goes, the session **moves each sub-issue's status by
+   hand** (Todo → In Progress → Done) — the status automation only moves the *story*, not
+   its tasks, so a delivered sub-issue left in Todo is a missed step (see `task.md`).
 6. Review + merge the story PR in Linear. Release done → merge `<slug>/<release>` → `main`.
 
 Parallelize **across stories** (each its own session into the Release branch), not
@@ -86,7 +88,7 @@ tasks-within-a-story — tasks share the skeleton (see `parallel-execution.md`).
 | `references/milestone.md` | Milestone = Release; owns a git branch; 1:many stories; →main no-PR; escape hatch |
 | `references/story.md` | Story label as **phase flag** (`wave:distill`→`wave:deliver`); distill→review→deliver-via-comment |
 | `references/skeleton-task.md` | the Skeleton task — scaffold + signatures + honest RED tests, per story, first |
-| `references/task.md` | Task = the plan (no branches/PRs); skeleton vs implementation; atomic commits |
+| `references/task.md` | Task = the plan (no branches/PRs); skeleton vs implementation; atomic commits; **driving each sub-issue's status by hand (Todo→In Progress→Done)** |
 | `references/branching-and-merge.md` | Release branches, **story-level PRs**, where the gate runs, →main no-PR, `baseBranch` caveat |
 | `references/parallel-execution.md` | parallelize across stories; judging independence; conflict avoidance |
 | `references/linear-structure.md` | label taxonomy, routing (`teamKeys` + `labelPrompts`/orchestrator), views |

@@ -32,9 +32,7 @@
  */
 import type {
   AuditEntry,
-  AuditTag,
   Edge,
-  Layer,
   LineageNode,
   ModelKind,
 } from "../lineage";
@@ -45,7 +43,15 @@ import type {
   OrgSettings,
   ProjectSummary,
 } from "../models";
+import {
+  type BackendAuditEntry,
+  toAuditByNode,
+} from "./auditMappers";
 import { apiGet, apiPatch, apiPost, apiUpload } from "./backendClient";
+import {
+  type BackendDbtManifest,
+  toDbtFiles,
+} from "./dbtMappers";
 import type {
   BackendDataset,
   BackendReport,
@@ -60,7 +66,7 @@ import {
   toProjectSummary,
 } from "./metadataMappers";
 import type { BackendSession } from "./sessionMappers";
-import { toChatHistoryItem } from "./sessionMappers";
+import { toChatHistoryItem, toRecents } from "./sessionMappers";
 import type { PartialCatalogSource, SourceUpload } from "./source";
 
 /**
@@ -116,68 +122,6 @@ function toSourceUpload(upload: BackendUpload): SourceUpload {
     when: formatUploadWhen(upload.created_at),
     status: upload.status,
   };
-}
-
-/**
- * The dbt manifest resource as the backend returns it (post envelope-unwrap):
- * the file index plus the extra `project_name`/`layer_counts` the current
- * {@link DbtFile} consumer ignores. Mapped to `DbtFile[]` by {@link toDbtFiles}.
- */
-interface BackendDbtManifest {
-  id: string;
-  project_name?: string;
-  layer_counts?: Record<string, number>;
-  files: { path: string; layer: Layer | "config"; ref?: string }[];
-}
-
-/** Map the backend manifest payload to the catalog's `DbtFile[]` (files only, 1:1). */
-function toDbtFiles(manifest: BackendDbtManifest): DbtFile[] {
-  return (manifest.files ?? []).map((f) => ({
-    path: f.path,
-    layer: f.layer,
-    ref: f.ref,
-  }));
-}
-
-/**
- * An assistant-audit row as the backend returns it (post envelope-unwrap): the
- * entry `id` flattened alongside the snake_case attributes from
- * `GET /api/projects/{pid}/audit`. `tool`/`say`/`tag` come from the entry's JSON
- * payload; `transform_id`/`enabled` from the reversed-FK join (`null` for
- * log-only entries). Grouped by `node_id` + mapped to {@link AuditEntry} by
- * {@link toAuditByNode}.
- */
-interface BackendAuditEntry {
-  id: string;
-  node_id: string;
-  node_kind: string;
-  tool: string;
-  say: string;
-  tag: AuditTag;
-  transform_id?: string | null;
-  enabled?: boolean | null;
-}
-
-/**
- * Fold a flat audit-entry list into the `Record<nodeId, AuditEntry[]>` shape the
- * graph expects, preserving the backend's `(node_id, sequence, created_at)`
- * order within each node. snake_case → camelCase at the boundary.
- */
-function toAuditByNode(
-  entries: BackendAuditEntry[],
-): Record<string, AuditEntry[]> {
-  const byNode: Record<string, AuditEntry[]> = {};
-  for (const entry of entries) {
-    (byNode[entry.node_id] ??= []).push({
-      tool: entry.tool,
-      say: entry.say,
-      tag: entry.tag,
-      auditEntryId: entry.id,
-      transformId: entry.transform_id,
-      enabled: entry.enabled ?? undefined,
-    });
-  }
-  return byNode;
 }
 
 /** Dependencies the source needs from the app — kept minimal and injected. */
@@ -287,10 +231,6 @@ export function metadataApiSource(
     return sessions;
   };
 
-  /** A session's effective recency timestamp (last activity, else creation). */
-  const recencyOf = (session: BackendSession): number =>
-    Date.parse(session.last_active_at ?? session.created_at ?? "") || 0;
-
   // Drop the per-project memoized fetches so the next read re-fetches. Called
   // before a write-triggered revalidation (the only org-global memo, the project
   // list, is left intact — writes here don't change it).
@@ -390,12 +330,8 @@ export function metadataApiSource(
     async getRecents(): Promise<ChatHistoryItem[]> {
       // The five most-recent sessions (by last activity, then creation), mapped.
       // Shares the per-pid sessions fetch with getAllChats.
-      const now = Date.now();
       const sessions = await fetchSessions();
-      return [...sessions]
-        .sort((a, b) => recencyOf(b) - recencyOf(a))
-        .slice(0, 5)
-        .map((s) => toChatHistoryItem(s, now));
+      return toRecents(sessions, Date.now());
     },
 
     async toggleAuditEntry(

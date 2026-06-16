@@ -39,7 +39,13 @@ import type {
   PartialCatalogSource,
   SourceUpload,
 } from "./dataSources/source";
-import type { Edge, Layer, LineageNode, ModelKind } from "./lineage";
+import type {
+  AuditEntry,
+  Edge,
+  Layer,
+  LineageNode,
+  ModelKind,
+} from "./lineage";
 import { LineageGraph } from "./lineageGraph";
 import type {
   ChatHistoryItem,
@@ -663,6 +669,38 @@ export async function createDataCatalog(
      */
     seedOrgGlobal: (projects: ProjectSummary[], org: OrgSettings): void => {
       commit({ projects, org });
+    },
+
+    /**
+     * Seed the PROJECT-SCOPED payloads from data already fetched server-side (the
+     * `/project/:projectId` loader's), replacing the prior scope's snapshot in one
+     * commit. Where {@link selectProject} re-runs the project-scoped getters
+     * client-side, this commits the SSR'd values straight through — no round-trip,
+     * no browser read.
+     *
+     * Sets the scoped-pid guard baseline (so write-through revalidation targets
+     * this project) and builds a FRESH {@link LineageGraph} from the loader's
+     * nodes/edges/audit, so the previous project's lineage/sessions/dbt are dropped
+     * rather than merged — switching scope never surfaces stale-scope data. The
+     * org-global payloads (projects/org) are untouched; `currentProject` continues
+     * to track the org-global project list.
+     */
+    seedProjectScoped: (data: {
+      projectId: string;
+      nodes: Record<string, LineageNode>;
+      edges: Edge[];
+      audit: Record<string, AuditEntry[]>;
+      dbtFiles: DbtFile[];
+      chats: ChatHistoryItem[];
+      recents: ChatHistoryItem[];
+    }): void => {
+      currentScopedPid = data.projectId;
+      commit({
+        graph: LineageGraph.from(data.nodes, data.edges, data.audit),
+        chats: data.chats,
+        recents: data.recents,
+        dbtFiles: data.dbtFiles,
+      });
     },
 
     /* ─── project re-scope (project-in-path) ─────────────────────────────── */

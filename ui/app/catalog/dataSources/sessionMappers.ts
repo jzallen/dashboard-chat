@@ -54,3 +54,24 @@ export function toChatHistoryItem(
     snippet: undefined,
   };
 }
+
+/** A session's effective recency timestamp (last activity, else creation). */
+export function recencyOf(session: BackendSession): number {
+  return Date.parse(session.last_active_at ?? session.created_at ?? "") || 0;
+}
+
+/**
+ * The `limit` most-recent sessions (by last activity, then creation), mapped to
+ * {@link ChatHistoryItem}. Shared by the browser source's `getRecents` and the
+ * project loader so both derive the recents list identically (no drift).
+ */
+export function toRecents(
+  sessions: BackendSession[],
+  now: number,
+  limit = 5,
+): ChatHistoryItem[] {
+  return [...sessions]
+    .sort((a, b) => recencyOf(b) - recencyOf(a))
+    .slice(0, limit)
+    .map((session) => toChatHistoryItem(session, now));
+}
