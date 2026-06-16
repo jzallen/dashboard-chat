@@ -12,7 +12,9 @@ This is the scaffold-first discipline we used building `cyrus/`:
    don't implement it yet.
 
 The Skeleton task does **not** implement behaviour. Its done-state = structure compiles +
-the tests exist and are RED.
+the tests exist and are RED. Once that holds, **mark the Skeleton sub-issue Done** (the
+deliver session drives sub-issue status by hand — `task.md` § Done); the impl sub-issues
+stay Todo until their session turns each RED test green.
 
 ## Why RED tests are fine here (no `it.skip`)
 
