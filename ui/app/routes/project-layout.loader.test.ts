@@ -151,25 +151,18 @@ function stubProjectReads(pid: string): () => Captured[] {
 }
 
 /**
- * Run the loader and normalize the result to a plain, comparable outcome: whether
- * it rejected (vs resolved a catalog), and — for a thrown redirect Response — where
- * it redirects. Keeps the failure-path tests to one aggregate assertion each and
- * doesn't over-constrain HOW a non-redirect failure is thrown (Error or non-302
- * Response both normalize to `redirectedTo: null`).
+ * Run the loader and return the value it THREW — the loader is the unit under
+ * test, so the failure-path tests assert against its actual thrown value (a
+ * redirect `Response`, or a read `Error`), not a normalized stand-in. Fails the
+ * test if the loader resolves instead of throwing.
  */
-async function loaderOutcome(
-  projectId: string,
-): Promise<{ rejected: boolean; redirectedTo: string | null }> {
+async function loaderThrew(projectId: string): Promise<unknown> {
   try {
     await loader(loaderArgs(authedRequest(), projectId));
-    return { rejected: false, redirectedTo: null };
   } catch (err) {
-    const redirectedTo =
-      err instanceof Response && err.status === 302
-        ? err.headers.get("Location")
-        : null;
-    return { rejected: true, redirectedTo };
+    return err;
   }
+  throw new Error("expected the loader to throw, but it resolved a catalog");
 }
 
 beforeEach(() => {
@@ -270,15 +263,13 @@ describe("project-layout loader — project-scoped reads via the server /api hop
     );
 
     // The loader attempts the reads, and a non-401 failure among them aborts to
-    // the ErrorBoundary: it rejects (no resolved partial catalog) having actually
-    // fetched, and does NOT mask the failure as a /login redirect. Run the loader
-    // first, THEN read the captured calls — `calls()` reflects the post-run state.
-    const outcome = await loaderOutcome("p1");
-    expect({ attemptedReads: calls().length > 0, ...outcome }).toEqual({
-      attemptedReads: true,
-      rejected: true,
-      redirectedTo: null,
-    });
+    // the ErrorBoundary: it throws (no resolved partial catalog) having actually
+    // fetched, and what it throws is NOT a /login redirect (that's the 401 case).
+    const thrown = await loaderThrew("p1");
+    expect({
+      attemptedReads: calls().length > 0,
+      threwRedirect: thrown instanceof Response && thrown.status === 302,
+    }).toEqual({ attemptedReads: true, threwRedirect: false });
   });
 
   // AC3 — a 401 is the unauthenticated signal, turned into a /login redirect
@@ -286,9 +277,13 @@ describe("project-layout loader — project-scoped reads via the server /api hop
   it("redirects to /login when a project-scoped read returns 401", async () => {
     stubFetch(() => new Response("Unauthorized", { status: 401 }));
 
-    expect(await loaderOutcome("p1")).toEqual({
-      rejected: true,
-      redirectedTo: "/login",
-    });
+    // The loader throws the redirect Response itself (RRv7's `redirect("/login")`),
+    // so assert against that thrown value's real status + Location.
+    const thrown = await loaderThrew("p1");
+    expect(
+      thrown instanceof Response
+        ? { status: thrown.status, location: thrown.headers.get("Location") }
+        : thrown,
+    ).toEqual({ status: 302, location: "/login" });
   });
 });
