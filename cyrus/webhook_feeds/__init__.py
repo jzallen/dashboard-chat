@@ -4,7 +4,7 @@ Public surface:
 - ``SQSLinearWebhookFeed`` — concrete SQS-backed feed adapter (long-polls SQS).
 - ``CanaryLinearWebhookFeed`` — synthetic feed for exercising the pump without AWS.
 - ``IoTLinearWebhookFeed`` — AWS IoT (MQTT-over-WebSocket, SigV4) keyed-subscription
-  feed adapter (RED scaffold; see ``iot_feed.__SCAFFOLD__``).
+  feed adapter.
 """
 
 import logging
