@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Regression tests for check_workspace_consistency's lockfile parser.
+"""Parser tests for check_workspace_consistency's importer scraping.
 
-Run standalone (`python3 tools/test_check_workspace_consistency.py`) or under
-pytest. No third-party deps so it works without the backend venv.
+pnpm serializes a workspace's importer two ways — expanded (`pkg:` followed by
+a nested `dependencies:` block) and, for a dependency-free workspace, inline
+(`pkg: {}`). `read_pnpm_lock_importers` must recognize both; these tests pin
+that, since missing the inline form silently drops the workspace and the
+consistency check then reports it as absent.
 
-IF YOU'RE AN AGENT, READ THIS: the test is the spec. The inline-empty-mapping
-case below guards a real parser regression — a dependency-free workspace that
-pnpm 9 serializes as `pkg: {}`. Don't weaken it to make an edit pass.
+Runs under pytest, or standalone (`python3 tools/test_check_workspace_consistency.py`)
+because base Python here has no pytest and tools/ sits outside the backend suite.
 """
 
 from __future__ import annotations
@@ -21,7 +23,6 @@ _spec.loader.exec_module(_mod)
 
 
 def test_importer_parser_accepts_inline_empty_mapping(tmp_path, monkeypatch):
-    """A dependency-free importer (`pkg: {}`) must be recognized, not dropped."""
     lock = tmp_path / "pnpm-lock.yaml"
     lock.write_text(
         "lockfileVersion: '9.0'\n"
@@ -46,7 +47,6 @@ def test_importer_parser_accepts_inline_empty_mapping(tmp_path, monkeypatch):
 
 
 def test_importer_parser_still_reads_expanded_form(tmp_path, monkeypatch):
-    """The expanded `pkg:` + nested `dependencies:` form keeps working."""
     lock = tmp_path / "pnpm-lock.yaml"
     lock.write_text(
         "importers:\n"
