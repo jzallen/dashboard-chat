@@ -205,15 +205,33 @@ describe("project-layout loader — project-scoped reads via the server /api hop
       expect(new Headers(init.headers).get("cookie")).toBe("auth_token=abc");
     }
 
-    expect(result.projectId).toBe("p1");
-    // The lineage graph is derived from sources/datasets/views/reports.
-    expect(Object.keys(result.nodes).sort()).toEqual(["d-p1", "r-p1", "s-p1", "v-p1"]);
-    expect(result.edges.length).toBeGreaterThan(0);
-    // Sessions → chats/recents; manifest → dbt files; audit folded by node id.
-    expect(result.chats.map((c) => c.title)).toEqual(["Chat p1"]);
-    expect(result.recents.map((c) => c.title)).toEqual(["Chat p1"]);
-    expect(result.dbtFiles.map((f) => f.path)).toEqual(["models/stg_p1.sql"]);
-    expect(result.audit["d-p1"]).toHaveLength(1);
+    // The assembled scoped payload, as one aggregate: the lineage graph (node ids
+    // + derived edges) from sources/datasets/views/reports, sessions → chats (and
+    // recents — the same first page here), the dbt manifest → files, and audit
+    // folded by node id. Exact per-node field shapes and the relative-time `when`
+    // are pinned by the mapper unit tests, so this projects to the assembly the
+    // loader is responsible for rather than re-asserting the mappers.
+    expect({
+      projectId: result.projectId,
+      nodeIds: Object.keys(result.nodes).sort(),
+      edges: result.edges,
+      chatTitles: result.chats.map((c) => c.title),
+      recentTitles: result.recents.map((c) => c.title),
+      dbtPaths: result.dbtFiles.map((f) => f.path),
+      auditNodeIds: Object.keys(result.audit),
+    }).toEqual({
+      projectId: "p1",
+      nodeIds: ["d-p1", "r-p1", "s-p1", "v-p1"],
+      edges: [
+        ["s-p1", "d-p1"],
+        ["d-p1", "v-p1"],
+        ["v-p1", "r-p1"],
+      ],
+      chatTitles: ["Chat p1"],
+      recentTitles: ["Chat p1"],
+      dbtPaths: ["models/stg_p1.sql"],
+      auditNodeIds: ["d-p1"],
+    });
   });
 
   // AC2 — at the loader level the only unit-testable surface is the revalidation
