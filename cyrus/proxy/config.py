@@ -12,8 +12,8 @@ Environment variables (read by ``from_env`` / ``config_from_env``):
 
 - ``CYRUS_PROXY_BASE_URL``                — base URL where the local Cyrus daemon
   listens, e.g. ``http://localhost:3456`` (required)
-- ``CYRUS_PROXY_FEED``                    — which feed to run, ``sqs`` or ``canary``
-  (default ``sqs``)
+- ``CYRUS_PROXY_FEED``                    — which feed to run, ``sqs``, ``canary`` or
+  ``iot`` (default ``sqs``)
 - ``CYRUS_PROXY_QUEUE_URL``               — SQS queue to poll (required for ``sqs``)
 - ``CYRUS_PROXY_MAX_MESSAGES``            — messages per poll (default 10, the SQS cap)
 - ``CYRUS_PROXY_WAIT_SECONDS``            — SQS long-poll wait per receive in seconds
@@ -28,6 +28,12 @@ Environment variables (read by ``from_env`` / ``config_from_env``):
   ``Linear-Signature`` (optional; placeholder signature when unset)
 - ``CYRUS_PROXY_CANARY_IDLE_SECONDS``     — canary idle sleep after draining, in
   seconds (default 20)
+- ``CYRUS_PROXY_IOT_ENDPOINT``            — AWS IoT data-plane endpoint host the
+  consumer opens its MQTT-over-WebSocket connection to (required for ``iot``)
+- ``CYRUS_PROXY_IOT_ROUTING_KEY``         — this consumer's ``creator.id``; the feed
+  subscribes only to ``cyrus/v1/sessions/<routing-key>`` (required for ``iot``)
+- ``CYRUS_PROXY_IOT_REGION``              — AWS region for SigV4 signing of the IoT
+  WebSocket connection (optional; falls back to the default AWS provider chain)
 """
 
 from __future__ import annotations
@@ -126,12 +132,48 @@ class CanaryConfig(_ConfigDecorator):
         return cls(**settings)
 
 
-FeedConfig = Union[SqsConfig, CanaryConfig]
+@dataclass(frozen=True)
+class IoTConfig(_ConfigDecorator):
+    """Core config extended with AWS IoT feed settings.
+
+    ``iot_routing_key`` is this consumer's ``creator.id`` — the feed subscribes only
+    to ``cyrus/v1/sessions/<iot_routing_key>``. ``iot_endpoint`` is the IoT data-plane
+    host the MQTT-over-WebSocket connection targets, and ``iot_region`` selects the
+    region used for SigV4 signing (``None`` defers to the default AWS provider chain).
+    """
+
+    iot_endpoint: str
+    iot_routing_key: str
+    iot_region: Optional[str] = None
+
+    @classmethod
+    def from_env(cls, env: Optional[Mapping[str, str]] = None) -> "IoTConfig":
+        """Read the IoT endpoint and routing key from ``CYRUS_PROXY_IOT_*`` env vars.
+
+        Reads ``CYRUS_PROXY_IOT_ENDPOINT`` and ``CYRUS_PROXY_IOT_ROUTING_KEY``
+        (both required) and the optional ``CYRUS_PROXY_IOT_REGION`` alongside the core
+        settings, mirroring ``SqsConfig.from_env``.
+        """
+        env = os.environ if env is None else env
+        settings: dict[str, Any] = {
+            "core": CoreConfig.from_env(env),
+            "iot_endpoint": env["CYRUS_PROXY_IOT_ENDPOINT"],
+            "iot_routing_key": env["CYRUS_PROXY_IOT_ROUTING_KEY"],
+        }
+        if "CYRUS_PROXY_IOT_REGION" in env:
+            settings["iot_region"] = env["CYRUS_PROXY_IOT_REGION"]
+        return cls(**settings)
+
+
+FeedConfig = Union[SqsConfig, CanaryConfig, IoTConfig]
 
 
 def config_from_env(env: Optional[Mapping[str, str]] = None) -> FeedConfig:
-    """Pick the feed config from ``CYRUS_PROXY_FEED`` (``sqs`` default, or ``canary``)."""
+    """Pick the feed config from ``CYRUS_PROXY_FEED`` (``sqs`` default, ``canary``, ``iot``)."""
     env = os.environ if env is None else env
-    if env.get("CYRUS_PROXY_FEED", "sqs") == "canary":
+    feed = env.get("CYRUS_PROXY_FEED", "sqs")
+    if feed == "canary":
         return CanaryConfig.from_env(env)
+    if feed == "iot":
+        return IoTConfig.from_env(env)
     return SqsConfig.from_env(env)
