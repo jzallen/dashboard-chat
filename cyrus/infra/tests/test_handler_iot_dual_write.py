@@ -98,18 +98,20 @@ def test_published_and_enqueued_bytes_are_identical_to_the_received_body(
     published: dict = {}
     enqueued: dict = {}
 
-    def _capture_publish(params, **_):
-        published["payload"] = params["payload"]
+    # Capture the exact wire arguments by shadowing the client methods. (A
+    # botocore Stubber cannot run a callback — ``add_response`` only accepts a
+    # canned response dict — so capturing the published/enqueued bytes is done by
+    # replacing the bound methods rather than through the Stubbers.)
+    def _capture_publish(*, topic, payload):
+        published["payload"] = payload
         return {}
 
-    def _capture_send(params, **_):
-        enqueued["body"] = params["MessageBody"]
+    def _capture_send(*, QueueUrl, MessageBody, MessageAttributes):
+        enqueued["body"] = MessageBody
         return {"MD5OfMessageBody": "x", "MessageId": "m-1"}
 
-    iot_stub.add_response("publish", _capture_publish)
-    sqs_stub.add_response("send_message", _capture_send)
-    iot_stub.activate()
-    sqs_stub.activate()
+    iot.publish = _capture_publish
+    sqs.send_message = _capture_send
 
     event = make_function_url_event(routable_body, headers)
     process(

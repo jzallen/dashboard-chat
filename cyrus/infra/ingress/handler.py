@@ -27,6 +27,7 @@ NOT enqueue anything.
 from __future__ import annotations
 
 import base64
+import logging
 import os
 from typing import Any, Mapping, Optional
 
@@ -35,6 +36,8 @@ import boto3
 import iot_publisher
 import routing
 from linear_signature import verify
+
+_log = logging.getLogger(__name__)
 
 # IoT Data-plane topic prefix for identity-routed publishes; the routing key
 # (``agentSession.creator.id`` or the ``_unrouted`` sentinel) is appended.
@@ -120,17 +123,25 @@ def process(
         return {"statusCode": 401, "body": "invalid signature"}
 
     if iot_data_client is not None:
-        # Dual-write IoT leg (RED scaffold). Routing-key extraction reads a COPY
-        # of the body; the byte-identical raw ``body`` is what gets published.
-        # The IoT publish must NOT take down the SQS safety net (AC5) — that
-        # orchestration lands in DC-34; for now both calls are scaffolded RED.
-        key = routing.extract_routing_key(body)
-        iot_publisher.publish(
-            iot_data_client,
-            topic=f"{topic_prefix}{key}",
-            body=body,
-            headers=_forwarded_headers(headers),
-        )
+        # Dual-write IoT leg. Routing-key extraction reads a COPY of the body, so
+        # the byte-identical raw ``body`` enqueued below is what gets published.
+        # The IoT publish is the migration probe, not the system of record: any
+        # failure is caught and logged so it can NEVER take down the SQS safety
+        # net (AC5). ``extract_routing_key`` returns the ``_unrouted`` sentinel
+        # when the creator id is absent, so the publish still has a topic (AC4).
+        topic = f"{topic_prefix}{routing.extract_routing_key(body)}"
+        try:
+            iot_publisher.publish(
+                iot_data_client,
+                topic=topic,
+                body=body,
+                headers=_forwarded_headers(headers),
+            )
+        except Exception:
+            _log.exception(
+                "IoT dual-write publish to %s failed; SQS enqueue is the safety net",
+                topic,
+            )
 
     sqs_client.send_message(
         QueueUrl=queue_url,
