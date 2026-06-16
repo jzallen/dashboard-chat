@@ -162,16 +162,21 @@ describe("project-layout loader — project-scoped reads via the server /api hop
 
     const result = await loader(loaderArgs(authedRequest(), "p1"));
 
-    const urls = calls().map((c) => c.url);
-    expect(urls).toContain(`${AUTH_PROXY_URL}/api/sources?project_id=p1`);
-    expect(urls).toContain(`${AUTH_PROXY_URL}/api/datasets?project_id=p1`);
-    expect(urls).toContain(`${AUTH_PROXY_URL}/api/projects/p1/views`);
-    expect(urls).toContain(`${AUTH_PROXY_URL}/api/projects/p1/reports`);
-    expect(urls).toContain(`${AUTH_PROXY_URL}/api/projects/p1/sessions`);
-    expect(urls).toContain(
+    // Exactly the project-scoped reads, each scoped to the path projectId — no
+    // more (over-fetch), no fewer. Order is NOT part of the contract: these are
+    // independent reads fired in parallel, so compare the sets order-independently
+    // rather than pinning the parallel-fetch sequence.
+    const expectedUrls = [
+      `${AUTH_PROXY_URL}/api/sources?project_id=p1`,
+      `${AUTH_PROXY_URL}/api/datasets?project_id=p1`,
+      `${AUTH_PROXY_URL}/api/projects/p1/views`,
+      `${AUTH_PROXY_URL}/api/projects/p1/reports`,
+      `${AUTH_PROXY_URL}/api/projects/p1/sessions`,
       `${AUTH_PROXY_URL}/api/projects/p1/export/dbt/manifest`,
-    );
-    expect(urls).toContain(`${AUTH_PROXY_URL}/api/projects/p1/audit`);
+      `${AUTH_PROXY_URL}/api/projects/p1/audit`,
+    ];
+    const urls = calls().map((c) => c.url);
+    expect([...urls].sort()).toEqual([...expectedUrls].sort());
 
     // The inbound user credential is forwarded server-side (no browser hop).
     for (const { init } of calls()) {
