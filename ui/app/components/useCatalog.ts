@@ -17,14 +17,20 @@
 import { useSyncExternalStore } from "react";
 
 import {
+  type AuditEntry,
   type CatalogSource,
+  type ChatHistoryItem,
   createDataCatalog,
   type DataCatalog,
+  type DbtFile,
+  type Edge,
   fixtureSource,
+  type LineageNode,
   metadataApiSource,
   type OrgSettings,
   type PartialCatalogSource,
   type ProjectSummary,
+  type SourceUpload,
 } from "../catalog";
 
 /**
@@ -103,6 +109,31 @@ export function seedOrgGlobal(
   org: OrgSettings,
 ): void {
   catalog.seedOrgGlobal(projects, org);
+}
+
+/**
+ * Seed the project-scoped payloads from the `/project/:projectId` server loader's
+ * data — the module entry point the layout calls with `useLoaderData()`,
+ * mirroring how {@link seedOrgGlobal} commits already-fetched values (no
+ * round-trip). Commits the SSR'd lineage graph, audit, sessions, dbt files, and
+ * source uploads into the catalog snapshot for the scoped pid, so the catalog
+ * reads real project data straight off the hydrated payload.
+ *
+ * The parameter is structurally the route's `ProjectScopedData`; it is typed
+ * inline here (rather than imported) to keep the component→catalog dependency
+ * one-directional.
+ */
+export function seedProjectScoped(data: {
+  projectId: string;
+  nodes: Record<string, LineageNode>;
+  edges: Edge[];
+  audit: Record<string, AuditEntry[]>;
+  dbtFiles: DbtFile[];
+  chats: ChatHistoryItem[];
+  recents: ChatHistoryItem[];
+  sourceUploads: Record<string, SourceUpload[]>;
+}): void {
+  throw new Error(`seedProjectScoped not implemented (pid=${data.projectId})`);
 }
 
 /** The scoped pid the test seam exposes so a primary can read it (mirrors the
