@@ -112,11 +112,10 @@ def test_adapter_disconnect_closes_the_underlying_connection() -> None:
     connection.disconnect.assert_called_once_with()
 
 
-def test_puback_flags_the_manual_ack_integration_boundary() -> None:
-    """Manual QoS-1 PUBACK needs the awscrt MQTT5 client; the adapter refuses to fake it.
+def test_adapter_puback_acks_the_packet_on_the_underlying_connection() -> None:
+    """puback() forwards the QoS-1 acknowledgement to the connection for that packet id."""
+    connection = make_connection()
 
-    The at-least-once behaviour is unit-tested on the feed via the injected connection;
-    here we pin that the awscrt seam does NOT silently ack on the wrong protocol.
-    """
-    with pytest.raises(NotImplementedError):
-        _AwsCrtIoTConnection(make_connection()).puback(7)
+    _AwsCrtIoTConnection(connection).puback(7)
+
+    connection.puback.assert_called_once_with(7)

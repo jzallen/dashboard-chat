@@ -322,18 +322,13 @@ class _AwsCrtIoTConnection:
         self._connection.disconnect().result()
 
     def puback(self, packet_id: int) -> None:
-        """Send the QoS 1 PUBACK that completes a manually-acknowledged delivery.
+        """Forward the QoS 1 PUBACK (manual ack) to the underlying connection.
 
-        Manual acknowledgement (PUBACK only after a clean forward) is what gives the
-        feed its at-least-once guarantee; the awscrt **MQTT5** client exposes it via
-        its manual-ack API keyed by ``packet_id`` (the MQTT 3.1.1 connection builder
-        auto-acks on callback return, which would defeat the contract). Wiring the
-        MQTT5 manual-ack path is the live-AWS integration step this seam abstracts —
-        the at-least-once behaviour itself is unit-tested on the feed via the injected
-        connection — so this raises until that integration lands rather than acking
-        on the wrong protocol.
+        Like the other methods this only delegates; the connection built by
+        :func:`build_default_iot_connection` must provide manual acknowledgement
+        (PUBACK only after a clean forward — the awscrt **MQTT5** manual-ack client,
+        since the MQTT 3.1.1 builder auto-acks on callback return). Wiring that real
+        connection is the live-AWS integration step; the at-least-once behaviour
+        itself is unit-tested on the feed via the injected connection.
         """
-        raise NotImplementedError(
-            "manual QoS 1 PUBACK requires the awscrt MQTT5 manual-ack client; "
-            "wire it during live-AWS IoT integration"
-        )
+        self._connection.puback(packet_id)
