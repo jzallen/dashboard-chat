@@ -1,4 +1,4 @@
-"""Specification (RED scaffold) for IoTLinearWebhookFeed — the AWS IoT read side.
+"""Executable specification for IoTLinearWebhookFeed — the AWS IoT read side.
 
 These tests describe how the IoT feed turns MQTT messages pushed on the consumer's
 own keyed topic (``cyrus/v1/sessions/<creator-id>``) into LinearWebhookMessage value
@@ -17,15 +17,13 @@ acceptance criteria of DC-22:
 5. The routing key + endpoint are read from env and ``CYRUS_PROXY_FEED`` selects
    ``iot`` (see ``test_iot_config_selection.py``).
 
-This is a SKELETON: ``IoTLinearWebhookFeed.receive`` / ``acknowledge`` raise
-``AssertionError("Not yet implemented — RED scaffold")``, so every test here is
-honest RED (fails on that AssertionError), NOT broken (imports resolve, the injected
-fake connection and signatures are real). Each test's post-call assertions document
-the target a downstream implementation sub-issue must satisfy to turn it green.
+The feed is implemented, so these run GREEN; they are the live spec for its behaviour.
+The injected ``FakeIoTConnection`` is the only seam — the MQTT connection is faked so
+the suite never touches AWS, while the signatures and push-to-poll bridge are real.
 
 IF YOU'RE AN AGENT, READ THIS:
-- These tests are the specification. Implement the feed to satisfy them; never weaken
-  or rewrite an assertion to fit the implementation.
+- These tests are the specification. Keep the feed satisfying them; never weaken or
+  rewrite an assertion to fit a change in the implementation.
 - Mock only at the port boundary — the injected MQTT connection (FakeIoTConnection).
   Do not mock the feed's internals.
 """

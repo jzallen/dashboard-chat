@@ -94,12 +94,12 @@ class IoTLinearWebhookFeed:
     """AWS IoT (MQTT-over-WebSocket, SigV4) implementation of the feed port.
 
     Satisfies ``proxy.execution_loop.LinearWebhookFeedProtocol`` structurally — it
-    neither imports nor subclasses the port. The MQTT/IoT ``connection`` is injected
-    so tests pass a fake and never touch AWS; when omitted the feed lazily builds a
-    real connection authenticated by the instance role via SigV4 over WebSocket (no
-    device certs) on the first ``receive()`` (see :func:`build_default_iot_connection`).
-    ``endpoint``, ``routing_key`` (this consumer's ``creator.id``) and ``region``
-    configure that connection and the keyed subscription.
+    neither imports nor subclasses the port. The MQTT/IoT ``connection`` is injected so
+    tests pass a fake and never touch AWS; when omitted the first ``receive()`` tries to
+    build the default instance-role SigV4 connection, which is the not-yet-wired
+    live-AWS integration step (see :func:`build_default_iot_connection`). ``endpoint``,
+    ``routing_key`` (this consumer's ``creator.id``) and ``region`` configure that
+    connection and the keyed subscription.
 
     Arriving messages are buffered in an internal thread-safe queue by the
     subscription callback and drained by ``receive()`` (push-to-poll); see the module
@@ -120,6 +120,9 @@ class IoTLinearWebhookFeed:
         self._endpoint = endpoint
         self._region = region
         self._connection = connection
+        # An injected connection is owned by the caller; a lazily-built one is ours to
+        # drop on stop() so a restart rebuilds a fresh connection.
+        self._owns_connection = connection is None
         self._max_messages = max_messages
         self._poll_timeout_seconds = poll_timeout_seconds
         self._topic_filter = topic_filter_for(routing_key)
@@ -178,13 +181,20 @@ class IoTLinearWebhookFeed:
         return None
 
     def stop(self) -> None:
-        """Disconnect the IoT connection cleanly (idempotent best-effort)."""
+        """Disconnect the IoT connection cleanly (idempotent best-effort).
+
+        A lazily-built connection is dropped so a later ``receive()`` rebuilds a fresh
+        one rather than reconnecting an already-disconnected connection; an injected
+        connection is left in place for its owner (e.g. tests).
+        """
         if self._connection is not None and self._started:
             try:
                 self._connection.disconnect()
             except Exception as exc:
                 logger.warning("IoT disconnect failed: %s", exc, exc_info=True)
             self._started = False
+            if self._owns_connection:
+                self._connection = None
 
     def _ensure_started(self) -> None:
         """Connect and subscribe to the consumer's own topic exactly once."""
@@ -250,33 +260,26 @@ def build_default_iot_connection(
 ) -> "_AwsCrtIoTConnection":
     """Build the production MQTT-over-WebSocket (SigV4) connection for the feed.
 
-    Wires ``awsiot.mqtt_connection_builder.websockets_with_default_aws_signing`` with
-    the **default AWS credentials provider chain** — so the devpod **instance role**
-    signs the WebSocket handshake and **no X.509 device certificate** is involved —
-    targeting ``endpoint``/``region`` with a client id derived from the consumer's
-    ``routing_key``. ``awsiotsdk``/``awscrt`` are imported lazily so importing this
-    module (and constructing the feed with an injected fake in tests) never pulls the
-    AWS SDK. Returns an :class:`_AwsCrtIoTConnection` adapting the awscrt connection
-    to the seam the feed drives (``connect``/``subscribe``/``disconnect``/``puback``).
-    """
-    from awscrt import auth, io, mqtt  # noqa: F401  (mqtt re-exported via the adapter)
-    from awsiot import mqtt_connection_builder
+    The intended wiring (the live-AWS integration step) builds an awscrt **MQTT5**
+    client via ``websockets_with_default_aws_signing`` over the **default AWS
+    credentials provider chain** — so the devpod **instance role** signs the WebSocket
+    handshake and **no X.509 device certificate** is involved — targeting
+    ``endpoint``/``region`` with a client id derived from ``routing_key``, and wraps it
+    in an :class:`_AwsCrtIoTConnection`.
 
-    event_loop_group = io.EventLoopGroup(1)
-    host_resolver = io.DefaultHostResolver(event_loop_group)
-    client_bootstrap = io.ClientBootstrap(event_loop_group, host_resolver)
-    credentials_provider = auth.AwsCredentialsProvider.new_default_chain(
-        client_bootstrap
+    It is **not yet wired**: the feed's at-least-once contract needs *manual* QoS 1
+    acknowledgement (PUBACK only after a clean forward), which requires the MQTT5
+    client — the MQTT 3.1.1 connection builder auto-acks on callback return and exposes
+    no ``puback``. Rather than ship a connection that would silently break redelivery,
+    this raises until the MQTT5 manual-ack path is wired and verified against a live
+    endpoint. The feed's behaviour and the :class:`_AwsCrtIoTConnection` delegation
+    surface are fully unit-tested via an injected connection in the meantime.
+    """
+    raise NotImplementedError(
+        "production AWS IoT connection is not wired yet: it needs the awscrt MQTT5 "
+        "manual-ack client (SigV4 default-chain, no device certs) so PUBACK fires only "
+        "after a successful forward. Inject a connection to run the feed until then."
     )
-    mqtt_connection = mqtt_connection_builder.websockets_with_default_aws_signing(
-        endpoint=endpoint,
-        region=region,
-        credentials_provider=credentials_provider,
-        client_bootstrap=client_bootstrap,
-        client_id=f"cyrus-iot-consumer-{routing_key}",
-        clean_session=False,
-    )
-    return _AwsCrtIoTConnection(mqtt_connection)
 
 
 class _AwsCrtIoTConnection:

@@ -8,13 +8,12 @@ headers, packet_id)`` shape the feed buffers. These tests pin that forwarding by
 driving the adapter against a ``MagicMock`` connection and asserting the underlying
 method fired — no live AWS, no patching of module globals.
 
-``build_default_iot_connection`` itself is deliberately NOT tested here: it is pure
-composition-root assembly of awscrt objects (the same category as
-``ProxyExecutionLoop.run``, which the codebase leaves untested as glue), and its
-SigV4 / no-X.509 property is structural — it calls
-``mqtt_connection_builder.websockets_with_default_aws_signing``, which has no
-certificate parameter. The no-cert / keyed-subscription intent is pinned at the feed
-seam by ``test_iot_linear_webhook_feed.test_subscribes_only_to_own_topic_over_sigv4_websocket_without_certs``.
+``build_default_iot_connection`` itself is deliberately NOT tested here: it is the
+not-yet-wired live-AWS integration step (it raises ``NotImplementedError`` until the
+awscrt MQTT5 manual-ack client is wired and verified against a live endpoint), so
+there is no behaviour to pin without AWS. The keyed-subscription intent is pinned at
+the feed seam by
+``test_iot_linear_webhook_feed.test_subscribes_only_to_its_own_keyed_topic_on_the_first_receive``.
 
 IF YOU'RE AN AGENT, READ THIS:
 - The adapter only delegates, so verify it at the boundary: assert the underlying
