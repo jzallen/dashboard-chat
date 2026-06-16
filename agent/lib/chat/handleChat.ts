@@ -19,21 +19,11 @@ import {
 import { getConversationalSystemPrompt, getReportSystemPrompt, getSystemPrompt, getViewSystemPrompt } from "./prompts";
 import { getReportTools } from "./reportToolDefinitions";
 import { requestLog } from "./requestLog";
-import {
-  assertScopeHeaderFallbackSunset,
-  buildScopeHeaderFallbackEvent,
-  extractActiveScope,
-} from "./scope";
+import { extractActiveScope } from "./scope";
 import { noopThreadPersister, type ThreadEventPersister } from "./threadPersister";
 import { getConversationalTools, getTools } from "./tools";
 import type { TableSchema } from "./types";
 import { getViewTools } from "./viewToolDefinitions";
-
-// DWD-3 compile-time sunset: defense-in-depth. If the agent boots with the
-// flag still on past the sunset date, crash at module load — BEFORE the HTTP
-// server binds. agent/index.ts also calls this; two import-sites so a future
-// refactor that drops one doesn't silently extend the migration window.
-assertScopeHeaderFallbackSunset();
 
 type ContextType = "dataset" | "view" | "report" | null;
 
@@ -85,7 +75,7 @@ function extractJwt(request: Request): string {
 }
 
 export async function handleChat(request: Request, env: Env): Promise<Response> {
-  const { messages, tableSchema, contextType, contextId, thread_id, project_id } =
+  const { messages, tableSchema, contextType, contextId, thread_id } =
     (await request.json()) as ChatRequest;
 
   if (!Array.isArray(messages) || messages.length === 0) {
@@ -97,14 +87,10 @@ export async function handleChat(request: Request, env: Env): Promise<Response> 
 
   // DWD-3 + ADR-029 §4 — every chat turn MUST carry an active scope. The
   // header is set EXCLUSIVELY by uiStateClient.activeScopeHeader on the FE
-  // (the lint rule forbids manual header sets elsewhere). During the
-  // migration window the body's project_id is honored as a fallback;
-  // SCOPE_HEADER_FALLBACK_SUNSET enforces flag removal.
-  const scopeResult = extractActiveScope(request, {
-    project_id,
-    contextType,
-    contextId,
-  });
+  // (the lint rule forbids manual header sets elsewhere). The header is the
+  // only accepted source of scope; the legacy body.project_id fallback has
+  // been retired now that the migration window has closed.
+  const scopeResult = extractActiveScope(request);
   if (!scopeResult.ok) {
     requestLog.append({
       ts: new Date().toISOString(),
@@ -118,19 +104,7 @@ export async function handleChat(request: Request, env: Env): Promise<Response> 
       headers: { "Content-Type": "application/json" },
     });
   }
-  const { scope, used_body_fallback } = scopeResult;
-  if (used_body_fallback) {
-    // K-J002-5 observability — the fallback path is the migration-window
-    // signal. The team watches the rate trend to zero before flipping the
-    // flag off (and then removing this path at the sunset date).
-    const event = buildScopeHeaderFallbackEvent(request);
-    console.warn(
-      JSON.stringify({
-        level: "warn",
-        ...event,
-      }),
-    );
-  }
+  const { scope } = scopeResult;
   requestLog.append({
     ts: new Date().toISOString(),
     scope,
@@ -213,9 +187,7 @@ export async function handleChat(request: Request, env: Env): Promise<Response> 
   const dispatchCtx: DispatchContext = {
     jwt,
     datasetId: resolvedDatasetId,
-    // DWD-3 / IC-J002-7: projectId now flows from X-Active-Scope, never from
-    // the body post-sunset. project_id from body is only present here
-    // because extractActiveScope already consumed it via the fallback path.
+    // DWD-3 / IC-J002-7: projectId flows exclusively from X-Active-Scope.
     projectId: scope.project_id,
     contextType: contextType === "report" ? "report" : contextType === "dataset" ? "dataset" : "project",
     backend,

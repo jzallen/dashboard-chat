@@ -76,9 +76,7 @@ Acceptance suites (per-feature, run separately from the standard test commands):
 cd tests/acceptance/<feature> && uv run --no-project pytest
 ```
 
-**Workflow — trunk-based development via the merge queue.** Every change lands on `main` through the gastown headless merge queue (rig: `dashboard_chat`). `gt mq submit` is the single entry point; the refinery rebases the source branch onto latest `main`, runs the gate (`./tools/test/test.sh --auto`), and merges on green. The `--auto` selector is content-aware — docs-only diffs (matching `docs/**`, `.claude/skills/**`, `.claude/settings.json`, `README*`, `CHANGELOG*`, `*.md`) skip the backend tests; any code touch falls through to `--backend` (ruff + pytest). The dispatcher script (`tools/test/test.sh`) supports `--backend`, `--ui`, `--agent`, `--all`, `--integration`, `--acceptance=<feature>`, `--auto` selectors. Acceptance suites run locally by the agent or human before submission — not in the queue.
-
-**No upstream GitHub PRs as a primary mechanism.** Feature branches are short-lived and land via `gt mq submit`; "PR" vocabulary in older ADRs (e.g. ADR-031) refers to merge requests, not GitHub Pull Requests. Use "MR-N" (merge request) when sequencing planned landings — matches ADR-026 + gt mq vocabulary. GitHub PRs are reserved for exceptional cases where a human-driven review is genuinely needed (rare); not part of the routine workflow.
+**Workflow — trunk-based development.** Every change lands on `main` from a short-lived feature branch. Run the gate locally before landing: `./tools/test/test.sh --auto`. The `--auto` selector is content-aware — docs-only diffs (matching `docs/**`, `.claude/skills/**`, `.claude/settings.json`, `README*`, `CHANGELOG*`, `*.md`) skip the backend tests; any code touch falls through to `--backend` (ruff + pytest). The dispatcher script (`tools/test/test.sh`) supports `--backend`, `--ui`, `--agent`, `--all`, `--integration`, `--acceptance=<feature>`, `--auto` selectors. Acceptance suites run locally by the agent or human before landing.
 
 **Gates:**
 - Pre-commit runs ruff + eslint auto-fix (fast; preserved).
