@@ -76,15 +76,21 @@ class FakeCrtConnection:
         return _DoneFuture()
 
 
-def test_adapter_connects_and_subscribes_to_the_keyed_topic_at_qos_1() -> None:
-    """connect()/subscribe() drive the awscrt connection for the consumer's own key only."""
+def test_adapter_connect_opens_the_underlying_connection() -> None:
+    """connect() drives the awscrt connection's connect (and waits on the future)."""
     crt = FakeCrtConnection()
-    adapter = _AwsCrtIoTConnection(crt)
 
-    adapter.connect()
-    adapter.subscribe(TOPIC, 1, lambda **_: None)
+    _AwsCrtIoTConnection(crt).connect()
 
     assert crt.connected is True
+
+
+def test_adapter_subscribes_to_the_keyed_topic_at_qos_1() -> None:
+    """subscribe() targets exactly the consumer's own key at QoS 1 (no wildcards)."""
+    crt = FakeCrtConnection()
+
+    _AwsCrtIoTConnection(crt).subscribe(TOPIC, 1, lambda **_: None)
+
     assert crt.subscribed == [(TOPIC, 1)]
 
 
@@ -111,10 +117,12 @@ def test_adapter_translates_an_arriving_publish_into_the_seam_callback() -> None
         packet_id=7,
     )
 
-    assert received["topic"] == TOPIC
-    assert received["payload"] == WEBHOOK_BODY
-    assert received["headers"] == {"Linear-Event": "AgentSessionEvent"}
-    assert received["packet_id"] == 7
+    assert received == {
+        "topic": TOPIC,
+        "payload": WEBHOOK_BODY,
+        "headers": {"Linear-Event": "AgentSessionEvent"},
+        "packet_id": 7,
+    }
 
 
 def test_adapter_disconnects_cleanly() -> None:
