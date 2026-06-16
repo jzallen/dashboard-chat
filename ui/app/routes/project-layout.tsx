@@ -92,6 +92,10 @@ export function shouldRevalidate({
   currentParams: { projectId?: string };
   nextParams: { projectId?: string };
 }) {
+  // TODO: this is a business rule about project-scope identity ("the scope changed
+  // iff the project changed"), not routing glue. It belongs on a domain model or
+  // projection (e.g. a scope-equality on ProjectSummary) that this route hook
+  // delegates to, keeping the rule reusable and the route module thin.
   return currentParams.projectId !== nextParams.projectId;
 }
 
