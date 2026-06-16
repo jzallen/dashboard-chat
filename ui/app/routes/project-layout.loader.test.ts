@@ -196,6 +196,9 @@ describe("project-layout loader — project-scoped reads via the server /api hop
 
   // AC2
   it("swaps to the new project's scope when projectId changes", async () => {
+    // The mechanism: RRv7 re-runs the loader only when the path project changes,
+    // and must NOT re-run on same-project navigation (a `?view=` toggle, a nested
+    // resource route). That gate is what makes a project switch re-scope at all.
     expect(
       shouldRevalidate({
         currentParams: { projectId: "p1" },
@@ -209,6 +212,12 @@ describe("project-layout loader — project-scoped reads via the server /api hop
       }),
     ).toBe(false);
 
+    // No-stale-latch: each invocation is scoped purely by its own
+    // `params.projectId`. Two back-to-back calls for different pids (fetch restubbed
+    // between them, but the loader's own module state NOT reset) guard against the
+    // loader leaning on cross-call state — the client path's `scopedProjectId`
+    // holder / per-pid memo — and surfacing the prior scope. The fixtures namespace
+    // every id by pid, so a "p1" substring anywhere in the p2 payload is leakage.
     stubProjectReads("p1");
     const first = await loader(loaderArgs(authedRequest(), "p1"));
     expect(first.projectId).toBe("p1");
@@ -216,14 +225,7 @@ describe("project-layout loader — project-scoped reads via the server /api hop
     vi.unstubAllGlobals();
     stubProjectReads("p2");
     const second = await loader(loaderArgs(authedRequest(), "p2"));
-
-    // On a new project selection the prior scope is ejected and the new one
-    // replaces it wholesale: the re-run is a different payload that identifies as
-    // p2 and carries no p1-scoped id in ANY field (the fixtures namespace every id
-    // by pid, so any leakage would surface a "p1" substring). Per-field content of
-    // the new scope is already covered by the AC1 test — here we test the swap.
     expect(second.projectId).toBe("p2");
-    expect(second).not.toEqual(first);
     expect(JSON.stringify(second)).not.toContain("p1");
   });
 
