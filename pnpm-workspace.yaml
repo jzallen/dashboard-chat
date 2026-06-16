@@ -1,5 +1,5 @@
 packages:
-  - frontend
+  - ui
   - agent
   - auth-proxy
   - shared/chat

@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-WORKSPACE_ROOTS = ("frontend", "agent", "auth-proxy", "shared")
+WORKSPACE_ROOTS = ("ui", "agent", "auth-proxy", "shared")
 
 
 def read_pnpm_workspace_packages() -> set[str]:
@@ -53,11 +53,17 @@ def read_bazelignore_entries() -> set[str]:
 
 
 def read_pnpm_lock_importers() -> set[str]:
-    """Keys directly under `importers:` (excluding the root `.`)."""
+    """Keys directly under `importers:` (excluding the root `.`).
+
+    A dependency-free workspace is serialized by pnpm 9 as an inline empty
+    mapping (`pkg: {}`) rather than the expanded `pkg:` + nested
+    `dependencies:` form, so the trailing `{}` must be tolerated or such an
+    importer is silently dropped and falsely reported as missing.
+    """
     text = (REPO_ROOT / "pnpm-lock.yaml").read_text()
     importers: set[str] = set()
     in_importers = False
-    key_re = re.compile(r"^  ([^\s:][^:]*):\s*$")
+    key_re = re.compile(r"^  ([^\s:][^:]*):(?:\s*\{\})?\s*$")
     for line in text.splitlines():
         if line == "importers:":
             in_importers = True
