@@ -271,8 +271,10 @@ describe("project-layout loader — project-scoped reads via the server /api hop
 
     // The loader attempts the reads, and a non-401 failure among them aborts to
     // the ErrorBoundary: it rejects (no resolved partial catalog) having actually
-    // fetched, and does NOT mask the failure as a /login redirect.
-    expect({ attemptedReads: calls().length > 0, ...(await loaderOutcome("p1")) }).toEqual({
+    // fetched, and does NOT mask the failure as a /login redirect. Run the loader
+    // first, THEN read the captured calls — `calls()` reflects the post-run state.
+    const outcome = await loaderOutcome("p1");
+    expect({ attemptedReads: calls().length > 0, ...outcome }).toEqual({
       attemptedReads: true,
       rejected: true,
       redirectedTo: null,

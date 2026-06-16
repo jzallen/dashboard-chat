@@ -133,7 +133,10 @@ export function seedProjectScoped(data: {
   recents: ChatHistoryItem[];
   sourceUploads: Record<string, SourceUpload[]>;
 }): void {
-  throw new Error(`seedProjectScoped not implemented (pid=${data.projectId})`);
+  // `sourceUploads` is carried on the loader payload for shape parity but is not
+  // part of the catalog snapshot — uploads are read on demand per source — so it
+  // is intentionally not committed here.
+  catalog.seedProjectScoped(data);
 }
 
 /** The scoped pid the test seam exposes so a primary can read it (mirrors the
