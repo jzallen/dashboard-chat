@@ -212,11 +212,13 @@ class MetadataRepositoryProtocol(Protocol):
         """
         ...
 
-    async def project_exists(self, project_id: str) -> bool:
+    async def project_exists(self, project_id: str, org_id: str | None = None) -> bool:
         """Check if a project exists.
 
         Args:
             project_id: Project UUID
+            org_id: When given, scopes the check to the org, so a project in
+                another tenant is indistinguishable from a non-existent one.
 
         Returns:
             True if project exists.
