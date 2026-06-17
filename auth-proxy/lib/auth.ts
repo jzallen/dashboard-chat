@@ -89,6 +89,27 @@ export interface AuthResult {
 }
 
 /**
+ * Resolve the `org_id` claim into the tenant value carried on `X-Org-Id`.
+ *
+ * An ABSENT claim (`undefined`/`null`) resolves to `""` — the org-less signal
+ * the onboarding flow depends on: a WorkOS user with no org membership is
+ * minted with `org_id: ""` (see `lib/user-auth/workos.ts`), and the backend
+ * reads an absent/empty `X-Org-Id` as "no tenant" to drive first-org creation.
+ *
+ * A claim that is PRESENT but not a string is a malformed / type-confused
+ * token. The old `(payload.org_id as string) || ""` cast was compile-time
+ * only, so a number/object/array survived to the upstream `X-Org-Id` header as
+ * a spurious tenant — a cross-tenant authorization hazard. Reject it instead.
+ */
+function resolveOrgIdClaim(orgId: unknown): string {
+  if (orgId === undefined || orgId === null) return "";
+  if (typeof orgId !== "string") {
+    throw new Error("Invalid token: org_id claim must be a string");
+  }
+  return orgId;
+}
+
+/**
  * Verify the Bearer token and return identity claims.
  * Both dev and production modes use RS256 JWT verification via JWKS.
  * Throws on invalid/missing tokens.
@@ -100,7 +121,7 @@ export async function verifyToken(token: string): Promise<AuthResult> {
     const payload = await verifyM2mToken(token);
     return {
       userId: (payload.sub as string) || "",
-      orgId: (payload.org_id as string) || "",
+      orgId: resolveOrgIdClaim(payload.org_id),
       email: (payload.email as string) || "",
     };
   }
@@ -112,7 +133,7 @@ export async function verifyToken(token: string): Promise<AuthResult> {
     const payload = await verifyPatToken(token);
     return {
       userId: (payload.sub as string) || "",
-      orgId: (payload.org_id as string) || "",
+      orgId: resolveOrgIdClaim(payload.org_id),
       email: (payload.email as string) || "",
     };
   }
@@ -124,7 +145,7 @@ export async function verifyToken(token: string): Promise<AuthResult> {
     const payload = await verifyUserToken(token);
     return {
       userId: (payload.sub as string) || "",
-      orgId: (payload.org_id as string) || "",
+      orgId: resolveOrgIdClaim(payload.org_id),
       email: (payload.email as string) || "",
     };
   }
@@ -146,7 +167,7 @@ export async function verifyToken(token: string): Promise<AuthResult> {
 
   return {
     userId: payload.sub || "",
-    orgId: (payload.org_id as string) || "",
+    orgId: resolveOrgIdClaim(payload.org_id),
     email: (payload.email as string) || "",
   };
 }
