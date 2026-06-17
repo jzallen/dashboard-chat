@@ -37,7 +37,7 @@ async def update_project(
         ProjectNotFound: If project with given ID does not exist.
     """
     metadata_repo = repositories.metadata
-    updated = await metadata_repo.update_project(project_id, update_data)
+    updated = await metadata_repo.update_project(project_id, update_data, org_id=user.org_id if user else None)
 
     if updated is None:
         raise ProjectNotFound(project_id)

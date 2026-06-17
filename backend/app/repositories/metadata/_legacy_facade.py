@@ -55,8 +55,8 @@ class _LegacyMetadataFacade:
     ) -> tuple[list[dict[str, Any]], str | None, bool]:
         return await self._projects.list_projects(org_id=org_id, cursor=cursor, limit=limit)
 
-    async def get_project(self, project_id: str) -> dict[str, Any] | None:
-        return await self._projects.get_project(project_id)
+    async def get_project(self, project_id: str, org_id: str | None = None) -> dict[str, Any] | None:
+        return await self._projects.get_project(project_id, org_id=org_id)
 
     async def create_project(
         self,
@@ -76,14 +76,15 @@ class _LegacyMetadataFacade:
         self,
         project_id: str,
         update_data: dict[str, Any],
+        org_id: str | None = None,
     ) -> dict[str, Any] | None:
-        return await self._projects.update_project(project_id, update_data)
+        return await self._projects.update_project(project_id, update_data, org_id=org_id)
 
-    async def delete_project(self, project_id: str) -> bool:
-        return await self._projects.delete_project(project_id)
+    async def delete_project(self, project_id: str, org_id: str | None = None) -> bool:
+        return await self._projects.delete_project(project_id, org_id=org_id)
 
-    async def project_exists(self, project_id: str) -> bool:
-        return await self._projects.project_exists(project_id)
+    async def project_exists(self, project_id: str, org_id: str | None = None) -> bool:
+        return await self._projects.project_exists(project_id, org_id=org_id)
 
     # -- Pass-through for the seven unsplit aggregates -----------------------
 

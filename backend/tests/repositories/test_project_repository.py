@@ -107,6 +107,57 @@ class TestProjectExists:
         assert await repo.project_exists("nonexistent-id") is False
 
 
+class TestOrgScopedPointLookups:
+    """Point-lookup and mutation methods scope by ``org_id`` when one is passed.
+
+    A cross-tenant ``project_id`` becomes indistinguishable from not-found, so
+    the repository enforces tenancy itself rather than trusting the router edge.
+    Passing ``org_id=None`` preserves the unscoped behaviour for system callers.
+    """
+
+    async def _seed_two_orgs(self, db_session):
+        mine = ProjectRecord(id=PROJECT_1, name="Mine", org_id=ORG_1)
+        theirs = ProjectRecord(id=PROJECT_2, name="Theirs", org_id=ORG_OTHER)
+        db_session.add(mine)
+        db_session.add(theirs)
+        await db_session.commit()
+
+    async def test_get_project_returns_none_for_cross_tenant_org(self, repo, db_session):
+        await self._seed_two_orgs(db_session)
+        assert await repo.get_project(PROJECT_2, org_id=ORG_1) is None
+
+    async def test_get_project_returns_dict_for_matching_org(self, repo, db_session):
+        await self._seed_two_orgs(db_session)
+        result = await repo.get_project(PROJECT_1, org_id=ORG_1)
+        assert result is not None
+        assert result["id"] == PROJECT_1
+
+    async def test_get_project_unscoped_when_org_id_none(self, repo, db_session):
+        await self._seed_two_orgs(db_session)
+        assert (await repo.get_project(PROJECT_2)) is not None
+
+    async def test_update_project_returns_none_and_no_mutation_for_cross_tenant_org(
+        self, repo, db_session
+    ):
+        await self._seed_two_orgs(db_session)
+        result = await repo.update_project(PROJECT_2, {"name": "Hijacked"}, org_id=ORG_1)
+        assert result is None
+        # The other org's row is untouched.
+        assert (await repo.get_project(PROJECT_2))["name"] == "Theirs"
+
+    async def test_delete_project_returns_false_and_no_delete_for_cross_tenant_org(
+        self, repo, db_session
+    ):
+        await self._seed_two_orgs(db_session)
+        assert await repo.delete_project(PROJECT_2, org_id=ORG_1) is False
+        assert (await repo.get_project(PROJECT_2)) is not None
+
+    async def test_project_exists_false_for_cross_tenant_org(self, repo, db_session):
+        await self._seed_two_orgs(db_session)
+        assert await repo.project_exists(PROJECT_2, org_id=ORG_1) is False
+        assert await repo.project_exists(PROJECT_2, org_id=ORG_OTHER) is True
+
+
 class TestListProjects:
     async def test_returns_empty_when_no_projects(self, repo):
         items, cursor, has_more = await repo.list_projects()
