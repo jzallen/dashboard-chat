@@ -26,6 +26,8 @@ export default [
   // the auth-hop proof; /bff/chat relays the agent SSE.
   route("/bff/health", "routes/bff-health.tsx"),
   route("/bff/chat", "routes/bff-chat.tsx"),
+  route("/bff/datasets/:datasetId/archive", "routes/bff-dataset-archive.tsx"),
+  route("/bff/datasets/:datasetId/restore", "routes/bff-dataset-restore.tsx"),
   layout("routes/app-shell.tsx", [
     index("routes/home-redirect.tsx"),
     route("org", "routes/org.tsx"),
