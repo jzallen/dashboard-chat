@@ -53,20 +53,24 @@ would silently drop a message whose forward failed.)
 Header transport boundary
 --------------------------
 The forwarded Linear headers (``Linear-Signature`` and friends) arrive alongside the
-body through the injected connection's on-message callback — the seam this adapter is
-written against. The publish side (DC-21) currently sends the raw body only over the
-IoT Data-plane API and carries the headers on the SQS leg, so end-to-end header
-delivery over IoT is the integration contract the connection seam abstracts: a real
-connection sources the headers from the transport (e.g. MQTT user properties) and
-hands them to the callback. This adapter stays agnostic to how they travel — it
-surfaces whatever the connection delivers byte-for-byte.
+body through the connection's on-message callback — the seam this adapter is written
+against. End-to-end over IoT they ride as **MQTT5 user properties**: the publish side
+attaches the forwarded headers as user properties on the IoT Data-plane publish, and
+:class:`_Mqtt5IoTConnection` reads them off each inbound publish packet and hands them
+to the callback. The body therefore reaches ``receive()`` with the same
+``Linear-Signature`` it was signed with, so it verifies at Cyrus unchanged. The feed
+stays agnostic to how they travel — it surfaces whatever the connection delivers
+byte-for-byte.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import queue
-from typing import TYPE_CHECKING, Any, Optional
+import threading
+import uuid
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 if TYPE_CHECKING:
     from proxy.messages import FeedError, LinearWebhookMessage, WebhookFeedEnvelope
@@ -252,86 +256,223 @@ class IoTLinearWebhookFeed:
         return messages
 
 
+class IoTConnectionError(Exception):
+    """Raised when the live IoT connection cannot connect within the timeout.
+
+    Surfaced out of :meth:`_Mqtt5IoTConnection.connect`; the feed catches it on the
+    first ``receive()`` and reports a handled ``FAILED_FEED_RECEIVE`` so the loop backs
+    off instead of crashing.
+    """
+
+
+# Each connection needs a unique MQTT client id (a second connection sharing an id
+# kicks the first off the broker). It is derived from the routing key for log/debug
+# legibility with a short random suffix so two processes on the same key don't clash.
+def _client_id_for(routing_key: str) -> str:
+    return f"cyrus-{routing_key}-{uuid.uuid4().hex[:8]}"[:128]
+
+
+def _region_for(endpoint: str, region: Optional[str]) -> str:
+    """Resolve the SigV4 signing region (explicit, else from env, else the endpoint).
+
+    SigV4 over WebSocket requires a region. Prefer the explicit ``region``, then the
+    standard ``AWS_REGION`` / ``AWS_DEFAULT_REGION`` env vars, and finally parse it out
+    of an ATS endpoint host (``<id>-ats.iot.<region>.amazonaws.com``).
+    """
+    if region:
+        return region
+    env_region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
+    if env_region:
+        return env_region
+    if ".iot." in endpoint:
+        return endpoint.split(".iot.", 1)[1].split(".", 1)[0]
+    raise IoTConnectionError(
+        f"could not resolve an AWS region for SigV4 signing from endpoint {endpoint!r}; "
+        "set CYRUS_PROXY_IOT_REGION or AWS_REGION"
+    )
+
+
 def build_default_iot_connection(
     *,
     endpoint: str,
     routing_key: str,
     region: Optional[str] = None,
-) -> "_AwsCrtIoTConnection":
-    """Build the production MQTT-over-WebSocket (SigV4) connection for the feed.
+) -> "_Mqtt5IoTConnection":
+    """Build the production MQTT5-over-WebSocket (SigV4) connection for the feed.
 
-    The intended wiring (the live-AWS integration step) builds an awscrt **MQTT5**
-    client via ``websockets_with_default_aws_signing`` over the **default AWS
-    credentials provider chain** — so the devpod **instance role** signs the WebSocket
-    handshake and **no X.509 device certificate** is involved — targeting
+    Builds an awscrt **MQTT5** client via
+    ``awsiot.mqtt5_client_builder.websockets_with_default_aws_signing`` over the
+    **default AWS credentials provider chain** — so the devpod **instance role** signs
+    the WebSocket handshake and **no X.509 device certificate** is involved — targeting
     ``endpoint``/``region`` with a client id derived from ``routing_key``, and wraps it
-    in an :class:`_AwsCrtIoTConnection`.
+    in a :class:`_Mqtt5IoTConnection`.
 
-    It is **not yet wired**: the feed's at-least-once contract needs *manual* QoS 1
-    acknowledgement (PUBACK only after a clean forward), which requires the MQTT5
-    client — the MQTT 3.1.1 connection builder auto-acks on callback return and exposes
-    no ``puback``. Rather than ship a connection that would silently break redelivery,
-    this raises until the MQTT5 manual-ack path is wired and verified against a live
-    endpoint. The feed's behaviour and the :class:`_AwsCrtIoTConnection` delegation
-    surface are fully unit-tested via an injected connection in the meantime.
+    The MQTT5 client is what makes the feed's at-least-once contract honest: it takes
+    *manual* acknowledgement control of each inbound QoS 1 publish so the PUBACK fires
+    only when the feed calls ``acknowledge()`` after a clean forward (the MQTT 3.1.1
+    builder auto-acks on callback return and exposes no ``puback``). The awscrt client
+    also reconnects with exponential backoff and jitter on its own, so a dropped
+    connection self-heals without the feed restarting.
+
+    The client is built lazily through an injected factory so the unit suite drives a
+    fake client and never touches AWS; this function supplies the real SigV4 factory.
     """
-    raise NotImplementedError(
-        "production AWS IoT connection is not wired yet: it needs the awscrt MQTT5 "
-        "manual-ack client (SigV4 default-chain, no device certs) so PUBACK fires only "
-        "after a successful forward. Inject a connection to run the feed until then."
-    )
+    signing_region = _region_for(endpoint, region)
+    client_id = _client_id_for(routing_key)
+
+    def factory(
+        *,
+        on_publish_received: Callable[[Any], None],
+        on_connection_success: Callable[[Any], None],
+        on_connection_failure: Callable[[Any], None],
+    ) -> Any:
+        from awscrt.auth import AwsCredentialsProvider
+        from awsiot import mqtt5_client_builder
+
+        return mqtt5_client_builder.websockets_with_default_aws_signing(
+            endpoint=endpoint,
+            region=signing_region,
+            credentials_provider=AwsCredentialsProvider.new_default_chain(),
+            client_id=client_id,
+            on_publish_callback_fn=on_publish_received,
+            on_lifecycle_event_connection_success_fn=on_connection_success,
+            on_lifecycle_event_connection_failure_fn=on_connection_failure,
+        )
+
+    return _Mqtt5IoTConnection(factory)
 
 
-class _AwsCrtIoTConnection:
-    """Adapts an ``awscrt`` MQTT connection to the feed's connection seam.
+class _Mqtt5IoTConnection:
+    """Adapts an ``awscrt`` **MQTT5** client to the feed's connection seam.
 
-    Translates the seam's ``connect``/``subscribe``/``disconnect``/``puback`` onto the
-    awscrt connection's futures-based API and maps awscrt's on-message callback onto
-    the seam callback ``(topic, payload, headers, packet_id)`` the feed expects. The
-    forwarded Linear headers are sourced from the transport (MQTT user properties when
-    present); see the module docstring's header-transport boundary. Kept thin and
-    behind a lazy import so the unit suite drives a fake connection and never touches
-    AWS — the byte-identity / at-least-once behaviour is unit-tested on the feed seam,
-    while this adapter encodes the verifiable production wiring.
+    Translates the seam's ``connect`` / ``subscribe`` / ``disconnect`` / ``puback``
+    onto the MQTT5 client's API and maps inbound publishes onto the seam callback
+    ``(topic, payload, headers, packet_id)`` the feed expects.
+
+    Two MQTT5 specifics shape this adapter:
+
+    * The client delivers **every** inbound publish to a single ``on_publish`` callback
+      registered at *build* time, not per ``subscribe``. So the adapter owns that
+      callback and routes each publish to the callback handed to :meth:`subscribe`.
+    * QoS 1 acknowledgement is **manual**: inside the publish callback the adapter calls
+      ``acquire_publish_acknowledgement_control()`` to stop the client auto-acking, and
+      stashes the opaque handle under a synthetic packet id. :meth:`puback` later calls
+      ``invoke_publish_acknowledgement(handle)`` — so the PUBACK fires only when
+      ``IoTLinearWebhookFeed.acknowledge()`` runs after a clean forward. The synthetic
+      id is just the seam's opaque ack token; MQTT5 surfaces no inbound packet id.
+
+    Headers travel as MQTT5 **user properties** on each publish (see the module
+    docstring's header-transport boundary) and are surfaced byte-for-byte. The client
+    is built lazily via an injected factory so the unit suite drives a fake and never
+    touches AWS.
     """
 
-    def __init__(self, mqtt_connection: Any) -> None:
-        self._connection = mqtt_connection
+    def __init__(
+        self,
+        client_factory: Callable[..., Any],
+        *,
+        connect_timeout_seconds: float = 30.0,
+        operation_timeout_seconds: float = 30.0,
+    ) -> None:
+        self._client_factory = client_factory
+        self._connect_timeout = connect_timeout_seconds
+        self._operation_timeout = operation_timeout_seconds
+        self._client: Any = None
+        self._on_message: Optional[Callable[..., None]] = None
+        # Manual-ack bookkeeping shared between the client's callback thread (writes on
+        # each publish) and the loop thread (pops on puback), so it is lock-guarded.
+        self._lock = threading.Lock()
+        self._next_packet_id = 1
+        self._ack_handles: dict[int, Any] = {}
+        # connect() blocks until the client reports the first lifecycle outcome.
+        self._connected = threading.Event()
+        self._connect_error: Any = None
 
     def connect(self) -> None:
-        self._connection.connect().result()
-
-    def subscribe(self, topic: str, qos: int, callback: Any) -> None:
-        from awscrt import mqtt
-
-        def _on_crt_message(
-            topic: str, payload: bytes, dup: bool, qos: Any, retain: bool, **kwargs: Any
-        ) -> None:
-            user_properties = kwargs.get("user_properties") or []
-            headers = {prop.name: prop.value for prop in user_properties}
-            callback(
-                topic=topic,
-                payload=payload,
-                headers=headers,
-                packet_id=kwargs.get("packet_id", 0),
-            )
-
-        subscribe_future, _ = self._connection.subscribe(
-            topic=topic, qos=mqtt.QoS(qos), callback=_on_crt_message
+        """Build the client, start it, and block until connected (or raise on failure)."""
+        self._connected.clear()
+        self._connect_error = None
+        self._client = self._client_factory(
+            on_publish_received=self._handle_publish,
+            on_connection_success=self._handle_connection_success,
+            on_connection_failure=self._handle_connection_failure,
         )
-        subscribe_future.result()
+        self._client.start()
+        if not self._connected.wait(self._connect_timeout):
+            self._stop_quietly()
+            raise IoTConnectionError(
+                f"timed out after {self._connect_timeout}s waiting to connect"
+            )
+        if self._connect_error is not None:
+            self._stop_quietly()
+            raise IoTConnectionError(f"IoT connection failed: {self._connect_error}")
+
+    def subscribe(self, topic: str, qos: int, callback: Callable[..., None]) -> None:
+        """Subscribe to exactly ``topic`` at ``qos`` and route its publishes to ``callback``."""
+        from awscrt import mqtt5
+
+        self._on_message = callback
+        subscribe_future = self._client.subscribe(
+            subscribe_packet=mqtt5.SubscribePacket(
+                subscriptions=[
+                    mqtt5.Subscription(topic_filter=topic, qos=mqtt5.QoS(qos))
+                ]
+            )
+        )
+        subscribe_future.result(self._operation_timeout)
 
     def disconnect(self) -> None:
-        self._connection.disconnect().result()
+        """Stop the client, ending connectivity and halting reconnect attempts."""
+        self._client.stop()
+
+    def _stop_quietly(self) -> None:
+        """Best-effort stop of a client that failed to connect, so it stops reconnecting."""
+        try:
+            self._client.stop()
+        except Exception as exc:
+            logger.warning("stopping a failed IoT client raised: %s", exc)
 
     def puback(self, packet_id: int) -> None:
-        """Forward the QoS 1 PUBACK (manual ack) to the underlying connection.
+        """Send the manual QoS 1 PUBACK for the publish behind ``packet_id``.
 
-        Like the other methods this only delegates; the connection built by
-        :func:`build_default_iot_connection` must provide manual acknowledgement
-        (PUBACK only after a clean forward — the awscrt **MQTT5** manual-ack client,
-        since the MQTT 3.1.1 builder auto-acks on callback return). Wiring that real
-        connection is the live-AWS integration step; the at-least-once behaviour
-        itself is unit-tested on the feed via the injected connection.
+        Pops the acknowledgement-control handle acquired when the publish arrived and
+        invokes it on the client. Called only by ``IoTLinearWebhookFeed.acknowledge()``
+        after a clean forward, so an un-acked (failed-forward) message is redelivered.
         """
-        self._connection.puback(packet_id)
+        with self._lock:
+            handle = self._ack_handles.pop(packet_id)
+        self._client.invoke_publish_acknowledgement(handle)
+
+    def _handle_publish(self, publish_received_data: Any) -> None:
+        """Take manual ack control of an inbound publish and route it to the seam callback.
+
+        Runs on the client's event-loop thread. We subscribe strictly at QoS 1, so every
+        inbound publish carries an acknowledgement to defer; the handle is held until
+        :meth:`puback`. Headers come from the publish's MQTT5 user properties.
+        """
+        handle = publish_received_data.acquire_publish_acknowledgement_control()
+        packet = publish_received_data.publish_packet
+        with self._lock:
+            packet_id = self._next_packet_id
+            self._next_packet_id += 1
+            self._ack_handles[packet_id] = handle
+        payload = packet.payload
+        if isinstance(payload, str):
+            payload = payload.encode("utf-8")
+        headers = {prop.name: prop.value for prop in (packet.user_properties or [])}
+        assert self._on_message is not None  # set by subscribe() before any publish
+        self._on_message(
+            topic=packet.topic,
+            payload=payload,
+            headers=headers,
+            packet_id=packet_id,
+        )
+
+    def _handle_connection_success(self, _data: Any) -> None:
+        """Unblock :meth:`connect` once the broker accepts the connection."""
+        self._connected.set()
+
+    def _handle_connection_failure(self, data: Any) -> None:
+        """Record the failure and unblock :meth:`connect` so it raises."""
+        self._connect_error = getattr(data, "exception", None) or data
+        self._connected.set()
