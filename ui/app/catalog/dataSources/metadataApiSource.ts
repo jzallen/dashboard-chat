@@ -396,11 +396,16 @@ export function metadataApiSource(
     async archiveModel(id: string, kind: ModelKind): Promise<void> {
       // Only datasets support a restorable soft-delete (archived_at + retention);
       // views/reports have hard-delete only, so archiving them is left local-only
-      // (no backend op) rather than an irreversible delete. Rejects on a non-2xx
-      // (apiPost throws) so the catalog restores the optimistically-hidden node.
+      // (no backend op) rather than an irreversible delete.
+      //
+      // The soft-delete goes through the same-origin BFF action rather than a
+      // direct backend call: the browser POSTs to `/bff/datasets/{id}/archive`
+      // (riding its session cookie), and the action forwards to the backend
+      // server-side through auth-proxy. Rejects on a non-2xx (apiPost throws) so
+      // the catalog restores the optimistically-hidden node.
       if (kind !== "dataset") return;
       await apiPost(
-        `/api/datasets/${encodeURIComponent(id)}/archive`,
+        `/bff/datasets/${encodeURIComponent(id)}/archive`,
         undefined,
         deps.getToken(),
       );
@@ -409,7 +414,7 @@ export function metadataApiSource(
     async restoreModel(id: string, kind: ModelKind): Promise<void> {
       if (kind !== "dataset") return;
       await apiPost(
-        `/api/datasets/${encodeURIComponent(id)}/restore`,
+        `/bff/datasets/${encodeURIComponent(id)}/restore`,
         undefined,
         deps.getToken(),
       );

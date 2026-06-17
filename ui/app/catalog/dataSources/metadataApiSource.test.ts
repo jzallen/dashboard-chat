@@ -1040,26 +1040,30 @@ describe("metadataApiSource — archiveModel / restoreModel (soft-delete POST)",
     return fetchMock;
   }
 
-  it("archives a dataset via POST /api/datasets/{id}/archive", async () => {
+  it("archives a dataset via the BFF action POST /bff/datasets/{id}/archive", async () => {
     const fetchMock = stubPost();
     const source = metadataApiSource({ getToken: () => "tok" });
 
     await source.archiveModel!("d1", "dataset");
 
     const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(call[0]).toBe("/api/datasets/d1/archive");
+    // Same-origin to the BFF action — NOT a direct /api/datasets call. The
+    // action forwards to the backend server-side through auth-proxy.
+    expect(call[0]).toBe("/bff/datasets/d1/archive");
     expect(call[1].method).toBe("POST");
+    expect(call[1].credentials).toBe("include");
   });
 
-  it("restores a dataset via POST /api/datasets/{id}/restore", async () => {
+  it("restores a dataset via the BFF action POST /bff/datasets/{id}/restore", async () => {
     const fetchMock = stubPost();
     const source = metadataApiSource({ getToken: () => "tok" });
 
     await source.restoreModel!("d1", "dataset");
 
     const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(call[0]).toBe("/api/datasets/d1/restore");
+    expect(call[0]).toBe("/bff/datasets/d1/restore");
     expect(call[1].method).toBe("POST");
+    expect(call[1].credentials).toBe("include");
   });
 
   it("no-ops (no request) for a non-dataset kind — views/reports have no soft-delete", async () => {
