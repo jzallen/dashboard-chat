@@ -175,8 +175,8 @@ class IoTLinearWebhookFeed:
         (e.g. its forward failed) is redelivered by the broker — the at-least-once
         contract mirroring the SQS adapter.
         """
-        packet_id = message["raw"]["packet_id"]
         try:
+            packet_id = message["raw"]["packet_id"]
             self._connection.puback(packet_id)
         except Exception as exc:
             logger.warning("IoT PUBACK failed: %s", exc, exc_info=True)
@@ -192,13 +192,17 @@ class IoTLinearWebhookFeed:
         connection is left in place for its owner (e.g. tests).
         """
         if self._connection is not None and self._started:
-            try:
-                self._connection.disconnect()
-            except Exception as exc:
-                logger.warning("IoT disconnect failed: %s", exc, exc_info=True)
+            self._disconnect_quietly()
             self._started = False
-            if self._owns_connection:
-                self._connection = None
+
+    def _disconnect_quietly(self) -> None:
+        """Best-effort disconnect, dropping a lazily-built connection so it can rebuild."""
+        try:
+            self._connection.disconnect()
+        except Exception as exc:
+            logger.warning("IoT disconnect failed: %s", exc, exc_info=True)
+        if self._owns_connection:
+            self._connection = None
 
     def _ensure_started(self) -> None:
         """Connect and subscribe to the consumer's own topic exactly once."""
@@ -211,9 +215,16 @@ class IoTLinearWebhookFeed:
                 region=self._region,
             )
         self._connection.connect()
-        self._connection.subscribe(
-            self._topic_filter, _QOS_AT_LEAST_ONCE, self._on_message
-        )
+        try:
+            self._connection.subscribe(
+                self._topic_filter, _QOS_AT_LEAST_ONCE, self._on_message
+            )
+        except Exception:
+            # connect() left a live connection but the subscribe failed, so the feed is
+            # not started — stop() would skip it and leak the connection. Tear it down
+            # here so a later receive() rebuilds from scratch.
+            self._disconnect_quietly()
+            raise
         self._started = True
         logger.info(
             "subscribed to %s at QoS %d", self._topic_filter, _QOS_AT_LEAST_ONCE
@@ -438,9 +449,13 @@ class _Mqtt5IoTConnection:
         Pops the acknowledgement-control handle acquired when the publish arrived and
         invokes it on the client. Called only by ``IoTLinearWebhookFeed.acknowledge()``
         after a clean forward, so an un-acked (failed-forward) message is redelivered.
+        A double or late ack (retry path, or a redelivered-then-re-acked message) finds
+        no handle and is a safe no-op, which also bounds ``_ack_handles`` growth.
         """
         with self._lock:
-            handle = self._ack_handles.pop(packet_id)
+            handle = self._ack_handles.pop(packet_id, None)
+        if handle is None:
+            return
         self._client.invoke_publish_acknowledgement(handle)
 
     def _handle_publish(self, publish_received_data: Any) -> None:

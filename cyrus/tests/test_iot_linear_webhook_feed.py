@@ -3,8 +3,7 @@
 These tests describe how the IoT feed turns MQTT messages pushed on the consumer's
 own keyed topic (``cyrus/v1/sessions/<creator-id>``) into LinearWebhookMessage value
 objects surfaced through the poll-based ``receive()`` / ``acknowledge()`` port, and
-how it slots behind the UNCHANGED ``ProxyExecutionLoop``. They cover the five parent
-acceptance criteria of DC-22:
+how it slots behind the unchanged ``ProxyExecutionLoop``. They cover:
 
 1. With the IoT feed wired in, the unchanged ProxyExecutionLoop forwards each received
    message unchanged (the adapter satisfies the existing port).
@@ -17,15 +16,11 @@ acceptance criteria of DC-22:
 5. The routing key + endpoint are read from env and ``CYRUS_PROXY_FEED`` selects
    ``iot`` (see ``test_iot_config_selection.py``).
 
-The feed is implemented, so these run GREEN; they are the live spec for its behaviour.
-The injected ``FakeIoTConnection`` is the only seam — the MQTT connection is faked so
-the suite never touches AWS, while the signatures and push-to-poll bridge are real.
-
-IF YOU'RE AN AGENT, READ THIS:
-- These tests are the specification. Keep the feed satisfying them; never weaken or
-  rewrite an assertion to fit a change in the implementation.
-- Mock only at the port boundary — the injected MQTT connection (FakeIoTConnection).
-  Do not mock the feed's internals.
+The tests are the specification — keep the feed satisfying them; never weaken or
+rewrite an assertion to fit a change in the implementation. The injected
+``FakeIoTConnection`` is the only seam: mock only at that port boundary, never the
+feed's internals. The MQTT connection is faked so the suite never touches AWS, while
+the signatures and push-to-poll bridge are real.
 """
 
 from __future__ import annotations
@@ -61,7 +56,7 @@ class FakeIoTConnection:
     — recording the subscriptions and PUBACKs so a test can verify what the feed drove
     at the connection boundary. ``deliver`` simulates the broker pushing a publish on a
     topic, routing it to the registered subscription callback (or buffering it until one
-    is registered) so the push-to-poll bridge can be exercised once implemented.
+    is registered) so the push-to-poll bridge can be exercised.
     """
 
     def __init__(self) -> None:

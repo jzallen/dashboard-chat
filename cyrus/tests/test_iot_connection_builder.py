@@ -1,4 +1,4 @@
-"""Contract test for the awscrt **MQTT5** IoT connection adapter (DC-74).
+"""Contract test for the awscrt **MQTT5** IoT connection adapter.
 
 ``_Mqtt5IoTConnection`` is the thin translation layer between the feed's connection
 seam (``connect`` / ``subscribe`` / ``disconnect`` / ``puback``) and an awscrt MQTT5
@@ -14,11 +14,10 @@ build a real SigV4 client), but its pure region/client-id derivation is pinned, 
 is asserted to return the MQTT5 adapter without touching AWS — the lazy factory is only
 invoked on ``connect()``.
 
-IF YOU'RE AN AGENT, READ THIS:
-- The adapter only delegates, so verify it at the boundary: assert the underlying
-  client method fired (start/subscribe/invoke_publish_acknowledgement/stop) and that an
-  inbound publish reaches the seam callback. Never assert on a hand-rolled fake's own
-  state as if it were the adapter's behaviour.
+The adapter only delegates, so verify it at the boundary: assert the underlying client
+method fired (start/subscribe/invoke_publish_acknowledgement/stop) and that an inbound
+publish reaches the seam callback. Never assert on a hand-rolled fake's own state as if
+it were the adapter's behaviour.
 """
 
 from __future__ import annotations

@@ -7,18 +7,25 @@ requires-python = ">=3.11"
 dependencies = [
     "boto3>=1.34",
     "requests>=2.31",
-    # Manual QoS-1 acknowledgement control on inbound publishes (the consumer feed's
-    # at-least-once contract) needs these floors: awscrt exposes
-    # PublishReceivedData.acquire_publish_acknowledgement_control /
-    # Client.invoke_publish_acknowledgement, surfaced by the awsiotsdk MQTT5 builder.
-    "awscrt>=0.34",
-    "awsiotsdk>=1.30",
 ]
 
 [project.optional-dependencies]
+# The IoT consumer feed is opt-in: its awscrt/awsiotsdk imports are lazy (only on the
+# iot feed path), and the test suite guards them with pytest.importorskip. Keeping them
+# out of the core deps spares every SQS-only install the heavyweight native awscrt
+# wheel build. Manual QoS-1 acknowledgement control on inbound publishes (the feed's
+# at-least-once contract) needs these floors: awscrt exposes
+# PublishReceivedData.acquire_publish_acknowledgement_control /
+# Client.invoke_publish_acknowledgement, surfaced by the awsiotsdk MQTT5 builder.
+iot = [
+    "awscrt>=0.34",
+    "awsiotsdk>=1.30",
+]
 dev = [
     "pytest>=8.0",
     # botocore (and botocore.stub.Stubber) is transitive via boto3
+    "awscrt>=0.34",
+    "awsiotsdk>=1.30",
 ]
 
 [build-system]
