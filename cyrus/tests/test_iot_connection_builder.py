@@ -60,23 +60,6 @@ def make_connection() -> tuple[_Mqtt5IoTConnection, IoTConfig, MagicMock]:
     return connection, config, builder
 
 
-def connect_succeeding(
-    connection: _Mqtt5IoTConnection, builder: MagicMock
-) -> MagicMock:
-    """Call ``connect()`` and let it succeed, returning the mock client.
-
-    In production awscrt fires the connection-success lifecycle event once the broker
-    accepts the handshake; that event is what unblocks ``connect()``. We model it by
-    having the mock client's ``start()`` invoke the adapter's success handler.
-    """
-    client = builder.websockets_with_default_aws_signing.return_value
-    client.start.side_effect = lambda: connection._handle_connection_success(
-        SimpleNamespace()
-    )
-    connection.connect()
-    return client
-
-
 def get_factory_call_args_from(builder: MagicMock) -> dict[str, Any]:
     """The kwargs the adapter passed to ``websockets_with_default_aws_signing``."""
     return builder.websockets_with_default_aws_signing.call_args.kwargs
@@ -104,10 +87,19 @@ def test_build_default_iot_connection_returns_the_adapter_without_touching_aws()
 
 def test_connect_registers_the_adapters_handlers_as_the_clients_callbacks() -> None:
     """connect() builds the client with the adapter's publish/lifecycle handlers as callbacks."""
+    # Arrange
     connection, _config, builder = make_connection()
+    client = builder.websockets_with_default_aws_signing.return_value
+    # assuming successful connection; the aws client triggers this callback in
+    # production, which releases connection._connected
+    client.start.side_effect = lambda: connection._handle_connection_success(
+        SimpleNamespace()
+    )
 
-    connect_succeeding(connection, builder)
+    # Act
+    connection.connect()
 
+    # Assert
     kwargs = get_factory_call_args_from(builder)
     assert kwargs["on_publish_callback_fn"] == connection._handle_publish
     assert (
@@ -122,10 +114,19 @@ def test_connect_registers_the_adapters_handlers_as_the_clients_callbacks() -> N
 
 def test_connect_signs_with_the_configs_region_and_client_id() -> None:
     """connect() builds the client by SigV4-signing for the config's endpoint/region/client-id."""
+    # Arrange
     connection, config, builder = make_connection()
+    client = builder.websockets_with_default_aws_signing.return_value
+    # assuming successful connection; the aws client triggers this callback in
+    # production, which releases connection._connected
+    client.start.side_effect = lambda: connection._handle_connection_success(
+        SimpleNamespace()
+    )
 
-    connect_succeeding(connection, builder)
+    # Act
+    connection.connect()
 
+    # Assert
     kwargs = get_factory_call_args_from(builder)
     assert kwargs["endpoint"] == config.endpoint
     assert kwargs["region"] == config.region
@@ -134,10 +135,19 @@ def test_connect_signs_with_the_configs_region_and_client_id() -> None:
 
 def test_connect_returns_once_the_client_reports_connection_success() -> None:
     """The connection-success lifecycle handler unblocks connect(), which returns cleanly."""
+    # Arrange
     connection, _config, builder = make_connection()
+    client = builder.websockets_with_default_aws_signing.return_value
+    # assuming successful connection; the aws client triggers this callback in
+    # production, which releases connection._connected
+    client.start.side_effect = lambda: connection._handle_connection_success(
+        SimpleNamespace()
+    )
 
-    client = connect_succeeding(connection, builder)
+    # Act
+    connection.connect()
 
+    # Assert
     client.start.assert_called_once()
 
 
@@ -145,27 +155,37 @@ def test_connect_raises_a_feed_connection_error_when_the_client_reports_failure(
     None
 ):
     """The connection-failure lifecycle handler makes connect() raise and stop the client."""
+    # Arrange
     connection, _config, builder = make_connection()
     client = builder.websockets_with_default_aws_signing.return_value
-    # In production awscrt fires the connection-failure lifecycle event when the broker
-    # rejects the handshake; that is what makes connect() give up.
+    # In production the aws client triggers this callback when the broker rejects the
+    # handshake, which releases connection._connected with an error recorded.
     client.start.side_effect = lambda: connection._handle_connection_failure(
         SimpleNamespace(exception=RuntimeError("not authorized"))
     )
 
+    # Act / Assert
     with pytest.raises(IoTConnectionError):
         connection.connect()
-
     client.stop.assert_called_once()
 
 
 def test_subscribe_requests_exactly_the_keyed_topic_at_qos_1() -> None:
     """subscribe() sends a SubscribePacket for the consumer's key only, at QoS 1, no wildcard."""
+    # Arrange
     connection, _config, builder = make_connection()
-    client = connect_succeeding(connection, builder)
+    client = builder.websockets_with_default_aws_signing.return_value
+    # assuming successful connection; the aws client triggers this callback in
+    # production, which releases connection._connected
+    client.start.side_effect = lambda: connection._handle_connection_success(
+        SimpleNamespace()
+    )
+    connection.connect()
 
+    # Act
     connection.subscribe(TOPIC, 1, lambda **_: None)
 
+    # Assert
     packet = client.subscribe.call_args.kwargs["subscribe_packet"]
     (subscription,) = packet.subscriptions
     assert (subscription.topic_filter, subscription.qos) == (
@@ -178,12 +198,20 @@ def test_inbound_publish_reaches_the_seam_callback_as_topic_payload_headers_pack
     None
 ):
     """A handled publish forwards (topic, payload, headers-from-user-properties, packet_id)."""
+    # Arrange
     connection, _config, builder = make_connection()
-    connect_succeeding(connection, builder)
+    client = builder.websockets_with_default_aws_signing.return_value
+    # assuming successful connection; the aws client triggers this callback in
+    # production, which releases connection._connected
+    client.start.side_effect = lambda: connection._handle_connection_success(
+        SimpleNamespace()
+    )
+    connection.connect()
     received: dict[str, Any] = {}
     connection.subscribe(TOPIC, 1, lambda **kwargs: received.update(kwargs))
 
-    # In production the awscrt client invokes this when a PUBLISH arrives on the topic.
+    # Act
+    # In production the aws client triggers this callback when a PUBLISH arrives.
     connection._handle_publish(
         publish_received_data(
             topic=TOPIC,
@@ -195,6 +223,7 @@ def test_inbound_publish_reaches_the_seam_callback_as_topic_payload_headers_pack
         )
     )
 
+    # Assert
     assert received["topic"] == TOPIC
     assert received["payload"] == WEBHOOK_BODY
     assert received["headers"] == {"Linear-Event": "AgentSessionEvent"}
@@ -203,12 +232,20 @@ def test_inbound_publish_reaches_the_seam_callback_as_topic_payload_headers_pack
 
 def test_inbound_string_payload_reaches_the_seam_callback_as_bytes() -> None:
     """A text payload is surfaced as bytes so the body still HMAC-verifies."""
+    # Arrange
     connection, _config, builder = make_connection()
-    connect_succeeding(connection, builder)
+    client = builder.websockets_with_default_aws_signing.return_value
+    # assuming successful connection; the aws client triggers this callback in
+    # production, which releases connection._connected
+    client.start.side_effect = lambda: connection._handle_connection_success(
+        SimpleNamespace()
+    )
+    connection.connect()
     received: dict[str, Any] = {}
     connection.subscribe(TOPIC, 1, lambda **kwargs: received.update(kwargs))
 
-    # In production the awscrt client invokes this when a PUBLISH arrives on the topic.
+    # Act
+    # In production the aws client triggers this callback when a PUBLISH arrives.
     connection._handle_publish(
         publish_received_data(
             topic=TOPIC,
@@ -218,6 +255,7 @@ def test_inbound_string_payload_reaches_the_seam_callback_as_bytes() -> None:
         )
     )
 
+    # Assert
     assert received["payload"] == WEBHOOK_BODY
 
 
@@ -225,28 +263,46 @@ def test_puback_sends_the_manual_ack_for_the_handle_taken_when_the_publish_arriv
     None
 ):
     """puback() invokes the acknowledgement-control handle acquired for that publish."""
+    # Arrange
     connection, _config, builder = make_connection()
-    client = connect_succeeding(connection, builder)
+    client = builder.websockets_with_default_aws_signing.return_value
+    # assuming successful connection; the aws client triggers this callback in
+    # production, which releases connection._connected
+    client.start.side_effect = lambda: connection._handle_connection_success(
+        SimpleNamespace()
+    )
+    connection.connect()
     captured: dict[str, Any] = {}
     connection.subscribe(TOPIC, 1, lambda **kwargs: captured.update(kwargs))
     handle = object()
-    # In production the awscrt client invokes this when a PUBLISH arrives on the topic.
+    # In production the aws client triggers this callback when a PUBLISH arrives.
     connection._handle_publish(
         publish_received_data(
             topic=TOPIC, payload=WEBHOOK_BODY, user_properties=[], handle=handle
         )
     )
 
+    # Act
     connection.puback(captured["packet_id"])
 
+    # Assert
     client.invoke_publish_acknowledgement.assert_called_once_with(handle)
 
 
 def test_disconnect_stops_the_client() -> None:
     """disconnect() stops the MQTT5 client (clean-stop / halt reconnects)."""
+    # Arrange
     connection, _config, builder = make_connection()
-    client = connect_succeeding(connection, builder)
+    client = builder.websockets_with_default_aws_signing.return_value
+    # assuming successful connection; the aws client triggers this callback in
+    # production, which releases connection._connected
+    client.start.side_effect = lambda: connection._handle_connection_success(
+        SimpleNamespace()
+    )
+    connection.connect()
 
+    # Act
     connection.disconnect()
 
+    # Assert
     client.stop.assert_called_once()
