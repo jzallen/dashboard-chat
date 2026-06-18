@@ -128,10 +128,10 @@ CYRUS_PROXY_IOT_REGION=<region> \
 python -m proxy
 ```
 
-The region is optional — it falls back to `AWS_REGION`/`AWS_DEFAULT_REGION`, then to the
-region embedded in the ATS endpoint host. The forwarded Linear headers (including
-`Linear-Signature`) travel as MQTT5 **user properties** on the publish, so the forwarded
-body verifies at Cyrus unchanged.
+The region is optional — it falls back to `AWS_REGION`/`AWS_DEFAULT_REGION`, and the
+connection refuses to start if none of these is set (it does not guess from the
+endpoint). The forwarded Linear headers (including `Linear-Signature`) travel as MQTT5
+**user properties** on the publish, so the forwarded body verifies at Cyrus unchanged.
 
 #### End-to-end smoke run (against a real endpoint)
 
@@ -175,7 +175,7 @@ first `receive()`, and all unit tests drive a fake client.
 | `CYRUS_PROXY_CANARY_IDLE_SECONDS` | no | `20` | (canary) idle sleep after emitting |
 | `CYRUS_PROXY_IOT_ENDPOINT` | yes (iot) | — | (iot) AWS IoT ATS data-plane endpoint host |
 | `CYRUS_PROXY_IOT_ROUTING_KEY` | yes (iot) | — | (iot) this consumer's `creator.id`; subscribes to `cyrus/v1/sessions/<key>` |
-| `CYRUS_PROXY_IOT_REGION` | no | — | (iot) SigV4 signing region; falls back to `AWS_REGION` then the endpoint host |
+| `CYRUS_PROXY_IOT_REGION` | no | — | (iot) SigV4 signing region; falls back to `AWS_REGION`/`AWS_DEFAULT_REGION`, else the connection refuses to start |
 
 Run the tests with `cd cyrus && uv run --no-project pytest -q`.
 

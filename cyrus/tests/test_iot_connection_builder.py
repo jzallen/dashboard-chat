@@ -129,17 +129,33 @@ def test_connect_signs_with_the_resolved_region_and_keyed_client_id() -> None:
     builder.websockets_with_default_aws_signing.return_value.start.assert_called_once()
 
 
-def test_connect_falls_back_to_the_region_embedded_in_the_ats_endpoint(
+def test_connect_falls_back_to_the_aws_region_env_var_when_none_is_given(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """With no explicit region or env, SigV4 signs for the region in the ATS endpoint host."""
-    monkeypatch.delenv("AWS_REGION", raising=False)
+    """With no explicit region, SigV4 signs for the region from the AWS_REGION env var."""
+    monkeypatch.setenv("AWS_REGION", "eu-west-1")
     monkeypatch.delenv("AWS_DEFAULT_REGION", raising=False)
     connection, builder = make_connection(region=None)
 
     connection.connect()
 
-    assert signing_kwargs(builder)["region"] == "us-east-1"
+    assert signing_kwargs(builder)["region"] == "eu-west-1"
+
+
+def test_build_raises_when_no_region_can_be_resolved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With neither an explicit region nor an env var, the builder refuses to guess."""
+    monkeypatch.delenv("AWS_REGION", raising=False)
+    monkeypatch.delenv("AWS_DEFAULT_REGION", raising=False)
+
+    with pytest.raises(IoTConnectionError):
+        build_default_iot_connection(
+            endpoint=ENDPOINT,
+            routing_key=ROUTING_KEY,
+            region=None,
+            mqtt5_client_builder=MagicMock(),
+        )
 
 
 def test_connect_raises_a_feed_connection_error_when_the_client_reports_failure() -> (

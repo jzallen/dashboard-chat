@@ -283,22 +283,22 @@ def _client_id_for(routing_key: str) -> str:
     return f"cyrus-{routing_key}-{uuid.uuid4().hex[:8]}"[:128]
 
 
-def _region_for(endpoint: str, region: Optional[str]) -> str:
-    """Resolve the SigV4 signing region (explicit, else from env, else the endpoint).
+def _region_for(region: Optional[str]) -> str:
+    """Resolve the SigV4 signing region (explicit, else from env, else raise).
 
     SigV4 over WebSocket requires a region. Prefer the explicit ``region``, then the
-    standard ``AWS_REGION`` / ``AWS_DEFAULT_REGION`` env vars, and finally parse it out
-    of an ATS endpoint host (``<id>-ats.iot.<region>.amazonaws.com``).
+    standard ``AWS_REGION`` / ``AWS_DEFAULT_REGION`` env vars; with neither set this
+    raises rather than guessing, so the signing region is always an explicit choice.
     """
-    if region:
-        return region
-    env_region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
-    if env_region:
-        return env_region
-    if ".iot." in endpoint:
-        return endpoint.split(".iot.", 1)[1].split(".", 1)[0]
+    resolved = (
+        region
+        or os.environ.get("AWS_REGION")
+        or os.environ.get("AWS_DEFAULT_REGION")
+    )
+    if resolved:
+        return resolved
     raise IoTConnectionError(
-        f"could not resolve an AWS region for SigV4 signing from endpoint {endpoint!r}; "
+        "could not resolve an AWS region for SigV4 signing; "
         "set CYRUS_PROXY_IOT_REGION or AWS_REGION"
     )
 
@@ -331,7 +331,7 @@ def build_default_iot_connection(
     stand-in to spy on the SigV4 signing call (endpoint/region/client-id) and supply a
     fake client without reaching AWS.
     """
-    signing_region = _region_for(endpoint, region)
+    signing_region = _region_for(region)
     client_id = _client_id_for(routing_key)
 
     def factory(
