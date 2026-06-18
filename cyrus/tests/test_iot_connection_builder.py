@@ -30,7 +30,7 @@ from __future__ import annotations
 from functools import partial
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import ANY, MagicMock
 
 import pytest
 
@@ -98,39 +98,8 @@ def test_build_default_iot_connection_does_not_build_the_client_until_connect() 
     builder.websockets_with_default_aws_signing.assert_not_called()
 
 
-def test_connect_registers_the_adapters_handlers_as_the_clients_callbacks() -> None:
-    """connect() builds the client with the adapter's publish/lifecycle handlers as callbacks."""
-    # Arrange
-    connection, _config, builder = make_connection()
-    client = builder.websockets_with_default_aws_signing.return_value
-    # assuming successful connection; the aws client triggers this callback in
-    # production, which releases connection._connected
-    callback = partial(connection._handle_connection_success, _data=SimpleNamespace())
-    client.start.side_effect = callback
-
-    # Act
-    connection.connect()
-
-    # Assert
-    kwargs = get_factory_call_args_from(builder)
-    registered = {
-        "on_publish_callback_fn": kwargs["on_publish_callback_fn"],
-        "on_lifecycle_event_connection_success_fn": kwargs[
-            "on_lifecycle_event_connection_success_fn"
-        ],
-        "on_lifecycle_event_connection_failure_fn": kwargs[
-            "on_lifecycle_event_connection_failure_fn"
-        ],
-    }
-    assert registered == {
-        "on_publish_callback_fn": connection._handle_publish,
-        "on_lifecycle_event_connection_success_fn": connection._handle_connection_success,
-        "on_lifecycle_event_connection_failure_fn": connection._handle_connection_failure,
-    }
-
-
 def test_connect_signs_with_the_configs_endpoint_region_and_client_id() -> None:
-    """connect() builds the client by SigV4-signing for exactly the config's values."""
+    """connect() calls the signing factory with exactly the full client config."""
     # Arrange
     connection, config, builder = make_connection()
     client = builder.websockets_with_default_aws_signing.return_value
@@ -143,16 +112,19 @@ def test_connect_signs_with_the_configs_endpoint_region_and_client_id() -> None:
     connection.connect()
 
     # Assert
+    # The callbacks are the adapter's own _handle_* methods, registered at build time —
+    # they are never None. The seam callback they route to (connection._on_message) is
+    # what stays None until connection.subscribe(), which this test never calls.
+    # credentials_provider is the default-chain object, matched by ANY.
     kwargs = get_factory_call_args_from(builder)
-    signed_for = {
-        "endpoint": kwargs["endpoint"],
-        "region": kwargs["region"],
-        "client_id": kwargs["client_id"],
-    }
-    assert signed_for == {
+    assert kwargs == {
         "endpoint": config.endpoint,
         "region": config.region,
+        "credentials_provider": ANY,
         "client_id": config.client_id,
+        "on_publish_callback_fn": connection._handle_publish,
+        "on_lifecycle_event_connection_success_fn": connection._handle_connection_success,
+        "on_lifecycle_event_connection_failure_fn": connection._handle_connection_failure,
     }
 
 
