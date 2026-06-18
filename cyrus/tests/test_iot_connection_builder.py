@@ -128,41 +128,35 @@ def test_connect_signs_with_the_configs_endpoint_region_and_client_id() -> None:
     }
 
 
-def test_connect_starts_the_client() -> None:
-    """connect() starts the MQTT5 client, kicking off the connection attempt."""
+def test_connect__failed_connect_on_start__raises_iot_connection_error() -> None:
+    """A client that errors on start() surfaces as IoTConnectionError, not the raw error."""
     # Arrange
     connection, _config, builder = make_connection()
     client = builder.websockets_with_default_aws_signing.return_value
-    # No lifecycle event is delivered here, so connect() times out and raises; a zero
-    # timeout keeps that fast. We only care that the client was started first.
-    connection._connect_timeout = 0
-
-    # Act
-    with pytest.raises(IoTConnectionError):
-        connection.connect()
-
-    # Assert
-    client.start.assert_called_once()
-
-
-def test_connect_raises_a_feed_connection_error_when_the_client_reports_failure() -> (
-    None
-):
-    """The connection-failure lifecycle handler makes connect() raise IoTConnectionError."""
-    # Arrange
-    connection, _config, builder = make_connection()
-    client = builder.websockets_with_default_aws_signing.return_value
-    # In production the aws client triggers this callback when the broker rejects the
-    # handshake, which releases connection._connected with an error recorded.
-    callback = partial(
-        connection._handle_connection_failure,
-        data=SimpleNamespace(exception=RuntimeError("not authorized")),
-    )
-    client.start.side_effect = callback
+    client.start.side_effect = RuntimeError("network unreachable")
 
     # Act / Assert
     with pytest.raises(IoTConnectionError):
         connection.connect()
+
+
+def test_connect__handled_success_connect_on_start__frees_connected_lock_with_no_error() -> (
+    None
+):
+    """The connection-success lifecycle handler frees the connected lock with no error."""
+    # Arrange
+    connection, _config, builder = make_connection()
+    client = builder.websockets_with_default_aws_signing.return_value
+    # assuming successful connection; the aws client triggers this callback in
+    # production, which releases connection._connected
+    callback = partial(connection._handle_connection_success, _data=SimpleNamespace())
+    client.start.side_effect = callback
+
+    # Act
+    connection.connect()
+
+    # Assert
+    assert (connection._connected.is_set(), connection._connect_error) == (True, None)
 
 
 def test_connect_stops_the_client_when_the_connection_fails() -> None:

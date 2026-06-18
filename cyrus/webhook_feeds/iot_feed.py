@@ -423,7 +423,12 @@ class _Mqtt5IoTConnection:
         self._connect_error: Any = None
 
     def connect(self) -> None:
-        """Build the client, start it, and block until connected (or raise on failure)."""
+        """Build the client, start it, and block until connected (or raise on failure).
+
+        Any failure to connect — ``start()`` itself erroring, the connect timing out, or
+        the broker reporting a connection-failure lifecycle event — surfaces uniformly as
+        :class:`IoTConnectionError`, so the feed handles it as one handled receive error.
+        """
         self._connected.clear()
         self._connect_error = None
         self._client = self._client_factory(
@@ -431,7 +436,11 @@ class _Mqtt5IoTConnection:
             on_connection_success=self._handle_connection_success,
             on_connection_failure=self._handle_connection_failure,
         )
-        self._client.start()
+        try:
+            self._client.start()
+        except Exception as exc:
+            self._stop_quietly()
+            raise IoTConnectionError(f"failed to start IoT client: {exc}") from exc
         if not self._connected.wait(self._connect_timeout):
             self._stop_quietly()
             raise IoTConnectionError(
