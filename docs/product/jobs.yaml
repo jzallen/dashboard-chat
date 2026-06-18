@@ -150,6 +150,92 @@ jobs:
       - docs/product/journeys/_inventory.md
       - docs/decisions/adr-015-headless-presentation-state-retrieval.md
 
+  - id: JOB-003
+    title: Keep dataset staging changes tool-agnostic and deterministic through a canonical operations IR
+    feature_id: transform-operations-ir
+    abstraction_layer: strategic
+    statement: >
+      When I change a dataset's staging layer — authoring operations directly or
+      importing them from an Excel / Power Query (M) script — I want those changes
+      captured as one canonical, ordered list of neutral operations that
+      deterministically renders to ibis (and onward to DuckDB preview and ejected
+      dbt SQL), so I can trust that the preview I see, the dbt I eject, and the M I
+      imported all describe the same intent — without any single tool's dialect
+      leaking into the stored source of truth.
+    emotional_layer: >
+      When I import, add, or reorder an operation, I want to learn immediately — at
+      the moment I submit it — whether it is well-formed and will render, instead of
+      discovering a "-- Error generating SQL" comment buried in a preview later, or
+      a silently reordered transform that produces the wrong column.
+    social_layer: >
+      When I show this codebase to a data engineer, I want the staging layer to read
+      like a clean compiler IR — operations are data, rendering is code, SQL is
+      always derived — not a pile of triplicated match statements whose execution
+      order is pinned to a row's insert timestamp.
+    outcome_statements:
+      # Provisional scoring — DISCUSS-derived from ADR-051 evidence, not ODI-rigorous.
+      # importance reflects developer + correctness impact; satisfaction reflects the
+      # current observable state grounded in evaluation.md file:line evidence.
+      - id: O1
+        text: Minimize the likelihood that two non-commutative staging operations render in the wrong (clock-derived) order
+        importance: 9
+        satisfaction: 3
+        score: 15
+        status: under-served
+      - id: O2
+        text: Minimize the likelihood that a malformed operation is persisted and silently degrades to broken SQL
+        importance: 8
+        satisfaction: 2
+        score: 14
+        status: under-served
+      - id: O3
+        text: Minimize the effort required to add a new operation or a new render target without drift between rule arms
+        importance: 7
+        satisfaction: 3
+        score: 11
+        status: marginal
+      - id: O4
+        text: Maximize fidelity between a target's render and the neutral customer intent (no dialect leak into the stored IR)
+        importance: 8
+        satisfaction: 4
+        score: 12
+        status: marginal
+      - id: O5
+        text: Minimize the likelihood that importing an Excel / M script silently drops or half-imports an unsupported construct
+        importance: 8
+        satisfaction: 2
+        score: 14
+        status: under-served
+    composition_with_other_jobs:
+      - related_job: JOB-001
+        relationship: >
+          Foundational — JOB-001's under-served O4 (reuse of validation logic
+          between in-app tests and the ejected dbt project) depends on the
+          reproducibility invariant JOB-003 establishes: because ibis/SQL are a
+          pure function of the persisted operations, the same operations render
+          identically inside the app (DuckDB preview) and after eject (dbt
+          staging). Without a deterministic IR, an assertion that holds in-app can
+          diverge post-eject.
+      - related_job: JOB-002
+        relationship: >
+          Compositional — the provisional J-005 journey (Transform toggles:
+          preview / apply / undo) is the user-flow surface; JOB-003's canonical
+          operations list is the server-owned source of truth that journey's state
+          machine projects. JOB-002 owns the flow state; JOB-003 owns what that
+          state is made of.
+    references:
+      - docs/feature/transform-operations-ir/design/evaluation.md
+      - docs/feature/transform-operations-ir/design/c4-component.md
+      - docs/feature/transform-operations-ir/design/wave-decisions.md
+      - docs/feature/transform-operations-ir/discuss/jtbd-job-stories.md
+      - docs/feature/transform-operations-ir/discuss/jtbd-four-forces.md
+      - docs/feature/transform-operations-ir/discuss/user-stories.md
+      - docs/feature/transform-operations-ir/discuss/story-map.md
+      - docs/feature/transform-operations-ir/discuss/outcome-kpis.md
+      - docs/decisions/adr-051-operations-as-canonical-transform-ir.md
+      - docs/decisions/adr-007-ibis-for-sql-generation.md
+      - docs/decisions/adr-026-ibis-as-only-sql-compiler.md
+
 changelog:
   - date: 2026-05-08
     feature: dbt-test-validation
@@ -161,4 +247,13 @@ changelog:
       Added JOB-002 from DISCUSS wave (no DIVERGE — see wave-decisions.md
       for why DIVERGE was skipped). JOB-002 is compositional with JOB-001's
       under-served outcomes O3, O4, O5.
+    actor: nw-product-owner (Luna)
+  - date: 2026-06-18
+    feature: transform-operations-ir
+    change: >
+      Added JOB-003 from DISCUSS wave (light JTBD bridge, no DIVERGE — the job
+      was already articulated by the merged DESIGN, ADR-051). Foundational to
+      JOB-001's eject-boundary validation and compositional with JOB-002's
+      provisional J-005 transform-toggles journey. DISCUSS run after DESIGN
+      because this is a brownfield evaluation feature (wave:refactor).
     actor: nw-product-owner (Luna)

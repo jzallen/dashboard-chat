@@ -29,7 +29,7 @@ its own DISCUSS pass and lands here as a separate row.
 |---|---|---|---|
 | J-003 | Dataset upload (chat-driven + direct) | future DISCUSS pass | dive after J-002 (per research §5 prioritization) |
 | J-004 | Table / dataset preview | future DISCUSS pass | this one is closest to ADR-015 today; dive can probably re-use machinery |
-| J-005 | Transform toggles (preview / apply / undo) | future DISCUSS pass | strongest existing server-side state (transforms API + replay); dive will mostly formalize the *preview* sub-state |
+| J-005 | Transform toggles (preview / apply / undo) | `transform-operations-ir` (DISCUSS 2026-06-18, **backend half only**) | backend operations-IR contract authored at `docs/feature/transform-operations-ir/discuss/journey-transform-operations-ir.yaml`; full SSOT promotion awaits the UI/state-machine dimension (JOB-002) |
 | J-006 | View + report creation | future DISCUSS pass | weakest harness coverage; dive will add headless contracts |
 | J-007 | dbt export | future DISCUSS pass | already mostly server-driven via ADR-019/024; dive will be thin |
 
@@ -56,3 +56,10 @@ its own DISCUSS pass and lands here as a separate row.
   `project-and-chat-session-management` DISCUSS wave. J-002's
   journey contract lands at
   `docs/product/journeys/project-and-chat-session-management.yaml`.
+- 2026-06-18 — `transform-operations-ir` DISCUSS authored the
+  **backend half** of J-005 (the operations-IR source-of-truth
+  contract) at
+  `docs/feature/transform-operations-ir/discuss/journey-transform-operations-ir.yaml`.
+  Not yet promoted to active SSOT — J-005 still needs its UI /
+  state-machine dimension (JOB-002) before it lands here as a
+  product journey contract.
