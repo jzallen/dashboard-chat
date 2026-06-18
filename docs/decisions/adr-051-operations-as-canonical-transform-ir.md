@@ -8,6 +8,16 @@
 - Wave decisions: `docs/feature/transform-operations-ir/design/wave-decisions.md`
 - Composes with: `docs/decisions/adr-007-ibis-for-sql-generation.md`, `docs/decisions/adr-026-ibis-as-only-sql-compiler.md`
 
+> **Scope (this phase): the Dataset staging tier only.** Every decision below —
+> the canonical operations list, the `sequence` column, the M-inbound parser, the
+> adapter-args sidecars, the dispatch-catalog renderer, and boundary validation —
+> applies to the `transforms` table that feeds the staging layer. The View and
+> Report tiers are explicitly **out of scope for now** and unchanged by this ADR;
+> they remain document-per-entity structured IRs (see decision 6). Extending the
+> operations model to View/Report — including normalizing their embedded-JSON
+> operations into first-class rows — is a separate proposal, to be designed and
+> reconciled with this one later.
+
 ## Context
 
 Model changes to a dataset are expressed today as rows in the `transforms`
@@ -147,21 +157,34 @@ persisted, never silently degraded. The `"-- Error generating SQL"` fallback at
 `dataset_sql.py:46-50,57-59` becomes a true (ideally unreachable) invariant guard
 rather than the de-facto validation layer.
 
-### 6. Scope: Dataset staging tier; View/Report are siblings
+### 6. Scope: Dataset staging tier only, for the time being
 
-The operations IR is **Dataset-staging-scoped**. View (`view.py`) and Report
+The operations IR is **Dataset-staging-scoped**. For the time being, every
+decision in this ADR applies *only* to the `transforms` table and the staging
+renderer; the View and Report tiers are unchanged. View (`view.py`) and Report
 (`report.py`, `report_ibis_compiler.py`) remain separate structured IRs in the
 same ibis-compiler **family** — they share the discipline (operations-as-data,
 rendering-as-code, SQL always derived, no stored executable SQL) but not a table.
 Only staging carries the non-commutative MUTATE chain that needs `sequence`.
 Cross-tier operation sequencing is a non-goal of this ADR.
 
+Today View/Report persist their operations as embedded-JSON arrays on a single
+entity row (`columns` / `joins` / `filters` / `grain` on `views`;
+`columns_metadata` on `reports`) — document-per-entity, not row-per-operation.
+Bringing those tiers onto the operations model means first normalizing those
+arrays into first-class operation rows; that normalization, and the subsequent
+M → IR → ibis reconciliation for View/Report, is deferred to a separate proposal
+and is intentionally not decided here.
+
 ## Non-goals
 
 - **Merging View/Report into the operations table.** They are siblings in the
   ibis-compiler family, not rows in the operations list (decision 6). Their
-  order-insensitive structured-aggregate shape does not carry the `sequence`
-  invariant.
+  structured-aggregate shape does not carry the staging `sequence` invariant —
+  though note View joins are themselves declaration-ordered (the compiler chains
+  them in list order at `backend/app/use_cases/view/sql_generator.py:237-241`), so
+  any future normalization of that tier inherits its own ordering concern. That
+  work is a separate proposal, not this ADR.
 - **A general M bridge.** Only the bounded vocabulary subset is importable
   (Constraints). M joins, pivots, and type engines are out of scope until
   explicitly added to the vocabulary.
