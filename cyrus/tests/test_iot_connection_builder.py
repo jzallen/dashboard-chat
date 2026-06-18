@@ -77,7 +77,7 @@ def connect_succeeding(
     return client
 
 
-def signing_kwargs(builder: MagicMock) -> dict[str, Any]:
+def get_factory_call_args_from(builder: MagicMock) -> dict[str, Any]:
     """The kwargs the adapter passed to ``websockets_with_default_aws_signing``."""
     return builder.websockets_with_default_aws_signing.call_args.kwargs
 
@@ -108,7 +108,7 @@ def test_connect_registers_the_adapters_handlers_as_the_clients_callbacks() -> N
 
     connect_succeeding(connection, builder)
 
-    kwargs = signing_kwargs(builder)
+    kwargs = get_factory_call_args_from(builder)
     assert kwargs["on_publish_callback_fn"] == connection._handle_publish
     assert (
         kwargs["on_lifecycle_event_connection_success_fn"]
@@ -126,7 +126,7 @@ def test_connect_signs_with_the_configs_region_and_client_id() -> None:
 
     connect_succeeding(connection, builder)
 
-    kwargs = signing_kwargs(builder)
+    kwargs = get_factory_call_args_from(builder)
     assert kwargs["endpoint"] == config.endpoint
     assert kwargs["region"] == config.region
     assert kwargs["client_id"] == config.client_id
