@@ -17,6 +17,12 @@ registers at build time. We first pin that those handlers are the functions regi
 with the client, then test each handler's effect by calling it directly (the awscrt
 client is what calls it in production), so the tests exercise the real handler rather
 than a fake's recorded callback.
+
+The awscrt MQTT5 client has no ``botocore``-style Stubber, so it is faked with a
+``MagicMock`` injected at the builder boundary: the adapter only delegates, so each test
+verifies a side-effect at that boundary (``assert_called_once_with`` / recorded call
+args) — the deliberate looseness of a bare mock is acceptable for these fire-and-forget
+delegations.
 """
 
 from __future__ import annotations
@@ -78,11 +84,17 @@ def publish_received_data(
     )
 
 
-def test_build_default_iot_connection_returns_the_adapter_without_touching_aws() -> None:
-    """The builder wraps a lazy factory in the adapter; no client is built until connect()."""
-    connection, _config, builder = make_connection()
+def test_build_default_iot_connection_returns_the_mqtt5_adapter() -> None:
+    """The builder returns the MQTT5 connection adapter."""
+    connection, _config, _builder = make_connection()
 
     assert isinstance(connection, _Mqtt5IoTConnection)
+
+
+def test_build_default_iot_connection_does_not_build_the_client_until_connect() -> None:
+    """The factory is lazy: no awscrt client is built (no AWS touched) before connect()."""
+    _connection, _config, builder = make_connection()
+
     builder.websockets_with_default_aws_signing.assert_not_called()
 
 
@@ -101,19 +113,24 @@ def test_connect_registers_the_adapters_handlers_as_the_clients_callbacks() -> N
 
     # Assert
     kwargs = get_factory_call_args_from(builder)
-    assert kwargs["on_publish_callback_fn"] == connection._handle_publish
-    assert (
-        kwargs["on_lifecycle_event_connection_success_fn"]
-        == connection._handle_connection_success
-    )
-    assert (
-        kwargs["on_lifecycle_event_connection_failure_fn"]
-        == connection._handle_connection_failure
-    )
+    registered = {
+        "on_publish_callback_fn": kwargs["on_publish_callback_fn"],
+        "on_lifecycle_event_connection_success_fn": kwargs[
+            "on_lifecycle_event_connection_success_fn"
+        ],
+        "on_lifecycle_event_connection_failure_fn": kwargs[
+            "on_lifecycle_event_connection_failure_fn"
+        ],
+    }
+    assert registered == {
+        "on_publish_callback_fn": connection._handle_publish,
+        "on_lifecycle_event_connection_success_fn": connection._handle_connection_success,
+        "on_lifecycle_event_connection_failure_fn": connection._handle_connection_failure,
+    }
 
 
-def test_connect_signs_with_the_configs_region_and_client_id() -> None:
-    """connect() builds the client by SigV4-signing for the config's endpoint/region/client-id."""
+def test_connect_signs_with_the_configs_endpoint_region_and_client_id() -> None:
+    """connect() builds the client by SigV4-signing for exactly the config's values."""
     # Arrange
     connection, config, builder = make_connection()
     client = builder.websockets_with_default_aws_signing.return_value
@@ -127,13 +144,20 @@ def test_connect_signs_with_the_configs_region_and_client_id() -> None:
 
     # Assert
     kwargs = get_factory_call_args_from(builder)
-    assert kwargs["endpoint"] == config.endpoint
-    assert kwargs["region"] == config.region
-    assert kwargs["client_id"] == config.client_id
+    signed_for = {
+        "endpoint": kwargs["endpoint"],
+        "region": kwargs["region"],
+        "client_id": kwargs["client_id"],
+    }
+    assert signed_for == {
+        "endpoint": config.endpoint,
+        "region": config.region,
+        "client_id": config.client_id,
+    }
 
 
 def test_connect_returns_once_the_client_reports_connection_success() -> None:
-    """The connection-success lifecycle handler unblocks connect(), which returns cleanly."""
+    """The connection-success lifecycle handler unblocks connect(), which starts the client."""
     # Arrange
     connection, _config, builder = make_connection()
     client = builder.websockets_with_default_aws_signing.return_value
@@ -152,7 +176,7 @@ def test_connect_returns_once_the_client_reports_connection_success() -> None:
 def test_connect_raises_a_feed_connection_error_when_the_client_reports_failure() -> (
     None
 ):
-    """The connection-failure lifecycle handler makes connect() raise and stop the client."""
+    """The connection-failure lifecycle handler makes connect() raise IoTConnectionError."""
     # Arrange
     connection, _config, builder = make_connection()
     client = builder.websockets_with_default_aws_signing.return_value
@@ -167,6 +191,26 @@ def test_connect_raises_a_feed_connection_error_when_the_client_reports_failure(
     # Act / Assert
     with pytest.raises(IoTConnectionError):
         connection.connect()
+
+
+def test_connect_stops_the_client_when_the_connection_fails() -> None:
+    """A failed connect() stops the client so it does not keep trying to reconnect."""
+    # Arrange
+    connection, _config, builder = make_connection()
+    client = builder.websockets_with_default_aws_signing.return_value
+    # In production the aws client triggers this callback when the broker rejects the
+    # handshake, which releases connection._connected with an error recorded.
+    callback = partial(
+        connection._handle_connection_failure,
+        data=SimpleNamespace(exception=RuntimeError("not authorized")),
+    )
+    client.start.side_effect = callback
+
+    # Act
+    with pytest.raises(IoTConnectionError):
+        connection.connect()
+
+    # Assert
     client.stop.assert_called_once()
 
 
@@ -222,10 +266,12 @@ def test_inbound_publish_reaches_the_seam_callback_as_topic_payload_headers_pack
     )
 
     # Assert
-    assert received["topic"] == TOPIC
-    assert received["payload"] == WEBHOOK_BODY
-    assert received["headers"] == {"Linear-Event": "AgentSessionEvent"}
-    assert isinstance(received["packet_id"], int)
+    assert received == {
+        "topic": TOPIC,
+        "payload": WEBHOOK_BODY,
+        "headers": {"Linear-Event": "AgentSessionEvent"},
+        "packet_id": 1,
+    }
 
 
 def test_inbound_string_payload_reaches_the_seam_callback_as_bytes() -> None:
