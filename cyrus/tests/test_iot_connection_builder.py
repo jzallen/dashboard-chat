@@ -128,18 +128,18 @@ def test_connect_signs_with_the_configs_endpoint_region_and_client_id() -> None:
     }
 
 
-def test_connect_returns_once_the_client_reports_connection_success() -> None:
-    """The connection-success lifecycle handler unblocks connect(), which starts the client."""
+def test_connect_starts_the_client() -> None:
+    """connect() starts the MQTT5 client, kicking off the connection attempt."""
     # Arrange
     connection, _config, builder = make_connection()
     client = builder.websockets_with_default_aws_signing.return_value
-    # assuming successful connection; the aws client triggers this callback in
-    # production, which releases connection._connected
-    callback = partial(connection._handle_connection_success, _data=SimpleNamespace())
-    client.start.side_effect = callback
+    # No lifecycle event is delivered here, so connect() times out and raises; a zero
+    # timeout keeps that fast. We only care that the client was started first.
+    connection._connect_timeout = 0
 
     # Act
-    connection.connect()
+    with pytest.raises(IoTConnectionError):
+        connection.connect()
 
     # Assert
     client.start.assert_called_once()
