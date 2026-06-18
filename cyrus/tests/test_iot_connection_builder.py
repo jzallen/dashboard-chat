@@ -39,6 +39,7 @@ pytest.importorskip("awscrt", reason="awscrt provides the MQTT5 SubscribePacket/
 from awscrt import mqtt5  # noqa: E402
 
 from webhook_feeds.iot_feed import (  # noqa: E402
+    ConnectionState,
     IoTConfig,
     IoTConnectionError,
     _Mqtt5IoTConnection,
@@ -156,7 +157,7 @@ def test_connect__handled_success_connect_on_start__frees_connected_lock_with_no
     connection.connect()
 
     # Assert
-    assert (connection._connected.is_set(), connection._connect_error) == (True, None)
+    assert connection.state == ConnectionState.CONNECTED
 
 
 def test_connect_stops_the_client_when_the_connection_fails() -> None:

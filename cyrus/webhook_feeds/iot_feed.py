@@ -70,6 +70,7 @@ import os
 import queue
 import threading
 import uuid
+from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 if TYPE_CHECKING:
@@ -83,6 +84,19 @@ TOPIC_PREFIX = "cyrus/v1/sessions/"
 # MQTT QoS 1 (at-least-once): the broker holds the publish un-acked until PUBACK, so a
 # failed forward leaves the message for redelivery (see the module docstring).
 _QOS_AT_LEAST_ONCE = 1
+
+
+class ConnectionState(Enum):
+    """Lifecycle state of an IoT connection, observable via ``_Mqtt5IoTConnection.state``.
+
+    Lets callers and tests read the connection's status through a public seam instead of
+    inspecting the internal connect/error bookkeeping.
+    """
+
+    DISCONNECTED = "disconnected"
+    CONNECTING = "connecting"
+    CONNECTED = "connected"
+    FAILED = "failed"
 
 
 def topic_filter_for(routing_key: str) -> str:
@@ -421,16 +435,25 @@ class _Mqtt5IoTConnection:
         # connect() blocks until the client reports the first lifecycle outcome.
         self._connected = threading.Event()
         self._connect_error: Any = None
+        self._state = ConnectionState.DISCONNECTED
+
+    @property
+    def state(self) -> ConnectionState:
+        """The current connection lifecycle state (public, read-only)."""
+        return self._state
 
     def connect(self) -> None:
         """Build the client, start it, and block until connected (or raise on failure).
 
-        Any failure to connect — ``start()`` itself erroring, the connect timing out, or
-        the broker reporting a connection-failure lifecycle event — surfaces uniformly as
-        :class:`IoTConnectionError`, so the feed handles it as one handled receive error.
+        Drives the state from ``CONNECTING`` to ``CONNECTED``. Any failure to connect —
+        ``start()`` itself erroring, the connect timing out, or the broker reporting a
+        connection-failure lifecycle event — leaves the state ``FAILED`` and surfaces
+        uniformly as :class:`IoTConnectionError`, so the feed handles it as one handled
+        receive error.
         """
         self._connected.clear()
         self._connect_error = None
+        self._state = ConnectionState.CONNECTING
         self._client = self._client_factory(
             on_publish_received=self._handle_publish,
             on_connection_success=self._handle_connection_success,
@@ -439,16 +462,20 @@ class _Mqtt5IoTConnection:
         try:
             self._client.start()
         except Exception as exc:
+            self._state = ConnectionState.FAILED
             self._stop_quietly()
             raise IoTConnectionError(f"failed to start IoT client: {exc}") from exc
         if not self._connected.wait(self._connect_timeout):
+            self._state = ConnectionState.FAILED
             self._stop_quietly()
             raise IoTConnectionError(
                 f"timed out after {self._connect_timeout}s waiting to connect"
             )
         if self._connect_error is not None:
+            self._state = ConnectionState.FAILED
             self._stop_quietly()
             raise IoTConnectionError(f"IoT connection failed: {self._connect_error}")
+        self._state = ConnectionState.CONNECTED
 
     def subscribe(self, topic: str, qos: int, callback: Callable[..., None]) -> None:
         """Subscribe to exactly ``topic`` at ``qos`` and route its publishes to ``callback``."""
@@ -467,6 +494,7 @@ class _Mqtt5IoTConnection:
     def disconnect(self) -> None:
         """Stop the client, ending connectivity and halting reconnect attempts."""
         self._client.stop()
+        self._state = ConnectionState.DISCONNECTED
 
     def _stop_quietly(self) -> None:
         """Best-effort stop of a client that failed to connect, so it stops reconnecting."""
