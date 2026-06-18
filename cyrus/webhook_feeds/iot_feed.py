@@ -210,9 +210,11 @@ class IoTLinearWebhookFeed:
             return
         if self._connection is None:
             self._connection = build_default_iot_connection(
-                endpoint=self._endpoint,
-                routing_key=self._routing_key,
-                region=self._region,
+                IoTConfig(
+                    endpoint=self._endpoint,
+                    routing_key=self._routing_key,
+                    region=self._region,
+                )
             )
         self._connection.connect()
         try:
@@ -276,38 +278,54 @@ class IoTConnectionError(Exception):
     """
 
 
-# Each connection needs a unique MQTT client id (a second connection sharing an id
-# kicks the first off the broker). It is derived from the routing key for log/debug
-# legibility with a short random suffix so two processes on the same key don't clash.
-def _client_id_for(routing_key: str) -> str:
-    return f"cyrus-{routing_key}-{uuid.uuid4().hex[:8]}"[:128]
+class IoTConfig:
+    """Validated configuration for the IoT MQTT5 connection.
 
+    Resolves everything the SigV4 connection needs up front, so the builder is a thin
+    consumer that just reads ready-made values:
 
-def _region_for(region: Optional[str]) -> str:
-    """Resolve the SigV4 signing region (explicit, else from env, else raise).
+    * :attr:`region` — the SigV4 signing region. Prefer the explicit ``region``, then
+      the standard ``AWS_REGION`` / ``AWS_DEFAULT_REGION`` env vars; with none set this
+      raises rather than guessing, so the signing region is always an explicit choice.
+    * :attr:`client_id` — the MQTT client id, derived from ``routing_key`` for log/debug
+      legibility with a short random suffix so two processes on the same key don't clash
+      (a second connection sharing an id kicks the first off the broker), capped at the
+      128-char MQTT limit.
 
-    SigV4 over WebSocket requires a region. Prefer the explicit ``region``, then the
-    standard ``AWS_REGION`` / ``AWS_DEFAULT_REGION`` env vars; with neither set this
-    raises rather than guessing, so the signing region is always an explicit choice.
+    ``region`` resolution runs at construction, so an unconfigured region fails fast
+    here rather than deep inside ``connect()``.
     """
-    resolved = (
-        region
-        or os.environ.get("AWS_REGION")
-        or os.environ.get("AWS_DEFAULT_REGION")
-    )
-    if resolved:
-        return resolved
-    raise IoTConnectionError(
-        "could not resolve an AWS region for SigV4 signing; "
-        "set CYRUS_PROXY_IOT_REGION or AWS_REGION"
-    )
+
+    def __init__(
+        self,
+        *,
+        endpoint: str,
+        routing_key: str,
+        region: Optional[str] = None,
+    ) -> None:
+        self.endpoint = endpoint
+        self.routing_key = routing_key
+        self.region = self._resolve_region(region)
+        self.client_id = f"cyrus-{routing_key}-{uuid.uuid4().hex[:8]}"[:128]
+
+    @staticmethod
+    def _resolve_region(region: Optional[str]) -> str:
+        resolved = (
+            region
+            or os.environ.get("AWS_REGION")
+            or os.environ.get("AWS_DEFAULT_REGION")
+        )
+        if resolved:
+            return resolved
+        raise IoTConnectionError(
+            "could not resolve an AWS region for SigV4 signing; "
+            "set CYRUS_PROXY_IOT_REGION or AWS_REGION"
+        )
 
 
 def build_default_iot_connection(
+    config: IoTConfig,
     *,
-    endpoint: str,
-    routing_key: str,
-    region: Optional[str] = None,
     mqtt5_client_builder: Any | None = None,
 ) -> "_Mqtt5IoTConnection":
     """Build the production MQTT5-over-WebSocket (SigV4) connection for the feed.
@@ -316,8 +334,9 @@ def build_default_iot_connection(
     ``awsiot.mqtt5_client_builder.websockets_with_default_aws_signing`` over the
     **default AWS credentials provider chain** — so the devpod **instance role** signs
     the WebSocket handshake and **no X.509 device certificate** is involved — targeting
-    ``endpoint``/``region`` with a client id derived from ``routing_key``, and wraps it
-    in a :class:`_Mqtt5IoTConnection`.
+    the :class:`IoTConfig`'s endpoint/region with its derived client id, and wraps it in
+    a :class:`_Mqtt5IoTConnection`. All endpoint/region/client-id resolution lives on the
+    config; this function just reads it off.
 
     The MQTT5 client is what makes the feed's at-least-once contract honest: it takes
     *manual* acknowledgement control of each inbound QoS 1 publish so the PUBACK fires
@@ -331,8 +350,6 @@ def build_default_iot_connection(
     stand-in to spy on the SigV4 signing call (endpoint/region/client-id) and supply a
     fake client without reaching AWS.
     """
-    signing_region = _region_for(region)
-    client_id = _client_id_for(routing_key)
 
     def factory(
         *,
@@ -347,10 +364,10 @@ def build_default_iot_connection(
             from awsiot import mqtt5_client_builder as builder
 
         return builder.websockets_with_default_aws_signing(
-            endpoint=endpoint,
-            region=signing_region,
+            endpoint=config.endpoint,
+            region=config.region,
             credentials_provider=AwsCredentialsProvider.new_default_chain(),
-            client_id=client_id,
+            client_id=config.client_id,
             on_publish_callback_fn=on_publish_received,
             on_lifecycle_event_connection_success_fn=on_connection_success,
             on_lifecycle_event_connection_failure_fn=on_connection_failure,
