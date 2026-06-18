@@ -21,6 +21,7 @@ than a fake's recorded callback.
 
 from __future__ import annotations
 
+from functools import partial
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
@@ -92,9 +93,8 @@ def test_connect_registers_the_adapters_handlers_as_the_clients_callbacks() -> N
     client = builder.websockets_with_default_aws_signing.return_value
     # assuming successful connection; the aws client triggers this callback in
     # production, which releases connection._connected
-    client.start.side_effect = lambda: connection._handle_connection_success(
-        SimpleNamespace()
-    )
+    callback = partial(connection._handle_connection_success, _data=SimpleNamespace())
+    client.start.side_effect = callback
 
     # Act
     connection.connect()
@@ -119,9 +119,8 @@ def test_connect_signs_with_the_configs_region_and_client_id() -> None:
     client = builder.websockets_with_default_aws_signing.return_value
     # assuming successful connection; the aws client triggers this callback in
     # production, which releases connection._connected
-    client.start.side_effect = lambda: connection._handle_connection_success(
-        SimpleNamespace()
-    )
+    callback = partial(connection._handle_connection_success, _data=SimpleNamespace())
+    client.start.side_effect = callback
 
     # Act
     connection.connect()
@@ -140,9 +139,8 @@ def test_connect_returns_once_the_client_reports_connection_success() -> None:
     client = builder.websockets_with_default_aws_signing.return_value
     # assuming successful connection; the aws client triggers this callback in
     # production, which releases connection._connected
-    client.start.side_effect = lambda: connection._handle_connection_success(
-        SimpleNamespace()
-    )
+    callback = partial(connection._handle_connection_success, _data=SimpleNamespace())
+    client.start.side_effect = callback
 
     # Act
     connection.connect()
@@ -160,9 +158,11 @@ def test_connect_raises_a_feed_connection_error_when_the_client_reports_failure(
     client = builder.websockets_with_default_aws_signing.return_value
     # In production the aws client triggers this callback when the broker rejects the
     # handshake, which releases connection._connected with an error recorded.
-    client.start.side_effect = lambda: connection._handle_connection_failure(
-        SimpleNamespace(exception=RuntimeError("not authorized"))
+    callback = partial(
+        connection._handle_connection_failure,
+        data=SimpleNamespace(exception=RuntimeError("not authorized")),
     )
+    client.start.side_effect = callback
 
     # Act / Assert
     with pytest.raises(IoTConnectionError):
@@ -177,9 +177,8 @@ def test_subscribe_requests_exactly_the_keyed_topic_at_qos_1() -> None:
     client = builder.websockets_with_default_aws_signing.return_value
     # assuming successful connection; the aws client triggers this callback in
     # production, which releases connection._connected
-    client.start.side_effect = lambda: connection._handle_connection_success(
-        SimpleNamespace()
-    )
+    callback = partial(connection._handle_connection_success, _data=SimpleNamespace())
+    client.start.side_effect = callback
     connection.connect()
 
     # Act
@@ -203,9 +202,8 @@ def test_inbound_publish_reaches_the_seam_callback_as_topic_payload_headers_pack
     client = builder.websockets_with_default_aws_signing.return_value
     # assuming successful connection; the aws client triggers this callback in
     # production, which releases connection._connected
-    client.start.side_effect = lambda: connection._handle_connection_success(
-        SimpleNamespace()
-    )
+    callback = partial(connection._handle_connection_success, _data=SimpleNamespace())
+    client.start.side_effect = callback
     connection.connect()
     received: dict[str, Any] = {}
     connection.subscribe(TOPIC, 1, lambda **kwargs: received.update(kwargs))
@@ -237,9 +235,8 @@ def test_inbound_string_payload_reaches_the_seam_callback_as_bytes() -> None:
     client = builder.websockets_with_default_aws_signing.return_value
     # assuming successful connection; the aws client triggers this callback in
     # production, which releases connection._connected
-    client.start.side_effect = lambda: connection._handle_connection_success(
-        SimpleNamespace()
-    )
+    callback = partial(connection._handle_connection_success, _data=SimpleNamespace())
+    client.start.side_effect = callback
     connection.connect()
     received: dict[str, Any] = {}
     connection.subscribe(TOPIC, 1, lambda **kwargs: received.update(kwargs))
@@ -268,9 +265,8 @@ def test_puback_sends_the_manual_ack_for_the_handle_taken_when_the_publish_arriv
     client = builder.websockets_with_default_aws_signing.return_value
     # assuming successful connection; the aws client triggers this callback in
     # production, which releases connection._connected
-    client.start.side_effect = lambda: connection._handle_connection_success(
-        SimpleNamespace()
-    )
+    callback = partial(connection._handle_connection_success, _data=SimpleNamespace())
+    client.start.side_effect = callback
     connection.connect()
     captured: dict[str, Any] = {}
     connection.subscribe(TOPIC, 1, lambda **kwargs: captured.update(kwargs))
@@ -296,9 +292,8 @@ def test_disconnect_stops_the_client() -> None:
     client = builder.websockets_with_default_aws_signing.return_value
     # assuming successful connection; the aws client triggers this callback in
     # production, which releases connection._connected
-    client.start.side_effect = lambda: connection._handle_connection_success(
-        SimpleNamespace()
-    )
+    callback = partial(connection._handle_connection_success, _data=SimpleNamespace())
+    client.start.side_effect = callback
     connection.connect()
 
     # Act
