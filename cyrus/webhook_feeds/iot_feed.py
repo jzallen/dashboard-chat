@@ -308,6 +308,7 @@ def build_default_iot_connection(
     endpoint: str,
     routing_key: str,
     region: Optional[str] = None,
+    mqtt5_client_builder: Any | None = None,
 ) -> "_Mqtt5IoTConnection":
     """Build the production MQTT5-over-WebSocket (SigV4) connection for the feed.
 
@@ -325,8 +326,10 @@ def build_default_iot_connection(
     also reconnects with exponential backoff and jitter on its own, so a dropped
     connection self-heals without the feed restarting.
 
-    The client is built lazily through an injected factory so the unit suite drives a
-    fake client and never touches AWS; this function supplies the real SigV4 factory.
+    The client is built lazily on ``connect()`` so this returns without touching AWS.
+    ``mqtt5_client_builder`` defaults to the real ``awsiot`` builder; tests inject a
+    stand-in to spy on the SigV4 signing call (endpoint/region/client-id) and supply a
+    fake client without reaching AWS.
     """
     signing_region = _region_for(endpoint, region)
     client_id = _client_id_for(routing_key)
@@ -338,9 +341,12 @@ def build_default_iot_connection(
         on_connection_failure: Callable[[Any], None],
     ) -> Any:
         from awscrt.auth import AwsCredentialsProvider
-        from awsiot import mqtt5_client_builder
 
-        return mqtt5_client_builder.websockets_with_default_aws_signing(
+        builder = mqtt5_client_builder
+        if builder is None:
+            from awsiot import mqtt5_client_builder as builder
+
+        return builder.websockets_with_default_aws_signing(
             endpoint=endpoint,
             region=signing_region,
             credentials_provider=AwsCredentialsProvider.new_default_chain(),
