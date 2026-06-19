@@ -12,11 +12,12 @@ either is implemented; any adapter honoring a contract satisfies it structurally
 
 from __future__ import annotations
 
+import json
 import logging
 import signal
 import threading
 import time
-from typing import Callable, Optional, Protocol
+from typing import Any, Callable, Mapping, Optional, Protocol
 
 from proxy.config import CanaryConfig, SqsConfig, config_from_env
 from proxy.logging_config import configure_logging
@@ -28,6 +29,59 @@ from proxy.messages import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_agent_session(payload: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Best-effort locate the AgentSession object inside a Linear webhook payload.
+
+    Linear has carried the session both at the top level under ``agentSession`` and,
+    in other event shapes, nested under ``data``/``agentSession``; both are checked so
+    the logging never assumes a layout it cannot find. Returns an empty mapping when no
+    session object is present (e.g. non-AgentSession webhooks), so callers can read
+    ``.get("creator")`` unconditionally.
+    """
+    for container in (payload, payload.get("data")):
+        if isinstance(container, Mapping):
+            session = container.get("agentSession")
+            if isinstance(session, Mapping):
+                return session
+    return {}
+
+
+def _log_inbound_webhook(message: LinearWebhookMessage) -> None:
+    """Log one inbound webhook: an INFO summary, plus the full payload at DEBUG.
+
+    The INFO line stays scannable — Linear event ``type``/``action`` only — so routine
+    pump logs are not flooded. When DEBUG is enabled, the entire parsed JSON payload is
+    dumped (pretty-printed), with ``agentSession.creator`` called out on its own line so
+    its shape is easy to find. Logging is best-effort and never disrupts forwarding: a
+    body that is not JSON is reported and the raw bytes dumped at DEBUG instead.
+    """
+    if not logger.isEnabledFor(logging.INFO):
+        return
+    try:
+        payload = json.loads(message["body"])
+    except (ValueError, KeyError, TypeError):
+        logger.info("inbound webhook with a non-JSON or missing body")
+        logger.debug("raw webhook body: %r", message.get("body"))
+        return
+    if not isinstance(payload, Mapping):
+        logger.info("inbound webhook whose body is not a JSON object")
+        logger.debug("raw webhook payload: %s", json.dumps(payload, indent=2))
+        return
+    logger.info(
+        "inbound webhook type=%s action=%s",
+        payload.get("type"),
+        payload.get("action"),
+    )
+    if logger.isEnabledFor(logging.DEBUG):
+        creator = _extract_agent_session(payload).get("creator")
+        logger.debug(
+            "agentSession.creator=%s", json.dumps(creator, indent=2, sort_keys=True)
+        )
+        logger.debug(
+            "full webhook payload:\n%s", json.dumps(payload, indent=2, sort_keys=True)
+        )
 
 
 class LinearWebhookFeedProtocol(Protocol):
@@ -114,6 +168,7 @@ class ProxyExecutionLoop:
         if messages:
             logger.info("received %d webhook(s) to forward", len(messages))
         for message in messages:
+            _log_inbound_webhook(message)
             if self._forwarder.forward(message) is None:
                 self._feed.acknowledge(message)
         return envelope["error"]
