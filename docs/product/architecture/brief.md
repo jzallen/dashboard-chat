@@ -386,6 +386,72 @@ and the actor-driven wire events are retired.
 - [ ] User ratification of DR-1–DR-8 pending.
 - [ ] Peer review pending (`ddd-architect-reviewer`).
 
+#### `normalize-view-report-operations` (DESIGN — 2026-06-18 — domain scope, propose mode)
+
+**Author:** Hera (nw-ddd-architect)
+**Reconciles:** ADR-051 Finding 2 (`docs/feature/transform-operations-ir/design/evaluation.md` §6) — *amended, partially overturned*
+**Inherited constraint:** ADR-007 (Ibis is the SQL generator); ADR-026 MR-1/MR-3 (no stored executable SQL; boundary validation)
+**Deliverable:** `docs/feature/normalize-view-report-operations/design/domain-model.md`
+**Status:** Proposed → awaiting user ratification of the aggregate boundary (Option B) → ddd-architect-reviewer → solution-architect (persistence/IR) pass
+
+**Chosen aggregate boundary.** **Option B — two aggregates sharing a typed
+value-object kernel.** `View` and `Report` remain **distinct aggregate roots**
+(distinct lifecycles, distinct terminality, distinct invariant sets) but are
+both composed from one shared, typed value-object kernel — the **Derived
+Relation** kernel: `ProjectionColumn` + `ColumnRole`, `SourceRef`, `Filter`,
+`Grain`, and a shared composition service (today's `DependencyService`, already
+imported by both — `backend/app/use_cases/report/create_report.py:27`).
+
+This realizes the user's hypothesis precisely: a Report **is** a View plus one
+structural operator (aggregate-over-grain), and its "slightly different
+business rules" (`report_type` fact/dimension, measure-requires-grain, no
+mart-to-mart) are Report-aggregate invariants + application-layer policy on top
+of the shared kernel — **not** a separate vocabulary. The single mode-switched
+aggregate (Option A) was rejected because View (composable/intermediate) and
+Report (terminal/aggregating) have non-uniform invariant sets — mode-conditional
+fields violate Vernon's Rule 1/2. Full separation (Option C) was rejected
+because the vocabularies demonstrably overlap.
+
+**Reconciliation with ADR-051 Finding 2.** Finding 2's *operative decision*
+(do not fold View/Report into the Dataset-staging `transforms` operations
+table) **stands** — View/Report are declarative relations compiled in one shot,
+not sequenced row-shaping operation lists. Finding 2's *justification by
+"different vocabularies"* is **overturned**: View already owns the aggregation
+vocabulary (`GrainRole.Metric`, `ViewGrain` — `backend/app/models/view.py:40-70`),
+Report's `measure` role is View's `Metric` with a bound aggregation, and the
+source-ref dependency service is literally shared. The correct justification for
+keeping them separate is **lifecycle + ordering-invariant difference**, which
+Option B preserves while extracting the shared kernel Finding 2 missed.
+
+### Ubiquitous language (Derived Relation context)
+
+Shared kernel: **Derived Relation** (genus), **Source Ref**, **Projection** /
+**Projection Column**, **Column Role** (Entity / Dimension / Time / Measure),
+**Filter**, **Grain**, **Composition**. View-role: **View** (intermediate,
+composable, no aggregation), **Join** (declaration-ordered). Report-role:
+**Report** (mart, terminal, aggregates measures over a grain), **Report Type**
+(fact / dimension), **Measure** (a `Metric` column committed to an aggregation
+function), **Aggregation Grain** (dimensions reused as GROUP BY keys).
+
+**Naming reconciliation:** View's `GrainRole.Metric` and Report's `measure`
+role are one concept at two layers of commitment — a Metric becomes a Measure
+when an aggregation function is bound. The unified kernel names this once.
+
+### Aggregate boundary table (Vernon's rules — Option B)
+
+| Vernon rule | How Option B satisfies it |
+|---|---|
+| **1 — model true invariants** | Each aggregate's invariants are uniform: View has no measure-requires-grain rule; Report's only fires in aggregating mode. No mode-conditional optional fields diluting either boundary. |
+| **2 — one consistency boundary** | View's projection/joins/filters/grain are one transactional unit; Report's projection + aggregation grain are another. Shared *types*, separate *boundaries*. |
+| **3 — reference by identity** | Report references upstream View(s) by `SourceRef` id, never embeds a View entity (`create_report.py` resolves view schema by id). |
+| **4 — eventual consistency across** | Dependency validation (existence, no-cycle, no-mart-to-mart) already runs as read-then-check, not a transactional invariant (`dependency_service.py:16-64`). |
+
+**Scope note.** This is a domain-boundary + ubiquitous-language decision only.
+The normalized-table / IR persistence design (whether the kernel's projection
+columns become one shared normalized table, and whether aggregation is a
+nullable column-set or an additive structure) is the downstream
+solution-architect pass — explicitly out of scope here, no DDL produced.
+
 ---
 
 ## Application Architecture
@@ -630,6 +696,72 @@ Probe failure for HARD adapters → process exits with `health.startup.refused` 
 
 ---
 
+#### `normalize-view-report-operations` (DESIGN — 2026-06-18 — application scope, propose mode)
+
+**Author:** Morgan (nw-solution-architect)
+**ADR:** ADR-052 (normalize View/Report operations into a shared relation IR; Proposed)
+**Builds on (same feature):** the domain pass — Option B, two aggregates sharing
+a typed Derived-Relation value-object kernel (`docs/feature/normalize-view-report-operations/design/domain-model.md`)
+**Composes with:** ADR-051 (operations-as-canonical-transform-IR), ADR-026 (ibis
+only SQL compiler; no stored executable SQL; rules-as-data rejected), ADR-007 (ibis)
+**Deliverables:** `docs/feature/normalize-view-report-operations/design/{evaluation.md, c4-component.md, wave-decisions.md}`
+**Status:** Proposed → awaiting user ratification of Decisions 1–5 + OQ-1..4 → solution-architect-reviewer → DISTILL
+
+**Decision summary.** Disaggregate the View/Report embedded-JSON component arrays
+(`columns`/`joins`/`filters`/`grain` on `views` — `view_record.py:43-46`;
+`columns_metadata` on `reports` — `report_record.py:45`) into **shared
+normalized component tables keyed by a `(parent_type, parent_id)` discriminator**:
+`relation_columns`, `relation_filters`, `relation_joins`, `relation_grain`, plus
+a report-only `relation_aggregations` (the additive structure realizing "a Report
+is a View plus one operator"). The shared tables make the schema *express* the
+Derived-Relation kernel — parallel per-aggregate tables were rejected as
+re-duplicating it, embedded JSON rejected as not delivering the flat queryable IR
+the user asked for. The flat IR carries `sequence` **only on joins** (per-parent,
+declaration-ordered — `sql_generator.py:237-241`); columns get a presentation-only
+`position`; filters/grain/aggregations are commutative/set-like with no order
+column — the precise reconciliation with ADR-051's global staging `sequence`
+("order is data only where the compiler honors it"). Report's untyped
+`columns_metadata` is promoted to Pydantic discriminated unions over
+`semantic_role` (ADR-051 decision 5 mechanism), retiring the hand-rolled
+`validate_columns_metadata`; report-only rules (`report_type`,
+`ReportRequiresDimension`, no-mart-to-mart) stay at the application boundary. The
+two compilers collapse to **one kernel visitor + a report extension that composes
+it** (ADR-051 decision 4), not a mode branch. Migration is expand/contract with
+joins backfilled by array position (not `created_at`); independent of and
+non-conflicting with ADR-051's `transforms.sequence` migration.
+
+**New components introduced:**
+
+| Component | Role | Location (planned) |
+|---|---|---|
+| 5 `relation_*` component tables | Row-per-component normalized IR shared by both aggregates | `backend/migrations/versions/` + ORM records |
+| `relation_aggregations` table | Report-only measure→aggregation binding (additive structure) | same |
+| Derived-Relation kernel module | Shared typed VOs (`ProjectionColumn`/`ColumnRole`/`Filter`/`Join`/`Grain`/`Measure`) | `backend/app/models/` (kernel home) |
+| Kernel render module | Kernel visitor + report extension + dispatch catalog | `backend/app/use_cases/` (shared render home) |
+
+**Earned-Trust contract.** Renderer-completeness static check (every component
+discriminator handled by every active visitor — build-time failure, not silent
+skip); render-equivalence characterization test (pre-migration JSON render ==
+post-migration row render, byte-identical) authored BEFORE the renderer merge;
+join-order probe (swap two join sequences → different SQL; reorder filters → same
+SQL); boundary-rejection probe (the system refuses to persist a component it
+cannot render); polymorphic-cascade probe (parent delete removes exactly its
+rows). No external integration introduced — no contract-test annotation required.
+
+**Quality gates passed (this DESIGN wave, application-scope pass).**
+
+- [x] Each major decision (1–5) presented with structurally distinct options + trade-offs + recommendation + file:line evidence.
+- [x] Reuse Analysis hard gate: every overlap EXTEND/REUSE/REPLACE/SHRINK; net-new = 5 tables (the ask) + 1 report-only table (additive structure) + 1 render-module home, each justified.
+- [x] C4 Container (L2) + Component (L3) diagrams in Mermaid (`c4-component.md`).
+- [x] Composes explicitly with ADR-051 (Finding 2 operative decision stands) and ADR-026 (operations-as-data, ibis-derived, rules-as-data rejected).
+- [x] Ordering reconciled per-component-type against ADR-051's global `sequence`.
+- [x] AC behavioral (reproducibility, render-equivalence, order-honored, boundary-rejection), not implementation-coupled.
+- [x] OSS preference: no new dependency (ibis already ratified).
+- [ ] User ratification of Decisions 1–5 + OQ-1..4 pending.
+- [ ] Peer review pending (Atlas — `solution-architect-reviewer`).
+
+---
+
 ## Cross-section index
 
 | ADR | Section | Summary |
@@ -653,3 +785,5 @@ Probe failure for HARD adapters → process exits with `health.startup.refused` 
 | ADR-048 | System | Auth-proxy owns the WorkOS write workflow — org-create interception, credential/AUTH_MODE consolidation (Proposed) |
 | ADR-049 | Domain | Client-reported outcome event model + INV-PCO trust invariant — amends ADR-041 (Proposed) |
 | ADR-050 | Application | Client-driven-onboarding application contracts — reissue cookie, org-id carry, failure causes, mode discovery, closed wire vocabulary, engaged flip (Proposed) |
+| ADR-051 | Application | Operations list as the canonical transform IR — staging tier (Proposed) |
+| ADR-052 | Application | Normalize View/Report operations into a shared relation IR — component tables, joins-only sequence, kernel visitor (Proposed) |
