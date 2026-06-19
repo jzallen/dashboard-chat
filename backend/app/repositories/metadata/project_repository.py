@@ -11,7 +11,7 @@ from collections.abc import Callable
 from functools import reduce
 from typing import TYPE_CHECKING, Any, Protocol, Self
 
-from sqlalchemy import Select, exists, select
+from sqlalchemy import Select, and_, exists, select
 from sqlalchemy.orm import selectinload
 
 from app.utils.pagination import decode_cursor
@@ -118,7 +118,7 @@ class ProjectRepositoryProtocol(Protocol):
         limit: int | None = 50,
     ) -> tuple[list[dict[str, Any]], str | None, bool]: ...
 
-    async def get_project(self, project_id: str) -> dict[str, Any] | None: ...
+    async def get_project(self, project_id: str, org_id: str | None = None) -> dict[str, Any] | None: ...
 
     async def create_project(
         self,
@@ -132,11 +132,12 @@ class ProjectRepositoryProtocol(Protocol):
         self,
         project_id: str,
         update_data: dict[str, Any],
+        org_id: str | None = None,
     ) -> dict[str, Any] | None: ...
 
-    async def delete_project(self, project_id: str) -> bool: ...
+    async def delete_project(self, project_id: str, org_id: str | None = None) -> bool: ...
 
-    async def project_exists(self, project_id: str) -> bool: ...
+    async def project_exists(self, project_id: str, org_id: str | None = None) -> bool: ...
 
 
 class ProjectRepository:
@@ -181,10 +182,23 @@ class ProjectRepository:
         ]
         return items, next_cursor, has_more
 
+    @staticmethod
+    def _scope(query: Select, org_id: str | None) -> Select:
+        """Restrict ``query`` to ``org_id`` when provided; no-op when ``None``.
+
+        Tenancy is enforced in the query itself so a cross-tenant ``project_id``
+        is indistinguishable from not-found, independent of the router edge.
+        ``None`` preserves the unscoped path for system/internal callers.
+        """
+        if org_id is not None:
+            return query.where(ProjectRecord.org_id == org_id)
+        return query
+
     @handle_repository_exceptions
-    async def get_project(self, project_id: str) -> dict[str, Any] | None:
-        """Get a project by ID (metadata only, no datasets)."""
-        result = await self._session.execute(select(ProjectRecord).where(ProjectRecord.id == project_id))
+    async def get_project(self, project_id: str, org_id: str | None = None) -> dict[str, Any] | None:
+        """Get a project by ID (metadata only, no datasets), org-scoped when given."""
+        query = self._scope(select(ProjectRecord).where(ProjectRecord.id == project_id), org_id)
+        result = await self._session.execute(query)
         project = result.scalar_one_or_none()
         if not project:
             return None
@@ -210,9 +224,11 @@ class ProjectRepository:
         self,
         project_id: str,
         update_data: dict[str, Any],
+        org_id: str | None = None,
     ) -> dict[str, Any] | None:
-        """Update a project."""
-        result = await self._session.execute(select(ProjectRecord).where(ProjectRecord.id == project_id))
+        """Update a project, org-scoped when ``org_id`` is given."""
+        query = self._scope(select(ProjectRecord).where(ProjectRecord.id == project_id), org_id)
+        result = await self._session.execute(query)
         project = result.scalar_one_or_none()
         if not project:
             return None
@@ -225,9 +241,10 @@ class ProjectRepository:
         return _mappers.project_to_dict(project)
 
     @handle_repository_exceptions
-    async def delete_project(self, project_id: str) -> bool:
-        """Delete a project and all its datasets."""
-        result = await self._session.execute(select(ProjectRecord).where(ProjectRecord.id == project_id))
+    async def delete_project(self, project_id: str, org_id: str | None = None) -> bool:
+        """Delete a project and all its datasets, org-scoped when ``org_id`` is given."""
+        query = self._scope(select(ProjectRecord).where(ProjectRecord.id == project_id), org_id)
+        result = await self._session.execute(query)
         project = result.scalar_one_or_none()
         if not project:
             return False
@@ -237,6 +254,9 @@ class ProjectRepository:
         return True
 
     @handle_repository_exceptions
-    async def project_exists(self, project_id: str) -> bool:
-        """Check if a project exists."""
-        return (await self._session.execute(select(exists().where(ProjectRecord.id == project_id)))).scalar()
+    async def project_exists(self, project_id: str, org_id: str | None = None) -> bool:
+        """Check if a project exists, org-scoped when ``org_id`` is given."""
+        condition = ProjectRecord.id == project_id
+        if org_id is not None:
+            condition = and_(condition, ProjectRecord.org_id == org_id)
+        return (await self._session.execute(select(exists().where(condition)))).scalar()

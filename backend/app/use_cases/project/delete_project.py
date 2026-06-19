@@ -55,7 +55,7 @@ async def delete_project(
                 view_name=view_name,
             )
 
-    deleted = await metadata_repo.delete_project(project_id)
+    deleted = await metadata_repo.delete_project(project_id, org_id=user.org_id if user else None)
 
     if not deleted:
         raise ProjectNotFound(project_id)

@@ -44,11 +44,14 @@ class MetadataRepositoryProtocol(Protocol):
     async def get_project(
         self,
         project_id: str,
+        org_id: str | None = None,
     ) -> dict[str, Any] | None:
         """Get a project by ID (metadata only, no datasets).
 
         Args:
             project_id: Project UUID
+            org_id: Optional org scope. When provided, a project owned by a
+                different org is indistinguishable from not-found.
 
         Returns:
             Project dict, or None if not found.
@@ -79,23 +82,28 @@ class MetadataRepositoryProtocol(Protocol):
         self,
         project_id: str,
         update_data: dict[str, Any],
+        org_id: str | None = None,
     ) -> dict[str, Any] | None:
         """Update a project.
 
         Args:
             project_id: Project UUID
             update_data: Fields to update (name, description)
+            org_id: Optional org scope. When provided, a project owned by a
+                different org is indistinguishable from not-found.
 
         Returns:
             Updated project dict, or None if not found.
         """
         ...
 
-    async def delete_project(self, project_id: str) -> bool:
+    async def delete_project(self, project_id: str, org_id: str | None = None) -> bool:
         """Delete a project and all its datasets.
 
         Args:
             project_id: Project UUID
+            org_id: Optional org scope. When provided, a project owned by a
+                different org is indistinguishable from not-found.
 
         Returns:
             True if deleted, False if not found.
@@ -204,11 +212,13 @@ class MetadataRepositoryProtocol(Protocol):
         """
         ...
 
-    async def project_exists(self, project_id: str) -> bool:
+    async def project_exists(self, project_id: str, org_id: str | None = None) -> bool:
         """Check if a project exists.
 
         Args:
             project_id: Project UUID
+            org_id: When given, scopes the check to the org, so a project in
+                another tenant is indistinguishable from a non-existent one.
 
         Returns:
             True if project exists.

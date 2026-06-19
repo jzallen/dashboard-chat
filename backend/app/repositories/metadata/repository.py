@@ -114,9 +114,12 @@ class MetadataRepository:
     async def get_project(
         self,
         project_id: str,
+        org_id: str | None = None,
     ) -> dict[str, Any] | None:
-        """Get a project by ID (metadata only, no datasets)."""
+        """Get a project by ID (metadata only, no datasets), org-scoped when given."""
         query = select(ProjectRecord).where(ProjectRecord.id == project_id)
+        if org_id is not None:
+            query = query.where(ProjectRecord.org_id == org_id)
 
         result = await self._session.execute(query)
         project = result.scalar_one_or_none()
@@ -146,9 +149,13 @@ class MetadataRepository:
         self,
         project_id: str,
         update_data: dict[str, Any],
+        org_id: str | None = None,
     ) -> dict[str, Any] | None:
-        """Update a project."""
-        result = await self._session.execute(select(ProjectRecord).where(ProjectRecord.id == project_id))
+        """Update a project, org-scoped when ``org_id`` is given."""
+        query = select(ProjectRecord).where(ProjectRecord.id == project_id)
+        if org_id is not None:
+            query = query.where(ProjectRecord.org_id == org_id)
+        result = await self._session.execute(query)
         project = result.scalar_one_or_none()
 
         if not project:
@@ -162,9 +169,12 @@ class MetadataRepository:
         return _mappers.project_to_dict(project)
 
     @handle_repository_exceptions
-    async def delete_project(self, project_id: str) -> bool:
-        """Delete a project and all its datasets."""
-        result = await self._session.execute(select(ProjectRecord).where(ProjectRecord.id == project_id))
+    async def delete_project(self, project_id: str, org_id: str | None = None) -> bool:
+        """Delete a project and all its datasets, org-scoped when ``org_id`` is given."""
+        query = select(ProjectRecord).where(ProjectRecord.id == project_id)
+        if org_id is not None:
+            query = query.where(ProjectRecord.org_id == org_id)
+        result = await self._session.execute(query)
         project = result.scalar_one_or_none()
 
         if not project:
@@ -175,9 +185,12 @@ class MetadataRepository:
         return True
 
     @handle_repository_exceptions
-    async def project_exists(self, project_id: str) -> bool:
-        """Check if a project exists."""
-        return (await self._session.execute(select(exists().where(ProjectRecord.id == project_id)))).scalar()
+    async def project_exists(self, project_id: str, org_id: str | None = None) -> bool:
+        """Check if a project exists, org-scoped when ``org_id`` is given."""
+        condition = ProjectRecord.id == project_id
+        if org_id is not None:
+            condition = and_(condition, ProjectRecord.org_id == org_id)
+        return (await self._session.execute(select(exists().where(condition)))).scalar()
 
     # -------------------------------------------------------------------------
     # Project memory operations

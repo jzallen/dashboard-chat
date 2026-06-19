@@ -51,7 +51,7 @@ class TestGetProject:
         set_session(seeded_db)
 
         class FailingMetadataRepository:
-            async def get_project(self, project_id):
+            async def get_project(self, project_id, org_id=None):
                 raise SQLAlchemyError("Database connection lost")
 
         result = await get_project(

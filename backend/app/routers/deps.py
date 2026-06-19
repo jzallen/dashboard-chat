@@ -84,6 +84,10 @@ async def authorize_project_access(
     from app.repositories.metadata import MetadataRepository
 
     repo = MetadataRepository(db)
+    # Unscoped lookup so a cross-tenant project yields an explicit
+    # AuthorizationError (403) here rather than collapsing to not-found. The
+    # repository-layer org scope (passed by the project use cases) is the
+    # defense-in-depth backstop for paths that bypass this edge check.
     project = await repo.get_project(project_id)
     if not project:
         raise ProjectNotFound(project_id)
