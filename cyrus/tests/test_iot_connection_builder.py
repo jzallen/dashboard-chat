@@ -73,18 +73,6 @@ def get_factory_call_args_from(builder: MagicMock) -> dict[str, Any]:
     return builder.websockets_with_default_aws_signing.call_args.kwargs
 
 
-def publish_received_data(
-    *, topic: str, payload: Any, user_properties: list, handle: Any
-) -> SimpleNamespace:
-    """An awscrt-shaped ``PublishReceivedData`` for the adapter's publish handler."""
-    return SimpleNamespace(
-        publish_packet=SimpleNamespace(
-            topic=topic, payload=payload, user_properties=user_properties
-        ),
-        acquire_publish_acknowledgement_control=lambda: handle,
-    )
-
-
 def test_build_default_iot_connection_returns_the_mqtt5_adapter() -> None:
     """The builder returns the MQTT5 connection adapter."""
     connection, _config, _builder = make_connection()
@@ -214,19 +202,22 @@ def test_inbound_publish_reaches_the_seam_callback_as_topic_payload_headers_pack
     # subscribe() wires this seam callback in production; set it directly, since
     # _handle_publish needs only the seam callback — not a live connection.
     connection._on_message = lambda **kwargs: received.update(kwargs)
-
-    # Act
-    # In production the aws client triggers this callback when a PUBLISH arrives.
-    connection._handle_publish(
-        publish_received_data(
+    # The awscrt client hands _handle_publish a PublishReceivedData: the publish packet
+    # plus a factory that takes manual-ack control and returns the handle.
+    publish = SimpleNamespace(
+        publish_packet=SimpleNamespace(
             topic=TOPIC,
             payload=WEBHOOK_BODY,
             user_properties=[
                 SimpleNamespace(name="Linear-Event", value="AgentSessionEvent")
             ],
-            handle=object(),
-        )
+        ),
+        acquire_publish_acknowledgement_control=lambda: object(),
     )
+
+    # Act
+    # In production the aws client triggers this callback when a PUBLISH arrives.
+    connection._handle_publish(publish)
 
     # Assert
     assert received == {
@@ -245,17 +236,18 @@ def test_inbound_string_payload_reaches_the_seam_callback_as_bytes() -> None:
     # subscribe() wires this seam callback in production; set it directly, since
     # _handle_publish needs only the seam callback — not a live connection.
     connection._on_message = lambda **kwargs: received.update(kwargs)
-
-    # Act
-    # In production the aws client triggers this callback when a PUBLISH arrives.
-    connection._handle_publish(
-        publish_received_data(
+    publish = SimpleNamespace(
+        publish_packet=SimpleNamespace(
             topic=TOPIC,
             payload=WEBHOOK_BODY.decode("utf-8"),
             user_properties=[],
-            handle=object(),
-        )
+        ),
+        acquire_publish_acknowledgement_control=lambda: object(),
     )
+
+    # Act
+    # In production the aws client triggers this callback when a PUBLISH arrives.
+    connection._handle_publish(publish)
 
     # Assert
     assert received["payload"] == WEBHOOK_BODY
@@ -268,20 +260,20 @@ def test_puback_sends_the_manual_ack_for_the_handle_taken_when_the_publish_arriv
     # Arrange
     connection, _config, builder = make_connection()
     client = builder.websockets_with_default_aws_signing.return_value
-    # assuming successful connection; the aws client triggers this callback in
-    # production, which releases connection._connected
-    callback = partial(connection._handle_connection_success, _data=SimpleNamespace())
-    client.start.side_effect = callback
-    connection.connect()
+    # puback() calls invoke_publish_acknowledgement on the client; wire it directly,
+    # since neither it nor _handle_publish needs the connect lifecycle.
+    connection._client = client
     captured: dict[str, Any] = {}
-    connection.subscribe(TOPIC, 1, lambda **kwargs: captured.update(kwargs))
+    connection._on_message = lambda **kwargs: captured.update(kwargs)
     handle = object()
-    # In production the aws client triggers this callback when a PUBLISH arrives.
-    connection._handle_publish(
-        publish_received_data(
-            topic=TOPIC, payload=WEBHOOK_BODY, user_properties=[], handle=handle
-        )
+    publish = SimpleNamespace(
+        publish_packet=SimpleNamespace(
+            topic=TOPIC, payload=WEBHOOK_BODY, user_properties=[]
+        ),
+        acquire_publish_acknowledgement_control=lambda: handle,
     )
+    # _handle_publish registers the handle and exposes its synthetic packet id.
+    connection._handle_publish(publish)
 
     # Act
     connection.puback(captured["packet_id"])
