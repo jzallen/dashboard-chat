@@ -70,6 +70,7 @@ import os
 import queue
 import threading
 import uuid
+from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
@@ -97,6 +98,72 @@ class ConnectionState(Enum):
     CONNECTING = "connecting"
     CONNECTED = "connected"
     FAILED = "failed"
+
+
+class AckHandlerRegistry:
+    """Maps each inbound publish to a synthetic packet id and its manual-ack handle.
+
+    MQTT5 surfaces no inbound packet id, so the adapter mints a monotonic one per
+    publish and stashes the QoS 1 acknowledgement-control handle under it; :meth:`pop`
+    later hands that handle back so the PUBACK fires only when the feed acknowledges.
+
+    Thread-safe: the client's event-loop thread :meth:`register`\\ s on each publish while
+    the loop thread :meth:`pop`\\ s on puback, so all access is lock-guarded. A pop is
+    one-shot — a double or late ack finds nothing and is a safe no-op, which also bounds
+    the registry's growth.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._next_packet_id = 1
+        self._handles: dict[int, Any] = {}
+
+    def register(self, handle: Any) -> int:
+        """Store ``handle`` under a fresh packet id and return that id."""
+        with self._lock:
+            packet_id = self._next_packet_id
+            self._next_packet_id += 1
+            self._handles[packet_id] = handle
+        return packet_id
+
+    def pop(self, packet_id: int) -> Optional[Any]:
+        """Remove and return the handle for ``packet_id``, or ``None`` if already taken."""
+        with self._lock:
+            return self._handles.pop(packet_id, None)
+
+
+@dataclass(frozen=True)
+class IoTPacket:
+    """An inbound MQTT5 publish translated into the feed's seam shape.
+
+    Carries the wire data the seam callback expects — ``topic``, the **raw payload
+    bytes** (a text payload is coerced so the body still HMAC-verifies), and the Linear
+    headers lifted from the MQTT5 user properties. The synthetic ack ``packet_id`` is not
+    the packet's own — it comes from :class:`AckHandlerRegistry` — so it is grafted on by
+    :meth:`to_on_message` rather than stored here.
+    """
+
+    topic: str
+    payload: bytes
+    headers: dict[str, str]
+
+    @classmethod
+    def from_publish_packet(cls, packet: Any) -> "IoTPacket":
+        """Build from an awscrt MQTT5 ``PublishPacket`` (duck-typed; no awscrt import)."""
+        payload = packet.payload
+        if isinstance(payload, str):
+            payload = payload.encode("utf-8")
+        headers = {prop.name: prop.value for prop in (packet.user_properties or [])}
+        return cls(topic=packet.topic, payload=payload, headers=headers)
+
+    def to_on_message(self, packet_id: int) -> dict[str, Any]:
+        """Render the seam callback kwargs, grafting on the registry's ``packet_id``."""
+        return {
+            "topic": self.topic,
+            "payload": self.payload,
+            "headers": self.headers,
+            "packet_id": packet_id,
+        }
 
 
 def topic_filter_for(routing_key: str) -> str:
@@ -427,11 +494,9 @@ class _Mqtt5IoTConnection:
         self._operation_timeout = operation_timeout_seconds
         self._client: Any = None
         self._on_message: Optional[Callable[..., None]] = None
-        # Manual-ack bookkeeping shared between the client's callback thread (writes on
-        # each publish) and the loop thread (pops on puback), so it is lock-guarded.
-        self._lock = threading.Lock()
-        self._next_packet_id = 1
-        self._ack_handles: dict[int, Any] = {}
+        # Manual-ack bookkeeping, shared between the client's callback thread and the
+        # loop thread; the registry owns its own lock.
+        self._ack_handles = AckHandlerRegistry()
         # connect() blocks until the client reports the first lifecycle outcome.
         self._connected = threading.Event()
         self._connect_error: Any = None
@@ -510,10 +575,9 @@ class _Mqtt5IoTConnection:
         invokes it on the client. Called only by ``IoTLinearWebhookFeed.acknowledge()``
         after a clean forward, so an un-acked (failed-forward) message is redelivered.
         A double or late ack (retry path, or a redelivered-then-re-acked message) finds
-        no handle and is a safe no-op, which also bounds ``_ack_handles`` growth.
+        no handle and is a safe no-op, which also bounds the registry's growth.
         """
-        with self._lock:
-            handle = self._ack_handles.pop(packet_id, None)
+        handle = self._ack_handles.pop(packet_id)
         if handle is None:
             return
         self._client.invoke_publish_acknowledgement(handle)
@@ -522,26 +586,15 @@ class _Mqtt5IoTConnection:
         """Take manual ack control of an inbound publish and route it to the seam callback.
 
         Runs on the client's event-loop thread. We subscribe strictly at QoS 1, so every
-        inbound publish carries an acknowledgement to defer; the handle is held until
-        :meth:`puback`. Headers come from the publish's MQTT5 user properties.
+        inbound publish carries an acknowledgement to defer; the handle is registered
+        under a synthetic packet id held until :meth:`puback`, and the packet is
+        translated into the seam shape by :class:`IoTPacket`.
         """
         handle = publish_received_data.acquire_publish_acknowledgement_control()
-        packet = publish_received_data.publish_packet
-        with self._lock:
-            packet_id = self._next_packet_id
-            self._next_packet_id += 1
-            self._ack_handles[packet_id] = handle
-        payload = packet.payload
-        if isinstance(payload, str):
-            payload = payload.encode("utf-8")
-        headers = {prop.name: prop.value for prop in (packet.user_properties or [])}
+        packet_id = self._ack_handles.register(handle)
+        packet = IoTPacket.from_publish_packet(publish_received_data.publish_packet)
         assert self._on_message is not None  # set by subscribe() before any publish
-        self._on_message(
-            topic=packet.topic,
-            payload=payload,
-            headers=headers,
-            packet_id=packet_id,
-        )
+        self._on_message(**packet.to_on_message(packet_id))
 
     def _handle_connection_success(self, _data: Any) -> None:
         """Unblock :meth:`connect` once the broker accepts the connection."""
