@@ -209,15 +209,11 @@ def test_inbound_publish_reaches_the_seam_callback_as_topic_payload_headers_pack
 ):
     """A handled publish forwards (topic, payload, headers-from-user-properties, packet_id)."""
     # Arrange
-    connection, _config, builder = make_connection()
-    client = builder.websockets_with_default_aws_signing.return_value
-    # assuming successful connection; the aws client triggers this callback in
-    # production, which releases connection._connected
-    callback = partial(connection._handle_connection_success, _data=SimpleNamespace())
-    client.start.side_effect = callback
-    connection.connect()
+    connection, _config, _builder = make_connection()
     received: dict[str, Any] = {}
-    connection.subscribe(TOPIC, 1, lambda **kwargs: received.update(kwargs))
+    # subscribe() wires this seam callback in production; set it directly, since
+    # _handle_publish needs only the seam callback — not a live connection.
+    connection._on_message = lambda **kwargs: received.update(kwargs)
 
     # Act
     # In production the aws client triggers this callback when a PUBLISH arrives.
@@ -244,15 +240,11 @@ def test_inbound_publish_reaches_the_seam_callback_as_topic_payload_headers_pack
 def test_inbound_string_payload_reaches_the_seam_callback_as_bytes() -> None:
     """A text payload is surfaced as bytes so the body still HMAC-verifies."""
     # Arrange
-    connection, _config, builder = make_connection()
-    client = builder.websockets_with_default_aws_signing.return_value
-    # assuming successful connection; the aws client triggers this callback in
-    # production, which releases connection._connected
-    callback = partial(connection._handle_connection_success, _data=SimpleNamespace())
-    client.start.side_effect = callback
-    connection.connect()
+    connection, _config, _builder = make_connection()
     received: dict[str, Any] = {}
-    connection.subscribe(TOPIC, 1, lambda **kwargs: received.update(kwargs))
+    # subscribe() wires this seam callback in production; set it directly, since
+    # _handle_publish needs only the seam callback — not a live connection.
+    connection._on_message = lambda **kwargs: received.update(kwargs)
 
     # Act
     # In production the aws client triggers this callback when a PUBLISH arrives.
