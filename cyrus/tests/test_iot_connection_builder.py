@@ -192,7 +192,7 @@ def test_subscribe_requests_exactly_the_keyed_topic_at_qos_1() -> None:
     )
 
 
-def test_inbound_publish_reaches_the_seam_callback_as_topic_payload_headers_packet_id() -> (
+def test_handle_publish__inbound_publish__forwards_topic_payload_headers_and_packet_id_to_seam() -> (
     None
 ):
     """A handled publish forwards (topic, payload, headers-from-user-properties, packet_id)."""
@@ -228,7 +228,7 @@ def test_inbound_publish_reaches_the_seam_callback_as_topic_payload_headers_pack
     }
 
 
-def test_inbound_string_payload_reaches_the_seam_callback_as_bytes() -> None:
+def test_handle_publish__text_payload__forwarded_to_seam_as_bytes() -> None:
     """A text payload is surfaced as bytes so the body still HMAC-verifies."""
     # Arrange
     connection, _config, _builder = make_connection()
