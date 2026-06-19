@@ -4,7 +4,7 @@
 construction, so an unconfigured region fails fast here rather than deep inside
 ``connect()``, and the connection builder is a thin consumer that just reads the
 ready-made values off the config. These tests pin that resolution directly; how the
-builder forwards it into the signing call is covered in ``test_iot_connection_builder.py``.
+builder forwards it into the signing call is covered in ``test_iot_connection.py``.
 """
 
 from __future__ import annotations
