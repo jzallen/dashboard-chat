@@ -219,3 +219,44 @@ def test_presence_rule_role_is_scoped_to_putitem_on_the_table(template: Template
             }
         },
     )
+
+
+# --- iot-only delivery mode: handler reads the presence cache ------------------
+#
+# The handler learns its delivery mode and the presence table via env, and may
+# read (only) that table to decide online vs offline.
+
+
+def test_handler_env_exposes_delivery_mode_and_presence_table(template: Template):
+    """DELIVERY_MODE and PRESENCE_TABLE are wired to the Lambda via env."""
+    template.has_resource_properties(
+        "AWS::Lambda::Function",
+        {
+            "Environment": {
+                "Variables": Match.object_like(
+                    {
+                        "DELIVERY_MODE": Match.any_value(),
+                        "PRESENCE_TABLE": Match.any_value(),
+                    }
+                )
+            }
+        },
+    )
+
+
+def test_handler_role_may_read_the_presence_table(template: Template):
+    """The execution role is granted dynamodb:GetItem (the offline-detection read)."""
+    template.has_resource_properties(
+        "AWS::IAM::Policy",
+        {
+            "PolicyDocument": {
+                "Statement": Match.array_with(
+                    [
+                        Match.object_like(
+                            {"Action": "dynamodb:GetItem", "Effect": "Allow"}
+                        )
+                    ]
+                )
+            }
+        },
+    )

@@ -36,10 +36,16 @@ from typing import Any, Callable, Literal, Mapping, Optional
 import boto3
 
 import iot_publisher
+import presence
 import routing
 from linear_signature import verify
 
 _log = logging.getLogger(__name__)
+
+# Per-deploy delivery modes (mutually exclusive). ``dual-write`` is the safe
+# default for any unknown/unset value so a misconfiguration never silently drops
+# the SQS safety net.
+_DELIVERY_MODES = ("dual-write", "iot-only")
 
 # IoT Data-plane topic prefix for identity-routed publishes; the routing key
 # (the Linear username from ``creator.url`` or the ``_unrouted`` sentinel) is
@@ -65,6 +71,7 @@ _SIGNATURE_HEADER = "linear-signature"
 
 _sqs_client_singleton: Any = None
 _iot_data_client_singleton: Any = None
+_dynamodb_client_singleton: Any = None
 _secret_cache: Optional[str] = None
 
 
@@ -219,6 +226,20 @@ def _iot_data_client() -> Any:
     return _iot_data_client_singleton
 
 
+def _dynamodb_client() -> Any:
+    """Return a process-wide DynamoDB client for the presence-cache read."""
+    global _dynamodb_client_singleton
+    if _dynamodb_client_singleton is None:
+        _dynamodb_client_singleton = boto3.client("dynamodb")
+    return _dynamodb_client_singleton
+
+
+def _delivery_mode() -> str:
+    """Read ``DELIVERY_MODE`` from env, falling back to ``dual-write`` if unknown."""
+    mode = os.environ.get("DELIVERY_MODE", "dual-write")
+    return mode if mode in _DELIVERY_MODES else "dual-write"
+
+
 def _load_secret() -> str:
     """Fetch and cache the Linear webhook secret from Secrets Manager (by ARN)."""
     global _secret_cache
@@ -234,12 +255,24 @@ def handler(event: Mapping[str, Any], context: Any) -> dict[str, Any]:
 
     The IoT leg is enabled only when ``IOT_ENDPOINT`` is configured; without it the
     handler runs the legacy SQS-only path so the dual-write can roll out behind env.
+    ``DELIVERY_MODE`` selects the per-deploy mode; in ``iot-only`` the offline
+    boundary is backed by a real presence-cache read of the ``PRESENCE_TABLE``.
     """
     iot_data_client = _iot_data_client() if os.environ.get("IOT_ENDPOINT") else None
+    delivery_mode = _delivery_mode()
+
+    is_offline = None
+    if delivery_mode == "iot-only":
+        table_name = os.environ.get("PRESENCE_TABLE")
+        if table_name:
+            is_offline = presence.make_offline_check(_dynamodb_client(), table_name)
+
     return process(
         event,
         queue_url=os.environ["QUEUE_URL"],
         secret=_load_secret(),
         sqs_client=_sqs_client(),
         iot_data_client=iot_data_client,
+        delivery_mode=delivery_mode,
+        is_offline=is_offline,
     )

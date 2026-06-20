@@ -212,6 +212,16 @@ class CyrusIngressStack(Stack):
             ),
         )
 
+        # The handler reads the presence cache only in iot-only mode. ``DELIVERY_MODE``
+        # is a per-deploy flag (mutually exclusive: want both ⇒ deploy two Lambdas);
+        # the GetItem grant is scoped to the presence table.
+        delivery_mode = self.node.try_get_context("delivery_mode") or os.environ.get(
+            "DELIVERY_MODE", "dual-write"
+        )
+        handler_fn.add_environment("DELIVERY_MODE", delivery_mode)
+        handler_fn.add_environment("PRESENCE_TABLE", presence_table.table_name)
+        presence_table.grant(handler_fn, "dynamodb:GetItem")
+
         CfnOutput(self, "WebhookUrl", value=function_url.url)
         CfnOutput(self, "QueueUrl", value=queue.queue_url)
         CfnOutput(
