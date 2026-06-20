@@ -25,9 +25,9 @@ TOPIC_PREFIX = "cyrus/v1/sessions/"
 # The routing key is the natural key — the Linear username — read from the
 # trailing segment of ``creator.url``. ``CREATOR_ID`` is the surrogate UUID the
 # webhook also carries (kept for correlation), but it is NOT the routing key.
-USERNAME = "zallen"
-CREATOR_ID = "92f69e9d-cf2a-4475-9fbb-9a81b6512797"
-CREATOR_URL = f"https://linear.app/tackle-chop-urgent/profiles/{USERNAME}"
+USERNAME = "testuser"
+CREATOR_ID = "00000000-0000-0000-0000-000000000000"
+CREATOR_URL = f"https://linear.app/example-org/profiles/{USERNAME}"
 
 
 def sign(body: str) -> str:
@@ -85,9 +85,9 @@ def routable_body() -> str:
             "organizationId": "org-1",
             "agentSession": {
                 "creator": {
-                    "email": "tackle-chop-urgent@duck.com",
+                    "email": "testuser@example.com",
                     "id": CREATOR_ID,
-                    "name": "Zach Allen",
+                    "name": "Test User",
                     "url": CREATOR_URL,
                 }
             },

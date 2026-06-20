@@ -72,12 +72,12 @@ def test_offline_check_reads_the_username_row_and_reports_online(stubbed_dynamod
     stubber.add_response(
         "get_item",
         {"Item": {"connected": {"BOOL": True}, "ttl": {"N": str(int(NOW + 60))}}},
-        {"TableName": TABLE, "Key": {"username": {"S": "zallen"}}},
+        {"TableName": TABLE, "Key": {"username": {"S": "testuser"}}},
     )
     stubber.activate()
 
     is_offline = make_offline_check(client, TABLE, now=lambda: NOW)
-    assert is_offline("zallen") is False
+    assert is_offline("testuser") is False
     stubber.assert_no_pending_responses()
 
 
@@ -104,10 +104,10 @@ def test_offline_check_fails_closed_when_the_read_errors(stubbed_dynamodb):
         "get_item",
         service_error_code="ProvisionedThroughputExceededException",
         http_status_code=400,
-        expected_params={"TableName": TABLE, "Key": {"username": {"S": "zallen"}}},
+        expected_params={"TableName": TABLE, "Key": {"username": {"S": "testuser"}}},
     )
     stubber.activate()
 
     is_offline = make_offline_check(client, TABLE, now=lambda: NOW)
-    assert is_offline("zallen") is True
+    assert is_offline("testuser") is True
     stubber.assert_no_pending_responses()

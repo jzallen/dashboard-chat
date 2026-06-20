@@ -1,6 +1,6 @@
 """Specification for opaqueness-safe routing-key extraction.
 
-The routing key is the **natural key — the Linear username** (e.g. ``zallen``),
+The routing key is the **natural key — the Linear username** (e.g. ``testuser``),
 not the surrogate ``agentSession.creator.id`` UUID. The webhook ``creator`` object
 carries no ``displayName``/username field; the username appears only as the
 trailing path segment of ``agentSession.creator.url``
@@ -26,17 +26,17 @@ def _body(url: str) -> bytes:
 
 
 def test_extracts_username_from_creator_url_last_segment():
-    body = _body("https://linear.app/tackle-chop-urgent/profiles/zallen")
-    assert routing.extract_routing_key(body) == "zallen"
+    body = _body("https://linear.app/example-org/profiles/testuser")
+    assert routing.extract_routing_key(body) == "testuser"
 
 
 def test_ignores_a_trailing_slash_on_the_creator_url():
-    body = _body("https://linear.app/tackle-chop-urgent/profiles/zallen/")
-    assert routing.extract_routing_key(body) == "zallen"
+    body = _body("https://linear.app/example-org/profiles/testuser/")
+    assert routing.extract_routing_key(body) == "testuser"
 
 
 def test_returns_unrouted_when_creator_url_is_absent():
-    body = b'{"agentSession": {"creator": {"id": "92f69e9d-cf2a"}}}'
+    body = b'{"agentSession": {"creator": {"id": "00000000-0000"}}}'
     assert routing.extract_routing_key(body) == "_unrouted"
 
 
@@ -67,8 +67,8 @@ def test_returns_unrouted_when_username_segment_is_missing():
 
 
 def test_percent_encoded_username_is_decoded():
-    body = _body("https://linear.app/org/profiles/zach%2Eallen")
-    assert routing.extract_routing_key(body) == "zach.allen"
+    body = _body("https://linear.app/org/profiles/test%2Euser")
+    assert routing.extract_routing_key(body) == "test.user"
 
 
 def test_returns_unrouted_when_decoded_username_holds_unsafe_topic_chars():
@@ -83,7 +83,7 @@ def test_returns_unrouted_when_body_is_unparseable():
 
 def test_does_not_mutate_the_input_body_bytes():
     """Opaqueness: the bytes covered by Linear-Signature are left untouched."""
-    original = _body("https://linear.app/tackle-chop-urgent/profiles/zallen")
+    original = _body("https://linear.app/example-org/profiles/testuser")
     body = bytes(original)  # an independent object to compare against
 
     routing.extract_routing_key(body)
@@ -93,8 +93,8 @@ def test_does_not_mutate_the_input_body_bytes():
 
 def test_extracts_creator_id_for_correlation():
     """The surrogate UUID is available as the stable correlation key."""
-    body = b'{"agentSession": {"creator": {"id": "92f69e9d-cf2a"}}}'
-    assert routing.extract_creator_id(body) == "92f69e9d-cf2a"
+    body = b'{"agentSession": {"creator": {"id": "00000000-0000"}}}'
+    assert routing.extract_creator_id(body) == "00000000-0000"
 
 
 def test_creator_id_is_none_when_absent_or_unparseable():

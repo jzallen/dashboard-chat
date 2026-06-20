@@ -2,7 +2,7 @@
 
 The dual-write ingress derives an IoT routing key from the webhook's user
 identity so a verified webhook lands on ``cyrus/v1/sessions/{key}``. The key is
-the **natural key — the Linear username** (e.g. ``zallen``), not the surrogate
+the **natural key — the Linear username** (e.g. ``testuser``), not the surrogate
 ``creator.id`` UUID: the operator must supply the same key when configuring their
 local pump, and the username is the org-unique, operator-accessible identity.
 
