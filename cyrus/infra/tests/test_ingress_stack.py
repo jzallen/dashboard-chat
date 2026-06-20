@@ -155,3 +155,67 @@ def test_handler_env_exposes_the_iot_endpoint(template: Template):
             }
         },
     )
+
+
+# --- consumer-presence cache: lifecycle events -> DynamoDB(TTL) -----------------
+#
+# Presence is kept fresh out of band by an IoT rule writing into a TTL'd,
+# on-demand DynamoDB table the ingress handler reads to detect offline consumers.
+
+
+def test_presence_table_is_on_demand_with_ttl_keyed_by_username(template: Template):
+    """The presence table is on-demand, TTL-enabled, and keyed by username."""
+    template.has_resource_properties(
+        "AWS::DynamoDB::Table",
+        {
+            "BillingMode": "PAY_PER_REQUEST",
+            "KeySchema": [{"AttributeName": "username", "KeyType": "HASH"}],
+            "TimeToLiveSpecification": {"AttributeName": "ttl", "Enabled": True},
+        },
+    )
+
+
+def test_presence_rule_routes_lifecycle_events_to_dynamodb(template: Template):
+    """An IoT rule selects from the presence lifecycle topic into a DynamoDBv2 action."""
+    template.has_resource_properties(
+        "AWS::IoT::TopicRule",
+        {
+            "TopicRulePayload": Match.object_like(
+                {
+                    "Sql": Match.string_like_regexp(r".*\$aws/events/presence/.*"),
+                    "Actions": Match.array_with(
+                        [
+                            Match.object_like(
+                                {
+                                    "DynamoDBv2": Match.object_like(
+                                        {
+                                            "PutItem": {"TableName": Match.any_value()},
+                                            "RoleArn": Match.any_value(),
+                                        }
+                                    )
+                                }
+                            )
+                        ]
+                    ),
+                }
+            )
+        },
+    )
+
+
+def test_presence_rule_role_is_scoped_to_putitem_on_the_table(template: Template):
+    """The rule's role may only PutItem (no broader DynamoDB access)."""
+    template.has_resource_properties(
+        "AWS::IAM::Policy",
+        {
+            "PolicyDocument": {
+                "Statement": Match.array_with(
+                    [
+                        Match.object_like(
+                            {"Action": "dynamodb:PutItem", "Effect": "Allow"}
+                        )
+                    ]
+                )
+            }
+        },
+    )

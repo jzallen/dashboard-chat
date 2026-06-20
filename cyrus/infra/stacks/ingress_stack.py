@@ -16,8 +16,10 @@ import os
 
 from constructs import Construct
 
-from aws_cdk import CfnOutput, Duration, Stack, SymlinkFollowMode
+from aws_cdk import CfnOutput, Duration, RemovalPolicy, Stack, SymlinkFollowMode
+from aws_cdk import aws_dynamodb as dynamodb
 from aws_cdk import aws_iam as iam
+from aws_cdk import aws_iot as iot
 from aws_cdk import aws_lambda as lambda_
 from aws_cdk import aws_secretsmanager as secretsmanager
 from aws_cdk import aws_sqs as sqs
@@ -30,6 +32,28 @@ _PUMP_CONSUME_ACTIONS = [
     "sqs:GetQueueUrl",
     "sqs:ChangeMessageVisibility",
 ]
+
+# Presence-table TTL attribute: a row written on connect carries an epoch-seconds
+# expiry so a missed ``disconnect`` (or a crashed consumer) self-heals — the stale
+# "online" row expires instead of lingering. The offline-detection read treats an
+# absent/expired row as offline, so best-effort TTL is sufficient.
+_PRESENCE_TTL_ATTRIBUTE = "ttl"
+
+# IoT lifecycle events fire on ``$aws/events/presence/{connected,disconnected}/
+# {clientId}``; the ``+`` matches both event types so a single rule upserts the
+# latest state. CONVENTION: the consumer's MQTT ``clientId`` IS its Linear
+# username, so the lifecycle event's ``clientId`` is the presence-table key and
+# matches the routing key the ingress derives from ``creator.url``.
+_PRESENCE_LIFECYCLE_TOPIC = "$aws/events/presence/+/#"
+
+# IoT SQL: map the lifecycle event onto the presence row. ``connected`` is the
+# boolean truth of the event type; ``ttl`` is now + 1 day in epoch seconds so the
+# row self-heals if a ``disconnect`` is ever missed.
+_PRESENCE_RULE_SQL = (
+    "SELECT clientId AS username, eventType = 'connected' AS connected, "
+    "timestamp AS updatedAt, (floor(timestamp() / 1000) + 86400) AS ttl "
+    f"FROM '{_PRESENCE_LIFECYCLE_TOPIC}'"
+)
 
 
 class CyrusIngressStack(Stack):
@@ -62,9 +86,8 @@ class CyrusIngressStack(Stack):
         # The AWS IoT Data-plane endpoint host the handler publishes to. Sourced
         # from CDK context (``cdk deploy -c iot_endpoint=...``) or the IOT_ENDPOINT
         # environment variable, never a hardcoded region/account.
-        iot_endpoint = (
-            self.node.try_get_context("iot_endpoint")
-            or os.environ.get("IOT_ENDPOINT", "")
+        iot_endpoint = self.node.try_get_context("iot_endpoint") or os.environ.get(
+            "IOT_ENDPOINT", ""
         )
 
         handler_fn = lambda_.Function(
@@ -135,6 +158,58 @@ class CyrusIngressStack(Stack):
                     resources=[queue.queue_arn],
                 )
             ],
+        )
+
+        # --- consumer-presence cache (offline detection reads this) -----------
+        #
+        # Presence is kept fresh OUT OF BAND by IoT lifecycle events, never by a
+        # live round-trip: the Lambda→IoT publish is fire-and-forget and succeeds
+        # even with zero subscribers, so it cannot itself reveal "offline". An IoT
+        # Topic Rule routes every connect/disconnect into this table; the ingress
+        # handler then answers "is <username> online?" with an O(1) GetItem.
+        presence_table = dynamodb.Table(
+            self,
+            "ConsumerPresenceTable",
+            partition_key=dynamodb.Attribute(
+                name="username", type=dynamodb.AttributeType.STRING
+            ),
+            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
+            time_to_live_attribute=_PRESENCE_TTL_ATTRIBUTE,
+            removal_policy=RemovalPolicy.DESTROY,
+        )
+
+        # Role the IoT rule assumes to write presence rows — scoped to PutItem on
+        # the presence table only (the rule upserts ``connected`` rather than
+        # deleting on disconnect, so PutItem alone is sufficient).
+        presence_rule_role = iam.Role(
+            self,
+            "PresenceRuleRole",
+            assumed_by=iam.ServicePrincipal("iot.amazonaws.com"),
+        )
+        presence_rule_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["dynamodb:PutItem"],
+                resources=[presence_table.table_arn],
+            )
+        )
+
+        iot.CfnTopicRule(
+            self,
+            "ConsumerPresenceRule",
+            topic_rule_payload=iot.CfnTopicRule.TopicRulePayloadProperty(
+                sql=_PRESENCE_RULE_SQL,
+                aws_iot_sql_version="2016-03-23",
+                actions=[
+                    iot.CfnTopicRule.ActionProperty(
+                        dynamo_d_bv2=iot.CfnTopicRule.DynamoDBv2ActionProperty(
+                            put_item=iot.CfnTopicRule.PutItemInputProperty(
+                                table_name=presence_table.table_name,
+                            ),
+                            role_arn=presence_rule_role.role_arn,
+                        )
+                    )
+                ],
+            ),
         )
 
         CfnOutput(self, "WebhookUrl", value=function_url.url)
