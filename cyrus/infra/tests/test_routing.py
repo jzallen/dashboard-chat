@@ -60,3 +60,14 @@ def test_does_not_mutate_the_input_body_bytes():
     routing.extract_routing_key(body)
 
     assert body == original
+
+
+def test_extracts_creator_id_for_correlation():
+    """The surrogate UUID is available as the stable correlation key."""
+    body = b'{"agentSession": {"creator": {"id": "92f69e9d-cf2a"}}}'
+    assert routing.extract_creator_id(body) == "92f69e9d-cf2a"
+
+
+def test_creator_id_is_none_when_absent_or_unparseable():
+    assert routing.extract_creator_id(b'{"agentSession": {"creator": {}}}') is None
+    assert routing.extract_creator_id(b"not json{{{") is None

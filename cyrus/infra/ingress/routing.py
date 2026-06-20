@@ -25,6 +25,7 @@ SQS untouched.
 from __future__ import annotations
 
 import json
+from typing import Optional
 from urllib.parse import urlparse
 
 #: Catch-all routing key used when the username is not derivable from
@@ -64,3 +65,29 @@ def extract_routing_key(body: bytes) -> str:
     if not segments:
         return UNROUTED
     return segments[-1]
+
+
+def extract_creator_id(body: bytes) -> Optional[str]:
+    """Return ``agentSession.creator.id`` (the surrogate UUID) or ``None``.
+
+    The username is the operator-facing routing key, but the ``creator.id`` UUID
+    is the stable correlation key for observability — emitted alongside the
+    username on the offline path so an operator can correlate the 503 to a Linear
+    user. Parses a COPY of ``body``; never mutates the signed bytes; total —
+    returns ``None`` for any missing field or unparseable input.
+    """
+    try:
+        payload = json.loads(bytes(body).decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+
+    creator_id = (
+        payload.get("agentSession", {}).get("creator", {}).get("id")
+        if isinstance(payload.get("agentSession"), dict)
+        and isinstance(payload["agentSession"].get("creator"), dict)
+        else None
+    )
+    return creator_id if isinstance(creator_id, str) and creator_id else None

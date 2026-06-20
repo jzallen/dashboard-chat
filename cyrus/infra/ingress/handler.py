@@ -170,6 +170,21 @@ def process(
         # offline check and falls through to the catch-all publish.
         routed = key != routing.UNROUTED
         if routed and is_offline is not None and is_offline(key):
+            # Emit the same fact as the 503 body to logs so it is queryable in
+            # CloudWatch. Structured fields (not a parsed message) carry the
+            # operator-facing ``consumer_id`` (username) plus the stable
+            # ``creator.id`` correlation key. The ``reason`` field distinguishes
+            # this from the _unrouted and transient-publish-failure logs.
+            _log.warning(
+                "consumer offline: %s",
+                key,
+                extra={
+                    "reason": "consumer_offline",
+                    "consumer_id": key,
+                    "creator_id": routing.extract_creator_id(body),
+                    "delivery_mode": delivery_mode,
+                },
+            )
             return _offline_response(key)
         iot_publisher.publish(
             iot_data_client,
