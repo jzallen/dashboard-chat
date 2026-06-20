@@ -35,7 +35,7 @@ from typing import Any, Callable, Literal, Mapping, Optional
 import boto3
 
 import presence
-from consumers import TOPIC_PREFIX, IoTLinearConsumer, SQSLinearConsumer
+from consumers import TOPIC_PREFIX, HTTPResponse, IoTLinearConsumer, SQSLinearConsumer
 from linear_signature import verify
 
 _log = logging.getLogger(__name__)
@@ -71,7 +71,7 @@ def process(
     topic_prefix: str = TOPIC_PREFIX,
     delivery_mode: Literal["dual-write", "iot-only"] = "dual-write",
     is_offline: Optional[Callable[[str], bool]] = None,
-) -> dict[str, Any]:
+) -> HTTPResponse:
     """Verify a Function URL event and delegate delivery to the consumer.
 
     Returns ``{"statusCode": 401}`` and writes nothing when the
@@ -158,7 +158,7 @@ def _load_secret() -> str:
     return _secret_cache
 
 
-def handler(event: Mapping[str, Any], context: Any) -> dict[str, Any]:
+def handler(event: Mapping[str, Any], context: Any) -> HTTPResponse:
     """Lambda entry point: wire env/secret/clients, then delegate to ``process``.
 
     The IoT leg is enabled only when ``IOT_ENDPOINT`` is configured; without it the

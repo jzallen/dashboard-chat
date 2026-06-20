@@ -24,12 +24,20 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Callable, Mapping, Optional
+from abc import ABC, abstractmethod
+from typing import Any, Callable, Mapping, Optional, TypedDict
 
 import iot_publisher
 import routing
 
 _log = logging.getLogger(__name__)
+
+
+class HTTPResponse(TypedDict):
+    """The Lambda Function URL result shape every consumer returns."""
+
+    statusCode: int
+    body: str
 
 # IoT Data-plane topic prefix for identity-routed publishes; the routing key (the
 # Linear username or the ``_unrouted`` sentinel) is appended.
@@ -69,7 +77,7 @@ def _message_attributes(headers: Mapping[str, str]) -> dict[str, Any]:
     }
 
 
-def _offline_response(username: str) -> dict[str, Any]:
+def _offline_response(username: str) -> HTTPResponse:
     """Build the honest 503 for an offline consumer: reason + id + operator action.
 
     The body is machine-readable so Linear (and an operator reading logs) gets a
@@ -86,12 +94,18 @@ def _offline_response(username: str) -> dict[str, Any]:
     return {"statusCode": 503, "body": body}
 
 
-class _LinearConsumer:
+class _LinearConsumer(ABC):
     """A delivery target's identity: its natural key and per-identity IoT topic.
 
     The routing key is parsed from a COPY of the signed body (the Linear username,
     or the ``_unrouted`` catch-all sentinel); the topic is the address that key
-    publishes to. Subclasses add the per-mode delivery behavior.
+    publishes to. Subclasses implement :meth:`deliver` with the per-mode behavior.
+
+    FUTURE ME: if delivery grows beyond these two modes (e.g. delivery that
+    composes — retries, tee-ing, fan-out), drop this base-class hierarchy in favor
+    of a ``LinearConsumerProtocol`` (a ``typing.Protocol`` with ``deliver``) and
+    compose behavior with the decorator pattern (wrapping consumers) rather than
+    subclassing. Not worth it for two leaf modes today.
     """
 
     def __init__(self, body: bytes, *, topic_prefix: str = TOPIC_PREFIX) -> None:
@@ -103,6 +117,11 @@ class _LinearConsumer:
     def is_routed(self) -> bool:
         """Whether a natural key was derivable (vs the ``_unrouted`` catch-all)."""
         return self.key != routing.UNROUTED
+
+    @abstractmethod
+    def deliver(self, headers: Mapping[str, str]) -> HTTPResponse:
+        """Deliver the verified body for this mode and return the HTTP result."""
+        raise NotImplementedError
 
 
 class IoTLinearConsumer(_LinearConsumer):
@@ -138,7 +157,7 @@ class IoTLinearConsumer(_LinearConsumer):
             and self._presence_offline(self.key)
         )
 
-    def deliver(self, headers: Mapping[str, str]) -> dict[str, Any]:
+    def deliver(self, headers: Mapping[str, str]) -> HTTPResponse:
         """Deliver over IoT, or return the honest 503 when offline."""
         if self.is_offline():
             self._log_offline()
@@ -194,7 +213,7 @@ class SQSLinearConsumer(_LinearConsumer):
         self._queue_url = queue_url
         self._iot_data_client = iot_data_client
 
-    def deliver(self, headers: Mapping[str, str]) -> dict[str, Any]:
+    def deliver(self, headers: Mapping[str, str]) -> HTTPResponse:
         """Publish best-effort to IoT (when wired), then enqueue to SQS."""
         if self._iot_data_client is not None:
             try:
