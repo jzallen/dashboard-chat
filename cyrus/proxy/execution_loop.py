@@ -18,7 +18,7 @@ import threading
 import time
 from typing import Callable, Optional, Protocol
 
-from proxy.config import CanaryConfig, SqsConfig, config_from_env
+from proxy.config import CanaryConfig, IoTConfig, SqsConfig, config_from_env
 from proxy.logging_config import configure_logging
 from proxy.messages import (
     FeedError,
@@ -143,11 +143,12 @@ class ProxyExecutionLoop:
                 sleep(error_backoff_seconds)
 
     @classmethod
-    def run(cls, config: Optional[SqsConfig | CanaryConfig] = None) -> None:
+    def run(cls, config: Optional[SqsConfig | CanaryConfig | IoTConfig] = None) -> None:
         """Composition root: build deps + stop signal, then drive the loop.
 
         Selects the concrete feed by ``config`` type — an ``SqsConfig`` builds the
-        SQS feed, a ``CanaryConfig`` builds the synthetic canary feed — defaulting to
+        SQS feed, a ``CanaryConfig`` builds the synthetic canary feed, an
+        ``IoTConfig`` builds the AWS IoT keyed-subscription feed — defaulting to
         ``config_from_env()``, wires a SIGINT/SIGTERM-tripped stop event, and hands
         both to :meth:`run_forever`. This is untested assembly/glue — the testable
         behavior lives in ``run_once`` and ``run_forever``. The feed's long-poll (or
@@ -171,6 +172,18 @@ class ProxyExecutionLoop:
             )
             logger.warning(
                 "using CANARY feed — emitting a synthetic webhook instead of reading SQS"
+            )
+        elif isinstance(config, IoTConfig):
+            from webhook_feeds.iot_feed import IoTLinearWebhookFeed
+
+            feed = IoTLinearWebhookFeed(
+                routing_key=config.iot_routing_key,
+                endpoint=config.iot_endpoint,
+                region=config.iot_region,
+            )
+            logger.info(
+                "using IoT feed — subscribing to cyrus/v1/sessions/%s",
+                config.iot_routing_key,
             )
         else:
             from webhook_feeds.sqs_feed import SQSLinearWebhookFeed

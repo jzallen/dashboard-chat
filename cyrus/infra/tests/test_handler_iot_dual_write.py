@@ -1,9 +1,9 @@
 """Specification for the dual-write ingress: IoT publish beside the SQS enqueue.
 
 These pin the behavior at the ``process`` boundary: a verified webhook is
-published byte-identically to the per-identity IoT topic ``cyrus/v1/sessions/{key}``
-AND enqueued to SQS, with an ``_unrouted`` catch-all and a transient-failure
-safety net.
+published byte-identically (at QoS 1, with the forwarded Linear headers as MQTT5
+user properties) to the per-identity IoT topic ``cyrus/v1/sessions/{key}`` AND
+enqueued to SQS, with an ``_unrouted`` catch-all and a transient-failure safety net.
 
 ``publish`` and ``send_message`` are fire-and-forget side-effects whose return
 value the handler ignores, so the happy-path tests assert the call arguments
@@ -19,6 +19,7 @@ assertions — especially the byte-identity ones — or relax a wire contract.
 
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock
 
 from conftest import (
@@ -31,6 +32,30 @@ from conftest import (
 )
 
 from handler import process
+
+# Lowercased Function URL header -> canonical name the handler forwards, in the order
+# it forwards them; the IoT user properties JSON is built from this same set/order.
+_FORWARDED = {
+    "content-type": "Content-Type",
+    "linear-event": "Linear-Event",
+    "linear-delivery": "Linear-Delivery",
+    "linear-signature": "Linear-Signature",
+    "user-agent": "User-Agent",
+}
+
+
+def _iot_publish_params(body: str, headers: dict) -> dict:
+    """The expected ``iot-data`` publish call: QoS 1, raw body, headers as user props."""
+    user_properties = [
+        {canonical: headers[lowercased]}
+        for lowercased, canonical in _FORWARDED.items()
+        if lowercased in headers
+    ]
+    return {
+        "qos": 1,
+        "payload": body.encode("utf-8"),
+        "userProperties": json.dumps(user_properties),
+    }
 
 
 def _sqs_params(body: str, headers: dict) -> dict:
@@ -79,7 +104,7 @@ def test_process__dual_write_valid_webhook__publishes_byte_identical_to_keyed_to
 
     iot.publish.assert_called_once_with(
         topic=f"{TOPIC_PREFIX}{USERNAME}",
-        payload=routable_body.encode("utf-8"),
+        **_iot_publish_params(routable_body, headers),
     )
     sqs.send_message.assert_called_once_with(**_sqs_params(routable_body, headers))
     assert result == {"statusCode": 200, "body": "queued"}
@@ -139,7 +164,10 @@ def test_process__dual_write_unrouted_body__publishes_to_unrouted_and_enqueues(
     iot_stub.add_response(
         "publish",
         {},
-        {"topic": f"{TOPIC_PREFIX}_unrouted", "payload": webhook_body.encode("utf-8")},
+        {
+            "topic": f"{TOPIC_PREFIX}_unrouted",
+            **_iot_publish_params(webhook_body, headers),
+        },
     )
     sqs_stub.add_response(
         "send_message",

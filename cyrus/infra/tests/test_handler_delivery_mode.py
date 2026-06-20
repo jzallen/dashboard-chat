@@ -39,6 +39,30 @@ from conftest import (
 
 from handler import process
 
+# Lowercased Function URL header -> canonical name the handler forwards, in the order
+# it forwards them; the IoT user properties JSON is built from this same set/order.
+_FORWARDED = {
+    "content-type": "Content-Type",
+    "linear-event": "Linear-Event",
+    "linear-delivery": "Linear-Delivery",
+    "linear-signature": "Linear-Signature",
+    "user-agent": "User-Agent",
+}
+
+
+def _iot_publish_params(body: str, headers: dict) -> dict:
+    """The expected ``iot-data`` publish call: QoS 1, raw body, headers as user props."""
+    user_properties = [
+        {canonical: headers[lowercased]}
+        for lowercased, canonical in _FORWARDED.items()
+        if lowercased in headers
+    ]
+    return {
+        "qos": 1,
+        "payload": body.encode("utf-8"),
+        "userProperties": json.dumps(user_properties),
+    }
+
 
 def test_process__iot_only_routed_and_offline__returns_503_naming_consumer_and_action(routable_body):
     """iot-only + routed + offline → an honest 503 whose body names the offline
@@ -122,7 +146,7 @@ def test_process__iot_only_routed_and_online__publishes_and_returns_200_without_
 
     iot.publish.assert_called_once_with(
         topic=f"{TOPIC_PREFIX}{USERNAME}",
-        payload=routable_body.encode("utf-8"),
+        **_iot_publish_params(routable_body, headers),
     )
     sqs.send_message.assert_not_called()
     assert result["statusCode"] == 200
@@ -154,7 +178,7 @@ def test_process__iot_only_unrouted__publishes_catch_all_and_never_503(
 
     iot.publish.assert_called_once_with(
         topic=f"{TOPIC_PREFIX}_unrouted",
-        payload=webhook_body.encode("utf-8"),
+        **_iot_publish_params(webhook_body, headers),
     )
     sqs.send_message.assert_not_called()
     assert result["statusCode"] == 200

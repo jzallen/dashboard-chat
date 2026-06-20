@@ -110,12 +110,62 @@ python -m proxy
 
 AWS credentials come from the usual boto3 sources (the devpod's instance role).
 
+### Real IoT (identity-routed MQTT5)
+
+Set `CYRUS_PROXY_FEED=iot` to consume your own keyed stream over a live AWS IoT
+MQTT5-over-WebSocket connection. The connection is signed with SigV4 from the **default
+AWS credential chain** (the devpod instance role — **no X.509 device certs**), subscribes
+to exactly `cyrus/v1/sessions/<routing-key>` at QoS 1, and acknowledges each message
+**manually** only after a clean forward — so a failed forward is redelivered (the same
+at-least-once contract as SQS):
+
+```bash
+CYRUS_PROXY_FEED=iot \
+CYRUS_PROXY_BASE_URL=http://localhost:3456 \
+CYRUS_PROXY_IOT_ENDPOINT=<account>-ats.iot.<region>.amazonaws.com \
+CYRUS_PROXY_IOT_ROUTING_KEY=<your-linear-creator-id> \
+CYRUS_PROXY_IOT_REGION=<region> \
+python -m proxy
+```
+
+The region is optional — it falls back to `AWS_REGION`/`AWS_DEFAULT_REGION`, and the
+connection refuses to start if none of these is set (it does not guess from the
+endpoint). The forwarded Linear headers (including `Linear-Signature`) travel as MQTT5
+**user properties** on the publish, so the forwarded body verifies at Cyrus unchanged.
+
+#### End-to-end smoke run (against a real endpoint)
+
+This is the DC-22 elevator-pitch demo on the live path. Requires the ingress Lambda's
+IoT dual-write enabled (`IOT_ENDPOINT` set) and a devpod whose instance role allows
+`iot:Connect` / `iot:Subscribe` / `iot:Receive` on `cyrus/v1/sessions/<key>` and
+`iot:Publish` for the publisher leg.
+
+1. Start your local Cyrus daemon (see below) and note `LINEAR_WEBHOOK_SECRET`.
+2. Run the pump with the `iot` env block above (`ROUTING_KEY` = the `creator.id` you
+   want to receive).
+3. Publish a signed webhook to `cyrus/v1/sessions/<key>` — either trigger a real Linear
+   `AgentSessionEvent` for that creator through the ingress Lambda, or publish directly
+   with the AWS CLI carrying the headers as user properties and QoS 1, e.g.:
+   ```bash
+   aws iot-data publish \
+     --topic "cyrus/v1/sessions/<key>" --qos 1 \
+     --payload "$(cat body.json | base64)" \
+     --user-properties '[{"Linear-Signature":"<hex-hmac-of-body>"},{"Linear-Event":"AgentSessionEvent"}]'
+   ```
+4. Confirm the pump logs a forwarded session and that `curl localhost:3456/linear-webhook`
+   (Cyrus's log) shows it **passing signature verification**.
+5. To prove manual ack: make the forward fail (stop Cyrus) and observe the message
+   redeliver on the next poll; restart Cyrus and observe a single ack on success.
+
+The default test suite never touches AWS — the connection is built lazily only on the
+first `receive()`, and all unit tests drive a fake client.
+
 ### Settings (environment variables)
 
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
 | `CYRUS_PROXY_BASE_URL` | yes | — | where the local Cyrus daemon listens; the forwarder POSTs to `<base>/linear-webhook` |
-| `CYRUS_PROXY_FEED` | no | `sqs` | which feed to run: `sqs` or `canary` |
+| `CYRUS_PROXY_FEED` | no | `sqs` | which feed to run: `sqs`, `canary` or `iot` |
 | `CYRUS_PROXY_QUEUE_URL` | yes (sqs) | — | SQS queue to poll |
 | `CYRUS_PROXY_MAX_MESSAGES` | no | `10` | messages per poll (SQS cap) |
 | `CYRUS_PROXY_WAIT_SECONDS` | no | `20` | SQS long-poll wait per receive |
@@ -123,6 +173,9 @@ AWS credentials come from the usual boto3 sources (the devpod's instance role).
 | `CYRUS_PROXY_LOG_LEVEL` | no | `INFO` | process log level |
 | `CYRUS_PROXY_CANARY_SIGNING_SECRET` | no | — | (canary) sign the body's `Linear-Signature` |
 | `CYRUS_PROXY_CANARY_IDLE_SECONDS` | no | `20` | (canary) idle sleep after emitting |
+| `CYRUS_PROXY_IOT_ENDPOINT` | yes (iot) | — | (iot) AWS IoT ATS data-plane endpoint host |
+| `CYRUS_PROXY_IOT_ROUTING_KEY` | yes (iot) | — | (iot) this consumer's `creator.id`; subscribes to `cyrus/v1/sessions/<key>` |
+| `CYRUS_PROXY_IOT_REGION` | no | — | (iot) SigV4 signing region; falls back to `AWS_REGION`/`AWS_DEFAULT_REGION`, else the connection refuses to start |
 
 Run the tests with `cd cyrus && uv run --no-project pytest -q`.
 
