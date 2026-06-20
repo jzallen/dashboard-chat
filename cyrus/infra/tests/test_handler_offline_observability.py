@@ -33,7 +33,7 @@ def _offline_record(caplog):
     return next(r for r in caplog.records if getattr(r, "reason", None))
 
 
-def test_offline_path_emits_structured_log_with_username_and_creator_id(
+def test_process__iot_only_offline__emits_structured_log_with_username_and_creator_id(
     caplog, routable_body
 ):
     """The 503 path logs reason + consumer_id (username) + creator.id correlation."""
@@ -57,7 +57,7 @@ def test_offline_path_emits_structured_log_with_username_and_creator_id(
     assert record.creator_id == CREATOR_ID
 
 
-def test_online_path_emits_no_offline_log(caplog, routable_body):
+def test_process__iot_only_online__emits_no_offline_log(caplog, routable_body):
     """An online consumer must not emit the offline log."""
     event = make_function_url_event(routable_body, headers_for(routable_body))
 

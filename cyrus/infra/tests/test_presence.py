@@ -22,32 +22,32 @@ NOW = 1_700_000_000.0
 TABLE = "ConsumerPresenceTable"
 
 
-def test_absent_row_is_offline():
+def test_row_is_offline__absent_row__returns_true():
     assert row_is_offline(None, NOW) is True
     assert row_is_offline({}, NOW) is True
 
 
-def test_connected_false_is_offline():
+def test_row_is_offline__connected_false__returns_true():
     item = {"connected": {"BOOL": False}, "ttl": {"N": str(int(NOW + 999))}}
     assert row_is_offline(item, NOW) is True
 
 
-def test_present_connected_and_unexpired_is_online():
+def test_row_is_offline__connected_and_unexpired__returns_false():
     item = {"connected": {"BOOL": True}, "ttl": {"N": str(int(NOW + 60))}}
     assert row_is_offline(item, NOW) is False
 
 
-def test_expired_ttl_is_offline_even_when_connected_true():
+def test_row_is_offline__expired_ttl_though_connected__returns_true():
     """A stale (unreaped) row must read offline: TTL deletion is eventually consistent."""
     item = {"connected": {"BOOL": True}, "ttl": {"N": str(int(NOW - 1))}}
     assert row_is_offline(item, NOW) is True
 
 
-def test_connected_true_without_ttl_is_online():
+def test_row_is_offline__connected_without_ttl__returns_false():
     assert row_is_offline({"connected": {"BOOL": True}}, NOW) is False
 
 
-def test_schema_drifted_row_fails_closed_to_offline():
+def test_row_is_offline__schema_drifted_row__returns_true():
     """A ``connected`` attribute that is not the expected ``{type: value}`` map
     must read offline rather than raise."""
     assert row_is_offline({"connected": True}, NOW) is True
@@ -67,7 +67,7 @@ def stubbed_dynamodb():
     stubber.deactivate()
 
 
-def test_offline_check_reads_the_username_row_and_reports_online(stubbed_dynamodb):
+def test_make_offline_check__connected_username_row__reports_online(stubbed_dynamodb):
     client, stubber = stubbed_dynamodb
     stubber.add_response(
         "get_item",
@@ -81,7 +81,7 @@ def test_offline_check_reads_the_username_row_and_reports_online(stubbed_dynamod
     stubber.assert_no_pending_responses()
 
 
-def test_offline_check_reports_offline_for_a_missing_row(stubbed_dynamodb):
+def test_make_offline_check__missing_row__reports_offline(stubbed_dynamodb):
     client, stubber = stubbed_dynamodb
     stubber.add_response(
         "get_item", {}, {"TableName": TABLE, "Key": {"username": {"S": "ghost"}}}
@@ -93,7 +93,7 @@ def test_offline_check_reports_offline_for_a_missing_row(stubbed_dynamodb):
     stubber.assert_no_pending_responses()
 
 
-def test_offline_check_fails_closed_when_the_read_errors(stubbed_dynamodb):
+def test_make_offline_check__read_errors__fails_closed_to_offline(stubbed_dynamodb):
     """A DynamoDB error (throttle/network/IAM) reads offline, not a crash.
 
     iot-only has no SQS safety net, so a presence-cache blip must yield an honest

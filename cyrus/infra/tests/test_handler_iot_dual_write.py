@@ -59,7 +59,7 @@ def _sqs_params(body: str, headers: dict) -> dict:
     }
 
 
-def test_valid_webhook_publishes_byte_identical_body_to_keyed_topic_and_enqueues(
+def test_process__dual_write_valid_webhook__publishes_byte_identical_to_keyed_topic_and_enqueues(
     routable_body,
 ):
     """Valid sig → IoT publish to cyrus/v1/sessions/{key} + SQS enqueue → 200.
@@ -85,7 +85,7 @@ def test_valid_webhook_publishes_byte_identical_body_to_keyed_topic_and_enqueues
     assert result == {"statusCode": 200, "body": "queued"}
 
 
-def test_published_and_enqueued_bytes_are_identical_to_the_received_body(
+def test_process__dual_write_valid_webhook__published_and_enqueued_bytes_match_received_body(
     routable_body,
 ):
     """Routing reads a COPY; both legs carry the exact bytes Linear signed.
@@ -112,7 +112,7 @@ def test_published_and_enqueued_bytes_are_identical_to_the_received_body(
     )
 
 
-def test_invalid_signature_neither_publishes_nor_enqueues(routable_body):
+def test_process__invalid_signature__returns_401_and_neither_publishes_nor_enqueues(routable_body):
     """Bad sig → 401, and neither client is called."""
     iot = MagicMock()
     sqs = MagicMock()
@@ -128,7 +128,7 @@ def test_invalid_signature_neither_publishes_nor_enqueues(routable_body):
     assert result == {"statusCode": 401, "body": "invalid signature"}
 
 
-def test_missing_creator_id_publishes_to_unrouted_and_still_enqueues(
+def test_process__dual_write_unrouted_body__publishes_to_unrouted_and_enqueues(
     webhook_body, stubbed_sqs, stubbed_iot
 ):
     """Absent agentSession.creator.id → publish to _unrouted catch-all + enqueue."""
@@ -159,7 +159,7 @@ def test_missing_creator_id_publishes_to_unrouted_and_still_enqueues(
     assert result == {"statusCode": 200, "body": "queued"}
 
 
-def test_transient_iot_failure_still_enqueues_sqs_and_returns_200(
+def test_process__dual_write_transient_iot_failure__still_enqueues_and_returns_200(
     routable_body, stubbed_sqs, stubbed_iot
 ):
     """IoT publish errors transiently → SQS enqueue still succeeds, 200 returned."""

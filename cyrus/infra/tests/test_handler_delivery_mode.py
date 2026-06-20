@@ -40,7 +40,7 @@ from conftest import (
 from handler import process
 
 
-def test_iot_only_offline_returns_503_naming_the_consumer_and_action(routable_body):
+def test_process__iot_only_routed_and_offline__returns_503_naming_consumer_and_action(routable_body):
     """iot-only + routed + offline → an honest 503 whose body names the offline
     consumer by username and tells the operator how to bring it back."""
     event = make_function_url_event(routable_body, headers_for(routable_body))
@@ -65,7 +65,7 @@ def test_iot_only_offline_returns_503_naming_the_consumer_and_action(routable_bo
     }
 
 
-def test_iot_only_offline_neither_publishes_nor_enqueues(routable_body):
+def test_process__iot_only_routed_and_offline__neither_publishes_nor_enqueues(routable_body):
     """The offline path is terminal: nothing reaches IoT or SQS."""
     iot = MagicMock()
     sqs = MagicMock()
@@ -84,7 +84,7 @@ def test_iot_only_offline_neither_publishes_nor_enqueues(routable_body):
     assert (iot.publish.called, sqs.send_message.called) == (False, False)
 
 
-def test_iot_only_keys_the_offline_check_by_the_username_natural_key(routable_body):
+def test_process__iot_only_routed_consumer__keys_offline_check_by_username(routable_body):
     """The presence boundary is keyed by the natural key (username), proven through
     the response: a check that only recognizes the username drives the offline 503,
     so a 503 confirms the username was the key passed (no boundary-call spying)."""
@@ -103,7 +103,7 @@ def test_iot_only_keys_the_offline_check_by_the_username_natural_key(routable_bo
     assert result["statusCode"] == 503
 
 
-def test_iot_only_online_publishes_and_returns_200_without_sqs(routable_body):
+def test_process__iot_only_routed_and_online__publishes_and_returns_200_without_sqs(routable_body):
     """iot-only + routed + online → publish to the username topic, 200, no SQS."""
     iot = MagicMock()
     sqs = MagicMock()
@@ -128,7 +128,7 @@ def test_iot_only_online_publishes_and_returns_200_without_sqs(routable_body):
     assert result["statusCode"] == 200
 
 
-def test_iot_only_unrouted_publishes_to_catch_all_and_is_never_the_503_path(
+def test_process__iot_only_unrouted__publishes_catch_all_and_never_503(
     webhook_body,
 ):
     """_unrouted in iot-only is distinct from offline: catch-all publish, not 503.
@@ -160,7 +160,7 @@ def test_iot_only_unrouted_publishes_to_catch_all_and_is_never_the_503_path(
     assert result["statusCode"] == 200
 
 
-def test_iot_only_publish_failure_propagates_and_never_falls_back_to_sqs(routable_body):
+def test_process__iot_only_publish_fails__propagates_and_never_falls_back_to_sqs(routable_body):
     """iot-only has no safety net: a publish failure propagates (→ 5xx, Linear
     retries) and must never silently enqueue to SQS instead."""
     iot = MagicMock()
@@ -183,7 +183,7 @@ def test_iot_only_publish_failure_propagates_and_never_falls_back_to_sqs(routabl
     sqs.send_message.assert_not_called()
 
 
-def test_default_delivery_mode_is_dual_write(routable_body):
+def test_process__delivery_mode_omitted__defaults_to_dual_write(routable_body):
     """Omitting delivery_mode keeps the dual-write path: publish + SQS + 200."""
     iot = MagicMock()
     sqs = MagicMock()

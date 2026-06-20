@@ -25,38 +25,38 @@ def _body(url: str) -> bytes:
     return json.dumps({"agentSession": {"creator": {"url": url}}}).encode("utf-8")
 
 
-def test_extracts_username_from_creator_url_last_segment():
+def test_extract_routing_key__creator_url_with_profiles_segment__returns_username():
     body = _body("https://linear.app/example-org/profiles/testuser")
     assert routing.extract_routing_key(body) == "testuser"
 
 
-def test_ignores_a_trailing_slash_on_the_creator_url():
+def test_extract_routing_key__creator_url_has_trailing_slash__returns_username():
     body = _body("https://linear.app/example-org/profiles/testuser/")
     assert routing.extract_routing_key(body) == "testuser"
 
 
-def test_returns_unrouted_when_creator_url_is_absent():
+def test_extract_routing_key__creator_url_absent__returns_unrouted():
     body = b'{"agentSession": {"creator": {"id": "00000000-0000"}}}'
     assert routing.extract_routing_key(body) == "_unrouted"
 
 
-def test_returns_unrouted_when_creator_url_is_empty():
+def test_extract_routing_key__creator_url_empty__returns_unrouted():
     body = _body("")
     assert routing.extract_routing_key(body) == "_unrouted"
 
 
-def test_returns_unrouted_when_creator_url_has_no_path_segment():
+def test_extract_routing_key__creator_url_has_no_path_segment__returns_unrouted():
     body = _body("https://linear.app")
     assert routing.extract_routing_key(body) == "_unrouted"
 
 
-def test_returns_unrouted_when_url_is_not_a_profiles_url():
+def test_extract_routing_key__url_is_not_a_profiles_url__returns_unrouted():
     """A different url shape must not route its trailing segment as a username."""
     body = _body("https://linear.app/some-org")
     assert routing.extract_routing_key(body) == "_unrouted"
 
 
-def test_returns_unrouted_when_username_segment_is_missing():
+def test_extract_routing_key__username_segment_missing__returns_unrouted():
     """A url ending at ``/profiles`` has no username — catch-all, not literal 'profiles'."""
     assert routing.extract_routing_key(_body("https://linear.app/org/profiles")) == (
         "_unrouted"
@@ -66,22 +66,22 @@ def test_returns_unrouted_when_username_segment_is_missing():
     )
 
 
-def test_percent_encoded_username_is_decoded():
+def test_extract_routing_key__percent_encoded_username__returns_decoded_username():
     body = _body("https://linear.app/org/profiles/test%2Euser")
     assert routing.extract_routing_key(body) == "test.user"
 
 
-def test_returns_unrouted_when_decoded_username_holds_unsafe_topic_chars():
+def test_extract_routing_key__decoded_username_has_unsafe_topic_chars__returns_unrouted():
     """A segment decoding to an MQTT wildcard must not widen routing — catch-all."""
     body = _body("https://linear.app/org/profiles/a%23b")
     assert routing.extract_routing_key(body) == "_unrouted"
 
 
-def test_returns_unrouted_when_body_is_unparseable():
+def test_extract_routing_key__body_unparseable__returns_unrouted():
     assert routing.extract_routing_key(b"not json{{{") == "_unrouted"
 
 
-def test_does_not_mutate_the_input_body_bytes():
+def test_extract_routing_key__any_body__does_not_mutate_input_bytes():
     """Opaqueness: the bytes covered by Linear-Signature are left untouched."""
     original = _body("https://linear.app/example-org/profiles/testuser")
     body = bytes(original)  # an independent object to compare against
@@ -91,12 +91,12 @@ def test_does_not_mutate_the_input_body_bytes():
     assert body == original
 
 
-def test_extracts_creator_id_for_correlation():
+def test_extract_creator_id__creator_id_present__returns_creator_id():
     """The surrogate UUID is available as the stable correlation key."""
     body = b'{"agentSession": {"creator": {"id": "00000000-0000"}}}'
     assert routing.extract_creator_id(body) == "00000000-0000"
 
 
-def test_creator_id_is_none_when_absent_or_unparseable():
+def test_extract_creator_id__absent_or_unparseable__returns_none():
     assert routing.extract_creator_id(b'{"agentSession": {"creator": {}}}') is None
     assert routing.extract_creator_id(b"not json{{{") is None

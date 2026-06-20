@@ -40,7 +40,7 @@ def _wire(monkeypatch, *, iot, sqs, dynamodb=None):
     )
 
 
-def test_iot_only_with_offline_presence_row_returns_503_and_skips_sqs(
+def test_handler__iot_only_with_offline_presence_row__returns_503_and_skips_sqs(
     monkeypatch, routable_body
 ):
     """DELIVERY_MODE=iot-only + an absent presence row → 503, no SQS write."""
@@ -64,7 +64,7 @@ def test_iot_only_with_offline_presence_row_returns_503_and_skips_sqs(
     iot.publish.assert_not_called()
 
 
-def test_iot_only_with_online_presence_row_publishes_and_returns_200(
+def test_handler__iot_only_with_online_presence_row__publishes_and_returns_200(
     monkeypatch, routable_body
 ):
     """DELIVERY_MODE=iot-only + a connected, unexpired row → publish, 200, no SQS."""
@@ -87,7 +87,7 @@ def test_iot_only_with_online_presence_row_publishes_and_returns_200(
     sqs.send_message.assert_not_called()
 
 
-def test_iot_only_without_iot_endpoint_fails_fast(monkeypatch, routable_body):
+def test_handler__iot_only_without_iot_endpoint__fails_fast(monkeypatch, routable_body):
     """iot-only with no IOT_ENDPOINT has no Data-plane client to publish through;
     the handler must fail fast rather than 500 on every message."""
     iot, sqs = MagicMock(), MagicMock()
@@ -105,7 +105,7 @@ def test_iot_only_without_iot_endpoint_fails_fast(monkeypatch, routable_body):
     iot.publish.assert_not_called()
 
 
-def test_unknown_delivery_mode_falls_back_to_dual_write(monkeypatch, routable_body):
+def test_handler__unknown_delivery_mode__falls_back_to_dual_write(monkeypatch, routable_body):
     """A bogus DELIVERY_MODE must not drop the SQS safety net — dual-write wins."""
     iot, sqs = MagicMock(), MagicMock()
 
