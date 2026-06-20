@@ -5,7 +5,7 @@
 | Linear primitive | Maps to | Reference |
 |---|---|---|
 | **Project** | Proposals (intake) or a Feature (= nwave feature) | `project.md` |
-| **Milestone** | a **Release** (shippable increment; 1:many stories) | `milestone.md` |
+| **Milestone** | a **Release** = one nwave **slice** (shippable increment; 1:many stories) | `milestone.md` |
 | **Issue (story)** | an nwave **story** — `wave:distill`, decomposes into tasks | `story.md` |
 | **Sub-issue (task)** | a build unit — `wave:deliver`, one PR; AC checklist = tests | `task.md` |
 | **Cycle** | optional WIP bound for solo cadence | — skip if it's overhead |

@@ -38,8 +38,8 @@ Proposals project ── wave:discuss ──►  proposal enriched + stories as 
       │  [main session] PROMOTE
       ▼
 Feature project   = nwave feature
-  └ Release (milestone)  → git <feature-slug>/<release> branch        (main session)
-      └ Story  (issue)  ── phase flag: wave:distill → wave:deliver
+  └ Release (milestone)  = one nwave SLICE  → git <feature-slug>/<release> branch   (main session)
+      └ Story  (issue, grouped under the milestone)  ── phase flag: wave:distill → wave:deliver
           ·  wave:distill → cyrus decomposes into Task sub-issues + a Skeleton task first
           ·  (you review, relabel wave:deliver, @mention a comment)
           ·  wave:deliver → ONE builder session iterates the tasks → ONE story PR

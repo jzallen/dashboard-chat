@@ -40,9 +40,11 @@ it via the full Linear MCP:
 
 1. `save_project` — create the Feature project (name = feature slug, team = DC), seed
    the description from the proposal.
-2. `save_milestone` (×N) — create the Release milestones from the discuss release-slicing
-   (`Release 1` = the first / thinnest increment — NOT a "walking skeleton"; that's the
-   per-story Skeleton task).
+2. `save_milestone` (×N) — create the Release milestones from the discuss slicing,
+   **one milestone per nwave slice** (`docs/feature/<slug>/slices/`), 1:1 — **release ==
+   slice == milestone** (see `milestone.md`). `Release 1` = the first / thinnest slice —
+   NOT a "walking skeleton"; that's the per-story Skeleton task. Don't re-bundle slices
+   into fewer/more releases; mirror the slice count.
 3. `save_issue` (per story) — **create** the story issues in the Feature project from the
    discuss analysis (the thread is read-only output, so there are no story sub-issues to
    move): `team` = DC, `project`, `milestone` = its Release, `wave:distill` + `area:*`.

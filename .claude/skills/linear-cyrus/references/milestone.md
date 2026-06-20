@@ -1,7 +1,16 @@
-# Milestone level — "Release"
+# Milestone level — "Release" (= an nwave "slice")
 
 A Linear **project milestone** = a **Release** (a shippable/demonstrable increment).
 Milestones live **only in Feature projects**, never in Proposals.
+
+> **Terminology — one thing, three names.** nwave's DISCUSS output slices a feature
+> into **slices** (elephant-carpaccio increments, see `docs/feature/<slug>/slices/`).
+> **Release == slice == milestone**: each nwave slice becomes exactly one Linear
+> milestone (a Release), 1:1. There is no separate "bundle slices into releases" step —
+> if DISCUSS produced six slices, the Feature project gets six milestones. **Stories are
+> the project issues, grouped under their milestone** (a slice may carry one or more
+> stories). So at promotion: one milestone per slice, then drop each slice's story
+> issues onto that milestone.
 
 ## Owns a branch; no agent action
 
