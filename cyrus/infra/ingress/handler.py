@@ -28,16 +28,14 @@ NOT enqueue anything.
 from __future__ import annotations
 
 import base64
-import json
 import logging
 import os
 from typing import Any, Callable, Literal, Mapping, Optional
 
 import boto3
 
-import iot_publisher
 import presence
-import routing
+from consumers import TOPIC_PREFIX, IoTLinearConsumer, SQSLinearConsumer
 from linear_signature import verify
 
 _log = logging.getLogger(__name__)
@@ -46,26 +44,6 @@ _log = logging.getLogger(__name__)
 # default for any unknown/unset value so a misconfiguration never silently drops
 # the SQS safety net.
 _DELIVERY_MODES = ("dual-write", "iot-only")
-
-# IoT Data-plane topic prefix for identity-routed publishes; the routing key
-# (the Linear username from ``creator.url`` or the ``_unrouted`` sentinel) is
-# appended.
-_TOPIC_PREFIX = "cyrus/v1/sessions/"
-
-# Machine-readable reason emitted on the offline 503 path.
-_OFFLINE_REASON = "consumer-offline"
-
-# Inbound (lowercased, per Lambda Function URL) header name -> canonical name
-# forwarded as an SQS MessageAttribute. The pump turns these attributes back into
-# the HTTP headers it replays to Cyrus, so only the headers Cyrus needs to verify
-# and route the webhook are carried.
-_FORWARDED_HEADERS: dict[str, str] = {
-    "content-type": "Content-Type",
-    "linear-event": "Linear-Event",
-    "linear-delivery": "Linear-Delivery",
-    "linear-signature": "Linear-Signature",
-    "user-agent": "User-Agent",
-}
 
 _SIGNATURE_HEADER = "linear-signature"
 
@@ -83,45 +61,6 @@ def _raw_body(event: Mapping[str, Any]) -> bytes:
     return body.encode("utf-8")
 
 
-def _message_attributes(headers: Mapping[str, str]) -> dict[str, Any]:
-    """Render the forwarded Linear headers as SQS String MessageAttributes."""
-    return {
-        canonical: {"DataType": "String", "StringValue": headers[lowercased]}
-        for lowercased, canonical in _FORWARDED_HEADERS.items()
-        if lowercased in headers
-    }
-
-
-def _forwarded_headers(headers: Mapping[str, str]) -> dict[str, str]:
-    """Return the forwarded Linear headers under their canonical names.
-
-    Same header set the SQS path carries, shaped as a plain ``{name: value}`` map
-    for the IoT publish so both legs of the dual-write forward identical headers.
-    """
-    return {
-        canonical: headers[lowercased]
-        for lowercased, canonical in _FORWARDED_HEADERS.items()
-        if lowercased in headers
-    }
-
-
-def _offline_response(username: str) -> dict[str, Any]:
-    """Build the honest 503 for an offline consumer: reason + id + operator action.
-
-    The body is machine-readable so Linear (and an operator reading logs) gets a
-    truthful signal that names the offline consumer by its natural key and tells
-    the operator exactly how to fix it.
-    """
-    body = json.dumps(
-        {
-            "reason": _OFFLINE_REASON,
-            "consumer_id": username,
-            "action": f"start local cyrus consumer with consumer id {username}",
-        }
-    )
-    return {"statusCode": 503, "body": body}
-
-
 def process(
     event: Mapping[str, Any],
     *,
@@ -129,28 +68,21 @@ def process(
     secret: str,
     sqs_client: Any,
     iot_data_client: Any = None,
-    topic_prefix: str = _TOPIC_PREFIX,
+    topic_prefix: str = TOPIC_PREFIX,
     delivery_mode: Literal["dual-write", "iot-only"] = "dual-write",
     is_offline: Optional[Callable[[str], bool]] = None,
 ) -> dict[str, Any]:
-    """Verify a Function URL event and deliver the webhook; return an HTTP result.
+    """Verify a Function URL event and delegate delivery to the consumer.
 
     Returns ``{"statusCode": 401}`` and writes nothing when the
-    ``Linear-Signature`` is missing or does not validate against ``secret``.
+    ``Linear-Signature`` is missing or does not validate against ``secret``. On a
+    valid signature the per-deploy ``delivery_mode`` selects the consumer that
+    owns delivery (and, in ``iot-only``, the offline decision):
 
-    The routing key is the Linear username extracted from ``creator.url`` (a COPY
-    of the body), or the ``_unrouted`` sentinel when no username is derivable. The
-    per-deploy ``delivery_mode`` then selects how the verified body is delivered:
-
-    * ``dual-write`` (default) — the raw body is enqueued to SQS, and when
-      ``iot_data_client`` is supplied it is also published **byte-identically** to
-      ``{topic_prefix}{key}``. The IoT publish is a best-effort probe: any failure
-      is logged and the SQS enqueue stays the durable safety net. Returns 200.
-    * ``iot-only`` — no SQS fallback. A *routed* consumer that ``is_offline``
-      reports offline yields an honest ``{"statusCode": 503}`` naming the consumer
-      and is neither published nor enqueued. An online (or ``_unrouted``) consumer
-      is published to the topic and returns 200. ``_unrouted`` is NEVER the 503
-      path — it is distinct from "mapped but offline".
+    * ``dual-write`` (default) — :class:`~consumers.SQSLinearConsumer`: enqueue to
+      SQS and, when ``iot_data_client`` is wired, also publish byte-identically.
+    * ``iot-only`` — :class:`~consumers.IoTLinearConsumer`: publish over IoT, or
+      return the honest 503 when the routed consumer ``is_offline``.
     """
     headers = {name.lower(): value for name, value in event.get("headers", {}).items()}
     signature = headers.get(_SIGNATURE_HEADER)
@@ -161,61 +93,22 @@ def process(
     if not verify(body, secret, signature):
         return {"statusCode": 401, "body": "invalid signature"}
 
-    key = routing.extract_routing_key(body)
-    topic = f"{topic_prefix}{key}"
-
     if delivery_mode == "iot-only":
-        # A derivable username is the only thing that can be "mapped but offline".
-        # An ``_unrouted`` event has no consumer to be offline, so it skips the
-        # offline check and falls through to the catch-all publish.
-        routed = key != routing.UNROUTED
-        if routed and is_offline is not None and is_offline(key):
-            # Emit the same fact as the 503 body to logs so it is queryable in
-            # CloudWatch. Structured fields (not a parsed message) carry the
-            # operator-facing ``consumer_id`` (username) plus the stable
-            # ``creator.id`` correlation key. The ``reason`` field distinguishes
-            # this from the _unrouted and transient-publish-failure logs.
-            _log.warning(
-                "consumer offline: %s",
-                key,
-                extra={
-                    "reason": "consumer_offline",
-                    "consumer_id": key,
-                    "creator_id": routing.extract_creator_id(body),
-                    "delivery_mode": delivery_mode,
-                },
-            )
-            return _offline_response(key)
-        iot_publisher.publish(
-            iot_data_client,
-            topic=topic,
-            body=body,
-            headers=_forwarded_headers(headers),
+        consumer = IoTLinearConsumer(
+            body,
+            iot_data_client=iot_data_client,
+            topic_prefix=topic_prefix,
+            is_offline=is_offline,
         )
-        return {"statusCode": 200, "body": "published"}
-
-    if iot_data_client is not None:
-        # The IoT publish is a probe, not the system of record: any failure is
-        # caught and logged so it can never take down the SQS safety net.
-        try:
-            iot_publisher.publish(
-                iot_data_client,
-                topic=topic,
-                body=body,
-                headers=_forwarded_headers(headers),
-            )
-        except Exception:
-            _log.exception(
-                "IoT dual-write publish to %s failed; SQS enqueue is the safety net",
-                topic,
-            )
-
-    sqs_client.send_message(
-        QueueUrl=queue_url,
-        MessageBody=body.decode("utf-8"),
-        MessageAttributes=_message_attributes(headers),
-    )
-    return {"statusCode": 200, "body": "queued"}
+    else:
+        consumer = SQSLinearConsumer(
+            body,
+            sqs_client=sqs_client,
+            queue_url=queue_url,
+            iot_data_client=iot_data_client,
+            topic_prefix=topic_prefix,
+        )
+    return consumer.deliver(headers)
 
 
 def _sqs_client() -> Any:
