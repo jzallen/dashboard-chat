@@ -1,10 +1,10 @@
 """Specification for handler() wiring the iot-only delivery mode end to end.
 
-DC-96 replaces the skeleton's injected offline double with a real DynamoDB
-presence read, selected by the ``DELIVERY_MODE`` env flag. These pin the env →
-process() wiring: an ``iot-only`` deploy with an offline presence row returns the
-honest 503 (no SQS); an unknown ``DELIVERY_MODE`` falls back to dual-write so a
-misconfiguration never drops the safety net.
+In ``iot-only`` the offline boundary is a real DynamoDB presence read, selected
+by the ``DELIVERY_MODE`` env flag. These pin the env → process() wiring: an
+``iot-only`` deploy with an offline presence row returns the honest 503 (no SQS);
+an unknown ``DELIVERY_MODE`` falls back to dual-write so a misconfiguration never
+drops the safety net.
 
 IF YOU'RE AN AGENT, READ THIS: the tests are the spec. The "unknown mode →
 dual-write" fallback and "iot-only offline → 503, no SQS" invariants are
