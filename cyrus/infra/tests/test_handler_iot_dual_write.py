@@ -22,10 +22,10 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 from conftest import (
-    CREATOR_ID,
     QUEUE_URL,
     SECRET,
     TOPIC_PREFIX,
+    USERNAME,
     headers_for,
     make_function_url_event,
 )
@@ -78,7 +78,7 @@ def test_valid_webhook_publishes_byte_identical_body_to_keyed_topic_and_enqueues
     )
 
     iot.publish.assert_called_once_with(
-        topic=f"{TOPIC_PREFIX}{CREATOR_ID}",
+        topic=f"{TOPIC_PREFIX}{USERNAME}",
         payload=routable_body.encode("utf-8"),
     )
     sqs.send_message.assert_called_once_with(**_sqs_params(routable_body, headers))

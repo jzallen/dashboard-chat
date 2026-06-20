@@ -28,9 +28,10 @@ NOT enqueue anything.
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import os
-from typing import Any, Mapping, Optional
+from typing import Any, Callable, Literal, Mapping, Optional
 
 import boto3
 
@@ -41,8 +42,12 @@ from linear_signature import verify
 _log = logging.getLogger(__name__)
 
 # IoT Data-plane topic prefix for identity-routed publishes; the routing key
-# (``agentSession.creator.id`` or the ``_unrouted`` sentinel) is appended.
+# (the Linear username from ``creator.url`` or the ``_unrouted`` sentinel) is
+# appended.
 _TOPIC_PREFIX = "cyrus/v1/sessions/"
+
+# Machine-readable reason emitted on the offline 503 path.
+_OFFLINE_REASON = "consumer-offline"
 
 # Inbound (lowercased, per Lambda Function URL) header name -> canonical name
 # forwarded as an SQS MessageAttribute. The pump turns these attributes back into
@@ -93,6 +98,23 @@ def _forwarded_headers(headers: Mapping[str, str]) -> dict[str, str]:
     }
 
 
+def _offline_response(username: str) -> dict[str, Any]:
+    """Build the honest 503 for an offline consumer: reason + id + operator action.
+
+    The body is machine-readable so Linear (and an operator reading logs) gets a
+    truthful signal that names the offline consumer by its natural key and tells
+    the operator exactly how to fix it.
+    """
+    body = json.dumps(
+        {
+            "reason": _OFFLINE_REASON,
+            "consumer_id": username,
+            "action": f"start local cyrus consumer with consumer id {username}",
+        }
+    )
+    return {"statusCode": 503, "body": body}
+
+
 def process(
     event: Mapping[str, Any],
     *,
@@ -101,18 +123,27 @@ def process(
     sqs_client: Any,
     iot_data_client: Any = None,
     topic_prefix: str = _TOPIC_PREFIX,
+    delivery_mode: Literal["dual-write", "iot-only"] = "dual-write",
+    is_offline: Optional[Callable[[str], bool]] = None,
 ) -> dict[str, Any]:
-    """Verify a Function URL event and dual-write the webhook; return an HTTP result.
+    """Verify a Function URL event and deliver the webhook; return an HTTP result.
 
     Returns ``{"statusCode": 401}`` and writes nothing when the
     ``Linear-Signature`` is missing or does not validate against ``secret``.
 
-    On a valid signature the raw body is enqueued to SQS. When ``iot_data_client``
-    is supplied, the handler additionally publishes the **byte-identical** raw body
-    to ``{topic_prefix}{key}`` via the IoT Data-plane API, where ``key`` is the
-    routing key extracted from a COPY of the body. When ``iot_data_client`` is
-    ``None`` the IoT leg is skipped and behavior is the legacy SQS-only path.
-    Returns ``{"statusCode": 200}`` on success.
+    The routing key is the Linear username extracted from ``creator.url`` (a COPY
+    of the body), or the ``_unrouted`` sentinel when no username is derivable. The
+    per-deploy ``delivery_mode`` then selects how the verified body is delivered:
+
+    * ``dual-write`` (default) — the raw body is enqueued to SQS, and when
+      ``iot_data_client`` is supplied it is also published **byte-identically** to
+      ``{topic_prefix}{key}``. The IoT publish is a best-effort probe: any failure
+      is logged and the SQS enqueue stays the durable safety net. Returns 200.
+    * ``iot-only`` — no SQS fallback. A *routed* consumer that ``is_offline``
+      reports offline yields an honest ``{"statusCode": 503}`` naming the consumer
+      and is neither published nor enqueued. An online (or ``_unrouted``) consumer
+      is published to the topic and returns 200. ``_unrouted`` is NEVER the 503
+      path — it is distinct from "mapped but offline".
     """
     headers = {name.lower(): value for name, value in event.get("headers", {}).items()}
     signature = headers.get(_SIGNATURE_HEADER)
@@ -123,14 +154,27 @@ def process(
     if not verify(body, secret, signature):
         return {"statusCode": 401, "body": "invalid signature"}
 
+    key = routing.extract_routing_key(body)
+    topic = f"{topic_prefix}{key}"
+
+    if delivery_mode == "iot-only":
+        # A derivable username is the only thing that can be "mapped but offline".
+        # An ``_unrouted`` event has no consumer to be offline, so it skips the
+        # offline check and falls through to the catch-all publish.
+        routed = key != routing.UNROUTED
+        if routed and is_offline is not None and is_offline(key):
+            return _offline_response(key)
+        iot_publisher.publish(
+            iot_data_client,
+            topic=topic,
+            body=body,
+            headers=_forwarded_headers(headers),
+        )
+        return {"statusCode": 200, "body": "published"}
+
     if iot_data_client is not None:
-        # Routing-key extraction reads a COPY of the body, so the byte-identical
-        # raw ``body`` enqueued below is what gets published. The IoT publish is a
-        # probe, not the system of record: any failure is caught and logged so it
-        # can never take down the SQS safety net. ``extract_routing_key`` returns
-        # the ``_unrouted`` sentinel when the creator id is absent, so the publish
-        # always has a topic.
-        topic = f"{topic_prefix}{routing.extract_routing_key(body)}"
+        # The IoT publish is a probe, not the system of record: any failure is
+        # caught and logged so it can never take down the SQS safety net.
         try:
             iot_publisher.publish(
                 iot_data_client,
