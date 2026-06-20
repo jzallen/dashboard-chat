@@ -26,6 +26,8 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock
 
+import pytest
+
 from conftest import (
     QUEUE_URL,
     SECRET,
@@ -138,6 +140,29 @@ def test_iot_only_unrouted_publishes_to_catch_all_and_is_never_the_503_path(
     )
     sqs.send_message.assert_not_called()
     assert result["statusCode"] == 200
+
+
+def test_iot_only_publish_failure_propagates_and_never_falls_back_to_sqs(routable_body):
+    """iot-only has no safety net: a publish failure propagates (→ 5xx, Linear
+    retries) and must never silently enqueue to SQS instead."""
+    iot = MagicMock()
+    iot.publish.side_effect = RuntimeError("iot data-plane unreachable")
+    sqs = MagicMock()
+    headers = headers_for(routable_body)
+
+    event = make_function_url_event(routable_body, headers)
+    with pytest.raises(RuntimeError):
+        process(
+            event,
+            queue_url=QUEUE_URL,
+            secret=SECRET,
+            sqs_client=sqs,
+            iot_data_client=iot,
+            delivery_mode="iot-only",
+            is_offline=lambda username: False,
+        )
+
+    sqs.send_message.assert_not_called()
 
 
 def test_default_delivery_mode_is_dual_write(routable_body):

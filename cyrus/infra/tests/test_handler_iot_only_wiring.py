@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from conftest import (
     QUEUE_URL,
     SECRET,
@@ -83,6 +85,24 @@ def test_iot_only_with_online_presence_row_publishes_and_returns_200(
     assert result["statusCode"] == 200
     iot.publish.assert_called_once()
     sqs.send_message.assert_not_called()
+
+
+def test_iot_only_without_iot_endpoint_fails_fast(monkeypatch, routable_body):
+    """iot-only with no IOT_ENDPOINT has no Data-plane client to publish through;
+    the handler must fail fast rather than 500 on every message."""
+    iot, sqs = MagicMock(), MagicMock()
+
+    monkeypatch.delenv("IOT_ENDPOINT", raising=False)
+    monkeypatch.setenv("DELIVERY_MODE", "iot-only")
+    monkeypatch.setenv("PRESENCE_TABLE", "ConsumerPresenceTable")
+    _wire(monkeypatch, iot=iot, sqs=sqs)
+
+    event = make_function_url_event(routable_body, headers_for(routable_body))
+    with pytest.raises(RuntimeError):
+        handler(event, None)
+
+    sqs.send_message.assert_not_called()
+    iot.publish.assert_not_called()
 
 
 def test_unknown_delivery_mode_falls_back_to_dual_write(monkeypatch, routable_body):

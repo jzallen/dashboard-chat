@@ -276,6 +276,16 @@ def handler(event: Mapping[str, Any], context: Any) -> dict[str, Any]:
     iot_data_client = _iot_data_client() if os.environ.get("IOT_ENDPOINT") else None
     delivery_mode = _delivery_mode()
 
+    if delivery_mode == "iot-only" and iot_data_client is None:
+        # iot-only has no SQS safety net, so every webhook is published over IoT.
+        # Without IOT_ENDPOINT there is no Data-plane client and the publish would
+        # AttributeError on every message — fail fast on the misconfiguration
+        # instead of 500-ing each request.
+        raise RuntimeError(
+            "DELIVERY_MODE=iot-only requires IOT_ENDPOINT to be configured "
+            "(no IoT Data-plane client could be built)"
+        )
+
     is_offline = None
     if delivery_mode == "iot-only":
         table_name = os.environ.get("PRESENCE_TABLE")
