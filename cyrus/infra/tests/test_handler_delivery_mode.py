@@ -40,14 +40,38 @@ from conftest import (
 from handler import process
 
 
-def test_iot_only_offline_returns_503_with_reason_action_and_skips_sqs(routable_body):
-    """iot-only + routed + offline → 503 consumer-offline body; no publish, no SQS."""
+def test_iot_only_offline_returns_503_naming_the_consumer_and_action(routable_body):
+    """iot-only + routed + offline → an honest 503 whose body names the offline
+    consumer by username and tells the operator how to bring it back."""
+    event = make_function_url_event(routable_body, headers_for(routable_body))
+
+    result = process(
+        event,
+        queue_url=QUEUE_URL,
+        secret=SECRET,
+        sqs_client=MagicMock(),
+        iot_data_client=MagicMock(),
+        delivery_mode="iot-only",
+        is_offline=lambda username: True,
+    )
+
+    assert {"statusCode": result["statusCode"], "body": json.loads(result["body"])} == {
+        "statusCode": 503,
+        "body": {
+            "reason": "consumer-offline",
+            "consumer_id": USERNAME,
+            "action": f"start local cyrus consumer with consumer id {USERNAME}",
+        },
+    }
+
+
+def test_iot_only_offline_neither_publishes_nor_enqueues(routable_body):
+    """The offline path is terminal: nothing reaches IoT or SQS."""
     iot = MagicMock()
     sqs = MagicMock()
-    headers = headers_for(routable_body)
 
-    event = make_function_url_event(routable_body, headers)
-    result = process(
+    event = make_function_url_event(routable_body, headers_for(routable_body))
+    process(
         event,
         queue_url=QUEUE_URL,
         secret=SECRET,
@@ -57,32 +81,26 @@ def test_iot_only_offline_returns_503_with_reason_action_and_skips_sqs(routable_
         is_offline=lambda username: True,
     )
 
-    assert result["statusCode"] == 503
-    assert json.loads(result["body"]) == {
-        "reason": "consumer-offline",
-        "consumer_id": USERNAME,
-        "action": f"start local cyrus consumer with consumer id {USERNAME}",
-    }
-    sqs.send_message.assert_not_called()
-    iot.publish.assert_not_called()
+    assert (iot.publish.called, sqs.send_message.called) == (False, False)
 
 
-def test_iot_only_offline_check_receives_the_username(routable_body):
-    """The offline boundary is queried with the natural key (username)."""
-    is_offline = MagicMock(return_value=True)
-
+def test_iot_only_keys_the_offline_check_by_the_username_natural_key(routable_body):
+    """The presence boundary is keyed by the natural key (username), proven through
+    the response: a check that only recognizes the username drives the offline 503,
+    so a 503 confirms the username was the key passed (no boundary-call spying)."""
     event = make_function_url_event(routable_body, headers_for(routable_body))
-    process(
+
+    result = process(
         event,
         queue_url=QUEUE_URL,
         secret=SECRET,
         sqs_client=MagicMock(),
         iot_data_client=MagicMock(),
         delivery_mode="iot-only",
-        is_offline=is_offline,
+        is_offline=lambda key: key == USERNAME,
     )
 
-    is_offline.assert_called_once_with(USERNAME)
+    assert result["statusCode"] == 503
 
 
 def test_iot_only_online_publishes_and_returns_200_without_sqs(routable_body):
