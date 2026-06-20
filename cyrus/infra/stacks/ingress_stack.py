@@ -39,20 +39,31 @@ _PUMP_CONSUME_ACTIONS = [
 # absent/expired row as offline, so best-effort TTL is sufficient.
 _PRESENCE_TTL_ATTRIBUTE = "ttl"
 
+# How long a presence row stays valid without a refreshing lifecycle event.
+# IoT emits presence events ONLY on connect/disconnect — there are no keep-alives
+# — so this window must exceed the longest expected uninterrupted session, or a
+# continuously-connected consumer's row would expire while it is still online and
+# the ingress would wrongly report it offline (the DC-24 failure mode). It also
+# bounds how long a missed ``disconnect`` lingers as a stale "online" row before
+# it self-heals; 7 days balances both.
+_PRESENCE_TTL_SECONDS = 7 * 24 * 60 * 60
+
 # IoT lifecycle events fire on ``$aws/events/presence/{connected,disconnected}/
-# {clientId}``; the ``+`` matches both event types so a single rule upserts the
-# latest state. CONVENTION: the consumer's MQTT ``clientId`` IS its Linear
-# username, so the lifecycle event's ``clientId`` is the presence-table key and
-# matches the routing key the ingress derives from ``creator.url``.
-_PRESENCE_LIFECYCLE_TOPIC = "$aws/events/presence/+/#"
+# {clientId}`` — exactly two segments after ``presence/``. A single rule matches
+# both event types with ``+/+`` (precise: a multi-level ``#`` would also match
+# malformed/deeper topics and attempt a keyless write). CONVENTION: the consumer's
+# MQTT ``clientId`` IS its Linear username, so the lifecycle event's ``clientId``
+# is the presence-table key and matches the routing key the ingress derives from
+# ``creator.url``.
+_PRESENCE_LIFECYCLE_TOPIC = "$aws/events/presence/+/+"
 
 # IoT SQL: map the lifecycle event onto the presence row. ``connected`` is the
-# boolean truth of the event type; ``ttl`` is now + 1 day in epoch seconds so the
-# row self-heals if a ``disconnect`` is ever missed.
+# boolean truth of the event type; ``ttl`` is now + the TTL window in epoch
+# seconds so the row self-heals if a ``disconnect`` is ever missed.
 _PRESENCE_RULE_SQL = (
     "SELECT clientId AS username, eventType = 'connected' AS connected, "
-    "timestamp AS updatedAt, (floor(timestamp() / 1000) + 86400) AS ttl "
-    f"FROM '{_PRESENCE_LIFECYCLE_TOPIC}'"
+    f"timestamp AS updatedAt, (floor(timestamp() / 1000) + {_PRESENCE_TTL_SECONDS}) "
+    f"AS ttl FROM '{_PRESENCE_LIFECYCLE_TOPIC}'"
 )
 
 
