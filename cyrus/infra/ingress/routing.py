@@ -25,24 +25,35 @@ SQS untouched.
 from __future__ import annotations
 
 import json
+import re
 from typing import Optional
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 #: Catch-all routing key used when the username is not derivable from
 #: ``creator.url`` or the body cannot be parsed — the handler still dual-writes,
 #: never drops.
 UNROUTED = "_unrouted"
 
+#: Characters a derived username may contain to be usable as both an MQTT topic
+#: segment and a DynamoDB key. Deliberately excludes the MQTT wildcards (``+``,
+#: ``#``), the topic separator (``/``), and whitespace so a decoded segment can
+#: never widen routing or break the topic. A segment that fails this falls back
+#: to :data:`UNROUTED` (catch-all) — safe, since that path still never drops.
+_USERNAME_RE = re.compile(r"\A[A-Za-z0-9._~-]+\Z")
+
 
 def extract_routing_key(body: bytes) -> str:
     """Return the Linear username from ``creator.url`` or ``UNROUTED``.
 
     Parses a COPY of ``body`` (decoded into a fresh string) to read
-    ``agentSession.creator.url`` and returns its last non-empty path segment (the
-    username). The input bytes are never mutated, preserving the signed-body
-    invariant. Returns :data:`UNROUTED` when the url is missing, null, empty, has
-    no path segment, or the body is unparseable. Total — never raises for bad
-    input.
+    ``agentSession.creator.url`` and returns the username from a url shaped like
+    ``.../profiles/<username>`` — the segment immediately after a ``profiles``
+    path segment, URL-decoded and validated against :data:`_USERNAME_RE` so it is
+    safe as an MQTT topic segment and DynamoDB key. The input bytes are never
+    mutated, preserving the signed-body invariant. Returns :data:`UNROUTED` when
+    the url is missing, null, empty, not in ``.../profiles/<username>`` shape,
+    decodes to characters outside the allowed set, or the body is unparseable.
+    Total — never raises for bad input.
     """
     try:
         payload = json.loads(bytes(body).decode("utf-8"))
@@ -62,9 +73,13 @@ def extract_routing_key(body: bytes) -> str:
         return UNROUTED
 
     segments = [seg for seg in urlparse(creator_url).path.split("/") if seg]
-    if not segments:
+    if len(segments) < 2 or segments[-2] != "profiles":
         return UNROUTED
-    return segments[-1]
+
+    username = unquote(segments[-1])
+    if not _USERNAME_RE.match(username):
+        return UNROUTED
+    return username
 
 
 def extract_creator_id(body: bytes) -> Optional[str]:

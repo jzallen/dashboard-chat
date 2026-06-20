@@ -16,11 +16,13 @@ byte-identity assertion.
 
 from __future__ import annotations
 
+import json
+
 import routing
 
 
 def _body(url: str) -> bytes:
-    return f'{{"agentSession": {{"creator": {{"url": "{url}"}}}}}}'.encode("utf-8")
+    return json.dumps({"agentSession": {"creator": {"url": url}}}).encode("utf-8")
 
 
 def test_extracts_username_from_creator_url_last_segment():
@@ -45,6 +47,33 @@ def test_returns_unrouted_when_creator_url_is_empty():
 
 def test_returns_unrouted_when_creator_url_has_no_path_segment():
     body = _body("https://linear.app")
+    assert routing.extract_routing_key(body) == "_unrouted"
+
+
+def test_returns_unrouted_when_url_is_not_a_profiles_url():
+    """A different url shape must not route its trailing segment as a username."""
+    body = _body("https://linear.app/some-org")
+    assert routing.extract_routing_key(body) == "_unrouted"
+
+
+def test_returns_unrouted_when_username_segment_is_missing():
+    """A url ending at ``/profiles`` has no username — catch-all, not literal 'profiles'."""
+    assert routing.extract_routing_key(_body("https://linear.app/org/profiles")) == (
+        "_unrouted"
+    )
+    assert routing.extract_routing_key(_body("https://linear.app/org/profiles/")) == (
+        "_unrouted"
+    )
+
+
+def test_percent_encoded_username_is_decoded():
+    body = _body("https://linear.app/org/profiles/zach%2Eallen")
+    assert routing.extract_routing_key(body) == "zach.allen"
+
+
+def test_returns_unrouted_when_decoded_username_holds_unsafe_topic_chars():
+    """A segment decoding to an MQTT wildcard must not widen routing — catch-all."""
+    body = _body("https://linear.app/org/profiles/a%23b")
     assert routing.extract_routing_key(body) == "_unrouted"
 
 
