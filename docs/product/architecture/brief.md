@@ -762,6 +762,138 @@ rows). No external integration introduced — no contract-test annotation requir
 
 ---
 
+#### `log-coverage-and-quality` (DESIGN — 2026-06-20 — application scope, propose mode)
+
+**Author:** Morgan (nw-solution-architect)
+**ADRs:** ADR-053 (cross-service logging envelope + Node logger choice; Proposed), ADR-054 (correlation-id binding mechanism; Proposed)
+**JOB:** JOB-004 (`docs/product/jobs.yaml`)
+**DISCUSS source:** `docs/feature/log-coverage-and-quality/discuss/` (D1–D7, US-1..7, K1–K7, six slices)
+**DESIGN deliverables:** `docs/feature/log-coverage-and-quality/design/{wave-decisions.md, c4-diagrams.md}`
+**Status:** Proposed → awaiting solution-architect-reviewer (Atlas) + user ratification of Q1 verdict → DISTILL
+
+**Decision summary.** A lightweight confirmation DESIGN over a brownfield
+cross-cutting sweep. **Topology is unchanged — no new containers.** Two decisions:
+**(ADR-053)** ratify the existing `ui/app/lib/log.ts` `LogRecord` envelope (`@timestamp`,
+`log.level`, `event.module`, `event.action`, `attributes`) as the cross-service
+standard, promoted to a shared TS contract package **`shared/logging/`** (mirroring
+`shared/chat/`); and resolve **Q1** — adopt **pino** for the three pure-backend Node
+services (auth-proxy, agent, ui-state) behind a shared `createLogger(channel)`
+contract, while **`ui/` keeps consola** (it is isomorphic; consola already ships and
+already produces the exact envelope). "One logger everywhere" is satisfied at the
+**envelope + factory-contract** layer, not the library layer — the durable seam.
+Python matches the same field names via `logging.config.dictConfig` + a JSON
+formatter (the contract is the field names, not a shared Python package).
+**(ADR-054)** mint the correlation id **once** at the auth-proxy ingress
+(generalize `app.ts:959`), propagate by the existing **`X-Request-Id`** header on
+every hop (not a new `x-correlation-id`), and bind it per-request via
+`AsyncLocalStorage` (Node) / a `correlation_id` `ContextVar` (Python, mirroring
+`_auth_user`) so a line emitted deep in a use case carries it **without threading it
+through signatures**; surface it as `attributes.correlation_id` and echo it on error
+responses. Redaction is **one ruleset implemented once** in `shared/logging/` — a
+`redactionKeys`/`RedactionConfig` data struct (`authorization`, `cookie`, `*token*`,
+`*secret*`, `password`, raw `email`) plus a pure `redact()`/`maskValue()` helper —
+wrapped by **both** the pino serializer (the three server surfaces) and the consola
+`ecsJsonReporter` (`ui/`), so a key added in one place protects every surface. Born
+in Slice 01 with a production-shaped regression test that runs against **both**
+adapters and asserts identical redacted output (the K5 contract), re-asserted per
+surface.
+`LOG_LEVEL` is honoured at runtime by all five surfaces (default INFO), fixing
+`ui/`'s `configuredLevel()` server-side limitation.
+
+**New/extended components — Reuse Analysis (HARD GATE).** Default is EXTEND; new
+surface is justified per row.
+
+| Component | Overlapping existing (file) | Verdict | Evidence / rationale |
+|---|---|---|---|
+| Shared `LogRecord` + `Logger` + `LogLevel` + redaction ruleset + `createLogger` contract | `ui/app/lib/log.ts` (the envelope already exists) | **EXTEND → promote** | Lift the existing types/contract into `shared/logging/` (`@dashboard-chat/shared-logging`); `ui/` then imports them instead of owning them. Mirrors `shared/chat/` (ADR-014). No invention. |
+| Node `createLogger(channel)` emit backend (pino) | none on the 3 server surfaces (auth-proxy/agent/ui-state log via `process.stdout.write`/`console.warn`) | **CREATE NEW (thin adapter)** | No logger module exists on these surfaces; pino chosen per ADR-053 (server-grade JSON, redaction hook, hot-path throughput). Conforms to the promoted contract. |
+| `ui/` logger | `ui/app/lib/log.ts` consola | **EXTEND (keep)** | Already emits the envelope; only change is importing the shared contract + fixing server-side `LOG_LEVEL` (US-6 AC6.4). No library swap. |
+| Redaction ruleset + helper | none (no centralized redaction today) | **CREATE NEW (in shared)** | One ruleset implemented **once** in `shared/logging/` — a `redactionKeys`/`RedactionConfig` data struct + a pure `redact()`/`maskValue()` helper — wrapped by **two thin adapters** (the pino serializer; the consola `ecsJsonReporter`). Born Slice 01; identical-output regression test runs against both adapters. |
+| Correlation-id middleware/binding (Node) | auth-proxy ingress mint (`app.ts:959`); ui-state `requestIdMiddleware` (`flow-router.ts:21`, Hono `requestId`, `X-Request-Id`) | **EXTEND** | Generalize the auth-proxy mint into the shared upstream-forward; ui-state's middleware is extended to open an `AsyncLocalStorage` scope, not replaced — preserves its `request_id`/`principal_id` transition log (US-5 AC5.4). |
+| Correlation-id binding (Python) | `_auth_user` `ContextVar` (`backend/app/auth/context.py:5`) | **EXTEND (mirror)** | Add a `correlation_id` `ContextVar` following the exact `_auth_user` pattern; the JSON formatter reads it. |
+| Python JSON formatter + `dictConfig` | none (stdlib `logging`, no dictConfig today) | **CREATE NEW** | No structured config exists; add `dictConfig` + a JSON formatter emitting the same field names + `LOG_LEVEL` control (US-4 AC4.4). Converts the stray `print()` (`bucket_cors.py:72`). |
+| Backend request middleware | none (`auth/middleware.py` sets user but logs nothing; no request middleware) | **CREATE NEW** | Required for request-lifecycle logging (US-4 AC4.1) + correlation-id binding; no existing middleware to extend. |
+
+Net new surface is minimal: pino adapters (3 services), the shared redaction step,
+the Python JSON formatter/dictConfig, and the backend request middleware — each with
+no existing component to extend. Everything else (the envelope, the Node
+correlation middleware, the Python binding) is EXTEND.
+
+**Integration points (logging/correlation flow over the unchanged topology):**
+
+| Integration | Direction | Contract |
+|---|---|---|
+| Browser/client → auth-proxy | inbound request | `X-Request-Id` honoured if present, else minted once at ingress |
+| auth-proxy → backend / agent | upstream hop | forwards `X-Request-Id` (generalize `app.ts:974`) |
+| ui → `/bff/*` → agent, ui → `/api/*` → auth-proxy | upstream hop | ui injects `X-Request-Id` on relays (US-6 AC6.1) |
+| ui-state → backend | upstream hop | forwards `X-Request-Id` (existing `requestIdMiddleware` extended) |
+| any surface → operator | stdout | one `LogRecord` JSON line per event, `attributes.correlation_id` present |
+| any surface → client | error response | `X-Request-Id` header and/or `correlation_id` body field (US-1 AC1.3) |
+| every Node surface → `shared/logging` | build-time | imports `LogRecord`/`Logger`/`LogLevel`/redaction/`createLogger` contract |
+
+**Quality-attribute mapping (K1–K7).**
+
+| KPI | Quality attribute | How the architecture delivers it |
+|---|---|---|
+| K1 — end-to-end traceability | observability | ADR-054: mint-once + `X-Request-Id` propagation + ambient binding; proven by Slice 02 integration assertion |
+| K2 — auth-decision coverage | auditability/security | ADR-053 logger on auth-proxy; INFO success / WARN-reason on every JWT/PAT/M2M decision + audit lines (Slice 01) |
+| K3 — no silent failures | reliability | logger on ui-state/backend/ui; every catalogued `catch`/DomainException logs with context (Slices 03/05/06) |
+| K4 — happy-path visibility | observability | INFO entry/completion markers at critical-path boundaries (all slices) |
+| K5 — zero credential/PII leakage | security/confidentiality | one shared redaction ruleset (`redactionKeys` + `redact()`), wrapped by both the pino and consola adapters; production-shaped regression test born Slice 01, asserting identical redacted output across both adapters, re-run per surface |
+| K6 — runtime verbosity | operability | `LOG_LEVEL` honoured by all five surfaces; `dictConfig` (Python), env read (Node), `ui/` server-side fix |
+| K7 — envelope consistency | maintainability/interoperability | one `LogRecord` field set from `shared/logging/`; Python matches field names; schema check on a sample line per surface |
+
+**Must-not-regress (preserved).** Existing auth-proxy KPI-event JSON lines
+(`app.ts:838-848`) and startup image-identity lines are untouched — the logger is
+additive (D7/AC2.4). Logging stays non-blocking on SSE/hot paths (pino async; the
+Slice 02 SPIKE validates `AsyncLocalStorage` across the stream). No new logs reach
+the browser console in production (US-6 AC6.4). Multi-tenancy: tenant context is
+attributes only (`org_id`/`project_id`/`user_id`), no scoping bypassed to obtain it.
+
+**Out of scope (D3/Q2/Q3).** OpenTelemetry spans/exporter and standing up a log sink
+(Loki/ELK/CloudWatch) are explicit non-goals; the envelope is sink-portable and
+`correlation_id` is the clean migration seam to a future `trace_id`.
+
+**Architectural enforcement (principle 11).** Recommend adopting **now (as warn,
+escalate to error post-migration)** the CI lint forbidding bare `console.*` (ESLint
+`no-console`, allow-listing the logger modules + the KPI-emit/startup-identity lines)
+and `print()` (Ruff `T20`/flake8-print) outside logger modules — DISCUSS Q4. Without
+it, new `console.log`/`print` calls silently reintroduce blind spots and bypass
+redaction. Promotion to a hard gate is a DEVOPS-wave decision.
+
+**Earned-trust contract (principle 12).** The shared redaction helper is the contract
+every line depends on: each logger module ships the redaction regression test with
+**production-shaped** credential inputs (real `Authorization` value, cookie, PAT,
+M2M secret) asserting none serialize. The test runs against **both** the pino and
+consola adapters and asserts **identical** redacted output (the K5 contract), so any
+drift between the two transports fails before landing — a first-class DISTILL
+deliverable, re-run per surface (K5). The correlation-binding contract ("a line with no id in its signature
+still carries the id") is proven by the Slice 02 cross-service integration assertion
+(K1) and the SSE context-preservation SPIKE, not assumed.
+
+**Development paradigm.** Multi-paradigm codebase preserved: TypeScript services use
+pino in their house style; `ui/` keeps consola; Python uses stdlib `logging` +
+`dictConfig`. No paradigm rewrite — logging adapters follow each service's idiom.
+
+**Quality gates passed (this DESIGN wave).**
+
+- [x] Requirements traced to components (US-1..7 / K1–K7 → envelope + correlation binding + redaction + LOG_LEVEL, per-surface).
+- [x] Component boundaries with clear responsibilities (Reuse Analysis table; `createLogger(channel)` is the per-surface boundary).
+- [x] Technology choices in ADRs with alternatives (ADR-053 cuts consola-everywhere/pino-everywhere/winston/ad-hoc; ADR-054 cuts signature-threading/header-rename/OTel/request-object).
+- [x] Quality attributes addressed (K1–K7 mapping table).
+- [x] Dependency-inversion compliance (shared contract; each surface supplies its emit backend behind `createLogger`; ambient binding decouples id from signatures).
+- [x] C4 diagrams L1+L2+L3 in Mermaid (`design/c4-diagrams.md`); topology explicitly unchanged.
+- [x] Integration patterns specified (`X-Request-Id` propagation matrix; stdout JSON envelope).
+- [x] OSS preference validated (pino MIT; consola MIT; stdlib logging — all permissive/no new proprietary).
+- [x] AC behavioral, not implementation-coupled (operator-observable: `grep <id>`, redacted attribute, `LOG_LEVEL=debug`, response header).
+- [x] Reuse Analysis hard gate completed (default EXTEND; net-new justified per row).
+- [x] No external integration introduced (no new contract-test annotation; the redaction + correlation probes are the earned-trust contracts).
+- [x] Architectural enforcement tooling recommended (no-console / T20 lint, Q4).
+- [ ] Peer review pending (Atlas — `solution-architect-reviewer`).
+- [ ] User ratification of the Q1 verdict (pino + retain consola) pending.
+
+---
+
 ## Cross-section index
 
 | ADR | Section | Summary |
@@ -787,3 +919,5 @@ rows). No external integration introduced — no contract-test annotation requir
 | ADR-050 | Application | Client-driven-onboarding application contracts — reissue cookie, org-id carry, failure causes, mode discovery, closed wire vocabulary, engaged flip (Proposed) |
 | ADR-051 | Application | Operations list as the canonical transform IR — staging tier (Proposed) |
 | ADR-052 | Application | Normalize View/Report operations into a shared relation IR — component tables, joins-only sequence, kernel visitor (Proposed) |
+| ADR-053 | Application | Cross-service structured-logging envelope + Node logger choice — `shared/logging` `LogRecord`, pino for server surfaces, retain consola in `ui/` (Proposed) |
+| ADR-054 | Application | Correlation-id binding — mint-once at ingress, `X-Request-Id` propagation, `AsyncLocalStorage`/`ContextVar` ambient binding (Proposed) |

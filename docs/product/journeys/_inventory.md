@@ -32,6 +32,7 @@ its own DISCUSS pass and lands here as a separate row.
 | J-005 | Transform toggles (preview / apply / undo) | `transform-operations-ir` (DISCUSS 2026-06-18, **backend half only**) | backend operations-IR contract authored at `docs/feature/transform-operations-ir/discuss/journey-transform-operations-ir.yaml`; full SSOT promotion awaits the UI/state-machine dimension (JOB-002) |
 | J-006 | View + report creation | future DISCUSS pass | weakest harness coverage; dive will add headless contracts |
 | J-007 | dbt export | future DISCUSS pass | already mostly server-driven via ADR-019/024; dive will be thin |
+| J-008 | Operator observability (diagnose a cross-service failure through the logs) | `log-coverage-and-quality` (DISCUSS 2026-06-20) | feature-level contract authored at `docs/feature/log-coverage-and-quality/discuss/journey-observability-sweep.yaml`; **not promoted to SSOT** — this is a cross-cutting operator/diagnosis loop (see Cross-cutting concerns below), not an end-user product flow |
 
 ---
 
@@ -45,6 +46,15 @@ its own DISCUSS pass and lands here as a separate row.
 * **Org switching.** Future feature. When it lands, every journey
   machine resets. The framework must expose a "reset all machines"
   signal.
+* **Observability / log coverage (J-008).** Cross-cutting diagnosis
+  loop spanning all five surfaces, owned by JOB-004
+  (`log-coverage-and-quality`). Every journey's machine and every
+  service should emit the shared ECS/OTel `LogRecord` envelope
+  (`ui/app/lib/log.ts`) and carry the request-spanning
+  `correlation_id`. Catalogued as provisional J-008 above but kept
+  here because it is an operator concern observed *across* journeys,
+  not a product flow of its own. Feature contract:
+  `docs/feature/log-coverage-and-quality/discuss/journey-observability-sweep.yaml`.
 
 ---
 
@@ -63,3 +73,9 @@ its own DISCUSS pass and lands here as a separate row.
   Not yet promoted to active SSOT — J-005 still needs its UI /
   state-machine dimension (JOB-002) before it lands here as a
   product journey contract.
+- 2026-06-20 — `log-coverage-and-quality` DISCUSS catalogued J-008
+  (operator observability) and recorded it as a cross-cutting
+  concern (JOB-004). Feature-level journey contract at
+  `docs/feature/log-coverage-and-quality/discuss/journey-observability-sweep.yaml`.
+  Not promoted to SSOT — it is a cross-journey operator diagnosis
+  loop, not an end-user product flow.
