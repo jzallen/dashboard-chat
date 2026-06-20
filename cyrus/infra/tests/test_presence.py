@@ -47,6 +47,13 @@ def test_connected_true_without_ttl_is_online():
     assert row_is_offline({"connected": {"BOOL": True}}, NOW) is False
 
 
+def test_schema_drifted_row_fails_closed_to_offline():
+    """A ``connected`` attribute that is not the expected ``{type: value}`` map
+    must read offline rather than raise."""
+    assert row_is_offline({"connected": True}, NOW) is True
+    assert row_is_offline({"connected": "true"}, NOW) is True
+
+
 @pytest.fixture
 def stubbed_dynamodb():
     client = boto3.client(
@@ -83,4 +90,24 @@ def test_offline_check_reports_offline_for_a_missing_row(stubbed_dynamodb):
 
     is_offline = make_offline_check(client, TABLE, now=lambda: NOW)
     assert is_offline("ghost") is True
+    stubber.assert_no_pending_responses()
+
+
+def test_offline_check_fails_closed_when_the_read_errors(stubbed_dynamodb):
+    """A DynamoDB error (throttle/network/IAM) reads offline, not a crash.
+
+    iot-only has no SQS safety net, so a presence-cache blip must yield an honest
+    503 (Linear retries) rather than take down the invocation and lose the webhook.
+    """
+    client, stubber = stubbed_dynamodb
+    stubber.add_client_error(
+        "get_item",
+        service_error_code="ProvisionedThroughputExceededException",
+        http_status_code=400,
+        expected_params={"TableName": TABLE, "Key": {"username": {"S": "zallen"}}},
+    )
+    stubber.activate()
+
+    is_offline = make_offline_check(client, TABLE, now=lambda: NOW)
+    assert is_offline("zallen") is True
     stubber.assert_no_pending_responses()
