@@ -22,7 +22,12 @@ SECRET = "test-linear-secret"
 QUEUE_URL = "https://sqs.us-east-1.amazonaws.com/000000000000/cyrus-linear-webhooks"
 IOT_ENDPOINT = "abc123-ats.iot.us-east-1.amazonaws.com"
 TOPIC_PREFIX = "cyrus/v1/sessions/"
-CREATOR_ID = "user-xyz"
+# The routing key is the natural key — the Linear username — read from the
+# trailing segment of ``creator.url``. ``CREATOR_ID`` is the surrogate UUID the
+# webhook also carries (kept for correlation), but it is NOT the routing key.
+USERNAME = "testuser"
+CREATOR_ID = "00000000-0000-0000-0000-000000000000"
+CREATOR_URL = f"https://linear.app/example-org/profiles/{USERNAME}"
 
 
 def sign(body: str) -> str:
@@ -67,13 +72,25 @@ def webhook_body() -> str:
 
 @pytest.fixture
 def routable_body() -> str:
-    """A webhook body carrying ``agentSession.creator.id`` for routing (``CREATOR_ID``)."""
+    """A webhook body whose ``creator.url`` routes to the username (``USERNAME``).
+
+    Mirrors the confirmed webhook ``creator`` shape: ``email``/``id``/``name``/
+    ``url`` with no username field, so the routing key must come from ``url``'s
+    trailing segment.
+    """
     return json.dumps(
         {
             "type": "AgentSessionEvent",
             "action": "created",
             "organizationId": "org-1",
-            "agentSession": {"creator": {"id": CREATOR_ID}},
+            "agentSession": {
+                "creator": {
+                    "email": "testuser@example.com",
+                    "id": CREATOR_ID,
+                    "name": "Test User",
+                    "url": CREATOR_URL,
+                }
+            },
         }
     )
 

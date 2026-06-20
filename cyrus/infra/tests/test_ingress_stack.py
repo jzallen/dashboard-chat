@@ -35,11 +35,11 @@ def template() -> Template:
     return Template.from_stack(stack)
 
 
-def test_provisions_a_queue_and_a_dead_letter_queue(template: Template):
+def test_ingress_stack__synthesized__provisions_queue_and_dead_letter_queue(template: Template):
     template.resource_count_is("AWS::SQS::Queue", 2)
 
 
-def test_main_queue_redrives_to_the_dlq_after_five_receives(template: Template):
+def test_ingress_stack__main_queue__redrives_to_dlq_after_five_receives(template: Template):
     template.has_resource_properties(
         "AWS::SQS::Queue",
         {
@@ -51,7 +51,7 @@ def test_main_queue_redrives_to_the_dlq_after_five_receives(template: Template):
     )
 
 
-def test_ingress_handler_is_a_python_lambda_with_the_expected_entrypoint(
+def test_ingress_stack__handler__is_python_lambda_with_expected_entrypoint(
     template: Template,
 ):
     template.has_resource_properties(
@@ -60,15 +60,15 @@ def test_ingress_handler_is_a_python_lambda_with_the_expected_entrypoint(
     )
 
 
-def test_function_url_is_public_so_linear_can_call_it(template: Template):
+def test_ingress_stack__function_url__is_public_for_linear(template: Template):
     template.has_resource_properties("AWS::Lambda::Url", {"AuthType": "NONE"})
 
 
-def test_secret_holds_the_linear_webhook_signing_key(template: Template):
+def test_ingress_stack__secret__holds_linear_webhook_signing_key(template: Template):
     template.resource_count_is("AWS::SecretsManager::Secret", 1)
 
 
-def test_handler_role_may_send_to_the_queue_and_read_the_secret(template: Template):
+def test_ingress_stack__handler_role__may_send_to_queue_and_read_secret(template: Template):
     template.has_resource_properties(
         "AWS::IAM::Policy",
         {
@@ -92,7 +92,7 @@ def test_handler_role_may_send_to_the_queue_and_read_the_secret(template: Templa
     )
 
 
-def test_pump_consume_policy_grants_drain_rights_and_is_attached_to_nothing(
+def test_ingress_stack__pump_consume_policy__grants_drain_rights_and_attached_to_nothing(
     template: Template,
 ):
     template.has_resource_properties(
@@ -110,7 +110,7 @@ def test_pump_consume_policy_grants_drain_rights_and_is_attached_to_nothing(
     )
 
 
-def test_exposes_url_queue_and_pump_policy_arn_as_outputs(template: Template):
+def test_ingress_stack__synthesized__exposes_url_queue_and_pump_policy_arn_as_outputs(template: Template):
     template.has_output("WebhookUrl", Match.any_value())
     template.has_output("QueueUrl", Match.any_value())
     template.has_output("PumpConsumePolicyArn", Match.any_value())
@@ -122,7 +122,7 @@ def test_exposes_url_queue_and_pump_policy_arn_as_outputs(template: Template):
 # and the function must learn the IoT Data-plane host via env.
 
 
-def test_handler_role_may_publish_to_iot_session_topics(template: Template):
+def test_ingress_stack__handler_role__may_publish_to_iot_session_topics(template: Template):
     """The execution role is granted iot:Publish scoped to cyrus/v1/sessions/*."""
     template.has_resource_properties(
         "AWS::IAM::Policy",
@@ -145,13 +145,118 @@ def test_handler_role_may_publish_to_iot_session_topics(template: Template):
     )
 
 
-def test_handler_env_exposes_the_iot_endpoint(template: Template):
+def test_ingress_stack__handler_env__exposes_iot_endpoint(template: Template):
     """The IoT Data-plane endpoint host is wired to the Lambda via IOT_ENDPOINT."""
     template.has_resource_properties(
         "AWS::Lambda::Function",
         {
             "Environment": {
                 "Variables": Match.object_like({"IOT_ENDPOINT": Match.any_value()})
+            }
+        },
+    )
+
+
+# --- consumer-presence cache: lifecycle events -> DynamoDB(TTL) -----------------
+#
+# Presence is kept fresh out of band by an IoT rule writing into a TTL'd,
+# on-demand DynamoDB table the ingress handler reads to detect offline consumers.
+
+
+def test_ingress_stack__presence_table__is_on_demand_with_ttl_keyed_by_username(template: Template):
+    """The presence table is on-demand, TTL-enabled, and keyed by username."""
+    template.has_resource_properties(
+        "AWS::DynamoDB::Table",
+        {
+            "BillingMode": "PAY_PER_REQUEST",
+            "KeySchema": [{"AttributeName": "username", "KeyType": "HASH"}],
+            "TimeToLiveSpecification": {"AttributeName": "ttl", "Enabled": True},
+        },
+    )
+
+
+def test_ingress_stack__presence_rule__routes_lifecycle_events_to_dynamodb(template: Template):
+    """An IoT rule selects from the presence lifecycle topic into a DynamoDBv2 action."""
+    template.has_resource_properties(
+        "AWS::IoT::TopicRule",
+        {
+            "TopicRulePayload": Match.object_like(
+                {
+                    "Sql": Match.string_like_regexp(r".*\$aws/events/presence/.*"),
+                    "Actions": Match.array_with(
+                        [
+                            Match.object_like(
+                                {
+                                    "DynamoDBv2": Match.object_like(
+                                        {
+                                            "PutItem": {"TableName": Match.any_value()},
+                                            "RoleArn": Match.any_value(),
+                                        }
+                                    )
+                                }
+                            )
+                        ]
+                    ),
+                }
+            )
+        },
+    )
+
+
+def test_ingress_stack__presence_rule_role__is_scoped_to_putitem_on_table(template: Template):
+    """The rule's role may only PutItem (no broader DynamoDB access)."""
+    template.has_resource_properties(
+        "AWS::IAM::Policy",
+        {
+            "PolicyDocument": {
+                "Statement": Match.array_with(
+                    [
+                        Match.object_like(
+                            {"Action": "dynamodb:PutItem", "Effect": "Allow"}
+                        )
+                    ]
+                )
+            }
+        },
+    )
+
+
+# --- iot-only delivery mode: handler reads the presence cache ------------------
+#
+# The handler learns its delivery mode and the presence table via env, and may
+# read (only) that table to decide online vs offline.
+
+
+def test_ingress_stack__handler_env__exposes_delivery_mode_and_presence_table(template: Template):
+    """DELIVERY_MODE and PRESENCE_TABLE are wired to the Lambda via env."""
+    template.has_resource_properties(
+        "AWS::Lambda::Function",
+        {
+            "Environment": {
+                "Variables": Match.object_like(
+                    {
+                        "DELIVERY_MODE": Match.any_value(),
+                        "PRESENCE_TABLE": Match.any_value(),
+                    }
+                )
+            }
+        },
+    )
+
+
+def test_ingress_stack__handler_role__may_read_presence_table(template: Template):
+    """The execution role is granted dynamodb:GetItem (the offline-detection read)."""
+    template.has_resource_properties(
+        "AWS::IAM::Policy",
+        {
+            "PolicyDocument": {
+                "Statement": Match.array_with(
+                    [
+                        Match.object_like(
+                            {"Action": "dynamodb:GetItem", "Effect": "Allow"}
+                        )
+                    ]
+                )
             }
         },
     )
