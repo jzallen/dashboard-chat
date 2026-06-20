@@ -5,7 +5,7 @@
 // the agent emits JSON chat events on the wire and ui/ routes behaviour by their
 // `type` discriminant. Adopting the shared zod schema in ui/ is a named follow-up.
 //
-// This runs on the CLIENT: the /bff/chat resource route pipes the upstream SSE
+// This runs on the CLIENT: the /ui-server/chat resource route pipes the upstream SSE
 // straight back un-buffered (DWD-3), and this reader parses the frames in the
 // browser. Frames are AI-SDK-v6 UIMessage chunks separated by a blank line:
 //

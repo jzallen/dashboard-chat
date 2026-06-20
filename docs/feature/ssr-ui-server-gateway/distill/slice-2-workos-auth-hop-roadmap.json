@@ -1,15 +1,15 @@
 {
-  "feature": "ssr-bff-gateway",
+  "feature": "ssr-ui-server-gateway",
   "slice": "slice-2-workos-auth-hop",
   "wave": "DELIVER",
   "shape": "bug-fix (known cause)",
   "target_tree": "auth-proxy/",
   "outside_in": true,
-  "acceptance_test": "auth-proxy/app.test.ts (describe: \"ssr-bff-gateway slice-2: /worker rehydrates the credential as a Bearer for the agent hop\")",
+  "acceptance_test": "auth-proxy/app.test.ts (describe: \"ssr-ui-server-gateway slice-2: /worker rehydrates the credential as a Bearer for the agent hop\")",
   "acceptance_gate": "cd auth-proxy && npx vitest run",
   "driving_port": "auth-proxy Hono route `app.all('/worker/*')` (via app.fetch) — the real proxy hop, so a TBU defect is structurally impossible",
   "scenario": "a cookie-only chat turn reaches the agent with `Authorization: Bearer <validated token>` + identity headers, in BOTH dev and workos modes",
-  "decisions_ref": "docs/feature/ssr-bff-gateway/distill/slice-2-workos-auth-hop-notes.md",
+  "decisions_ref": "docs/feature/ssr-ui-server-gateway/distill/slice-2-workos-auth-hop-notes.md",
   "problem": "The last hop of a live assistant transform (agent → backend) 401s in BOTH dev and workos. A cookie-only browser turn (ui/ httpOnly auth_token cookie, NO Bearer) reaches the agent with no Authorization header; agent extractJwt (agent/lib/chat/handleChat.ts:78-84) reads only Authorization → jwt=''; backendClient (agent/lib/chat/backend-client.ts:25) posts `Bearer ''` with no cookie; auth-proxy's `/api/*` catch-all (app.ts:865) refuses with 401 in both modes (no dev bypass).",
   "fix": "auth-proxy ONLY. In buildAgentIdentityHeaders (app.ts:591) rehydrate the validated credential as `Authorization: Bearer <token>` on the upstream /worker request, in BOTH branches. NOT M2M — backend is a pure resource server keyed on injected X-User-Id/X-Org-Id/X-User-Email (ADR-043); it never validates tokens. No agent, no backend change.",
   "steps": [

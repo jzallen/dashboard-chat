@@ -5,7 +5,7 @@
  * `api-client.ts`) — proxy through auth-proxy via this single function, so the
  * cookie→Bearer forwarding logic lives in exactly one place.
  *
- * Runs ONLY in RRv7 server loaders/actions (the ui/ BFF): it reads the inbound
+ * Runs ONLY in RRv7 server loaders/actions (the ui-server): it reads the inbound
  * USER credential off the Request (`cookie` + `authorization`) and forwards it to
  * auth-proxy, which re-verifies the session and injects X-User-Id / X-Org-Id
  * downstream. The raw upstream Response is returned unmodified (no body read) so

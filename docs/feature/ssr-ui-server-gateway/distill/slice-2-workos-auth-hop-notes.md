@@ -1,4 +1,4 @@
-# DISTILL/DELIVER Notes — ssr-bff-gateway (Slice 2: workos auth hop)
+# DISTILL/DELIVER Notes — ssr-ui-server-gateway (Slice 2: workos auth hop)
 
 > Focused auth fix so assistant-initiated catalog transforms authenticate on the
 > **agent → backend** hop, unblocking testing in `AUTH_MODE=workos` and fixing the
@@ -26,7 +26,7 @@ token. Still the user-credential-forward variant; M2M on-behalf-of stays deferre
 ## The break (verified by code trace, then reproduced as a RED unit test)
 
 A live assistant chat turn travels:
-`ui/` (cookie-only auth) → `/bff/chat` → `agent-client` (forwards cookie+authz) →
+`ui/` (cookie-only auth) → `/ui-server/chat` → `agent-client` (forwards cookie+authz) →
 auth-proxy `/worker/chat` → agent → agent calls backend to PERSIST a transform.
 
 The last hop fails in **both** dev and workos:
@@ -82,7 +82,7 @@ downstream agent port (`vi.stubGlobal("fetch")`), so the assertion reads the exa
 headers auth-proxy forwards upstream. A correct-but-unwired implementation cannot
 pass — the test enters through the production route, not a helper.
 
-Scenarios (`auth-proxy/app.test.ts`, describe "ssr-bff-gateway slice-2…"):
+Scenarios (`auth-proxy/app.test.ts`, describe "ssr-ui-server-gateway slice-2…"):
 
 | # | Mode | Credential | Asserts | Pre-fix |
 |---|------|-----------|---------|---------|

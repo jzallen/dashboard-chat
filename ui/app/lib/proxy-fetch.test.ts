@@ -1,5 +1,5 @@
 // @vitest-environment node
-// proxy-fetch is server-side BFF code; test it under node's undici Request/
+// proxy-fetch is server-side ui-server code; test it under node's undici Request/
 // Headers/fetch (matching the RRv7 server runtime), not happy-dom.
 //
 // AC3 (DC-8): the ONE shared forwarding primitive targets `authProxyUrl + <prefix>
@@ -40,7 +40,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe("proxyFetch — the one shared forwarding primitive (AC3)", () => {
   it("targets authProxyUrl + <prefix> + <path> and forwards cookie + authorization for the /worker prefix", async () => {
     const calls = stubFetch(new Response("ok"));
-    const request = new Request("http://localhost/bff/health", {
+    const request = new Request("http://localhost/ui-server/health", {
       headers: new Headers({
         cookie: "session=1; auth_token=abc",
         authorization: "Bearer user-jwt",
@@ -58,7 +58,7 @@ describe("proxyFetch — the one shared forwarding primitive (AC3)", () => {
 
   it("targets authProxyUrl + <prefix> + <path> and forwards the credential for the /api prefix", async () => {
     const calls = stubFetch(new Response("ok"));
-    const request = new Request("http://localhost/bff/projects", {
+    const request = new Request("http://localhost/ui-server/projects", {
       headers: new Headers({
         cookie: "session=1; auth_token=abc",
         authorization: "Bearer user-jwt",
@@ -76,7 +76,7 @@ describe("proxyFetch — the one shared forwarding primitive (AC3)", () => {
 
   it("omits credential headers that are absent on the inbound request", async () => {
     const calls = stubFetch(new Response("ok"));
-    const request = new Request("http://localhost/bff/projects"); // no cookie/auth
+    const request = new Request("http://localhost/ui-server/projects"); // no cookie/auth
 
     await proxyFetch(request, "/api", "/projects");
 
@@ -91,7 +91,7 @@ describe("proxyFetch — the one shared forwarding primitive (AC3)", () => {
       headers: { "content-type": "text/event-stream" },
     });
     stubFetch(upstream);
-    const request = new Request("http://localhost/bff/chat", { method: "POST" });
+    const request = new Request("http://localhost/ui-server/chat", { method: "POST" });
 
     const res = await proxyFetch(request, "/worker", "/chat", { method: "POST" });
     expect(res).toBe(upstream);

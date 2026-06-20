@@ -1,6 +1,6 @@
 # Slice 3 — Assistant transform intent (DISTILL notes)
 
-Part of the **ssr-bff-gateway** feature. Slices 1 (live `/bff/chat` relay) and 2
+Part of the **ssr-ui-server-gateway** feature. Slices 1 (live `/ui-server/chat` relay) and 2
 (auth-proxy Bearer rehydration on the `/worker` hop) are on `main`. This slice
 closes the last gap: a live assistant turn against an open dataset now actually
 *applies a transform* instead of returning a generic chat answer, and the

@@ -1,8 +1,8 @@
-# JTBD Job Stories — SSR BFF Gateway
+# JTBD Job Stories — SSR ui-server Gateway
 
 > DISCUSS-wave capture. Job stories derived faithfully from the brainstorm in
 > [`idea-capture.md`](./idea-capture.md). No design decisions; these name the
-> *jobs* the SSR-BFF-gateway idea exists to serve. Job-story form:
+> *jobs* the SSR-ui-server-gateway idea exists to serve. Job-story form:
 > **When [situation], I want to [motivation], so I can [outcome].**
 >
 > Note: the "users" here are mixed — some jobs serve the **client/UI engineer**,
@@ -25,10 +25,10 @@ rather than three.
   fans out to backend/agent/ui-state.
 - **Emotional:** confidence from a single, owned seam instead of cross-service
   coupling leaking into the browser.
-- **Social:** present a clean BFF boundary that reads as idiomatic RRv7, not a
+- **Social:** present a clean ui-server boundary that reads as idiomatic RRv7, not a
   bespoke proxy tangle.
 
-*Realism note from brainstorm: this is the standard BFF shape (RRv7
+*Realism note from brainstorm: this is the standard ui-server shape (RRv7
 loaders/actions + resource routes; same as Next route handlers / SvelteKit
 endpoints). The collapse is the END state (Phase 4), reached by strangler-fig,
 not big-bang.*
@@ -40,13 +40,13 @@ not big-bang.*
 **Whose job:** the downstream-service / security owner.
 
 **When** I'm deciding who my backend/agent/ui-state services should trust,
-**I want to** accept calls from ONE service identity (the BFF) acting
+**I want to** accept calls from ONE service identity (the ui-server) acting
 on-behalf-of a user, instead of trusting JWTs forwarded by the browser,
 **so I can** resolve the identity-attribution TODO
 (`auth-proxy/lib/m2m.ts:29-38`) and shrink the trust surface to a single caller.
 
 - **Functional:** auth-proxy validates the session + injects `X-User-Id` at the
-  edge; the BFF holds service creds, mints M2M, and calls downstream as itself
+  edge; the ui-server holds service creds, mints M2M, and calls downstream as itself
   for user X.
 - **Emotional:** relief at one auditable trust boundary instead of many
   browser-originating tokens.
@@ -69,7 +69,7 @@ question).*
 then fetch.
 
 - **Functional:** promote cold/initial reads (org-global, initial lineage
-  bundle) to server loaders fetching via the BFF; SSR delivers data, not just a
+  bundle) to server loaders fetching via the ui-server; SSR delivers data, not just a
   shell.
 - **Emotional:** the app feels instant and substantial on arrival.
 - **Social:** the product looks production-grade, not like a spinner farm.
@@ -90,14 +90,14 @@ catalog.*
 **I want to** aggregate those four calls server-side into one client response,
 **so I can** replace four browser round-trips with a single one.
 
-- **Functional:** a BFF loader fans out `/api/sources`, `/api/datasets`,
+- **Functional:** a ui-server loader fans out `/api/sources`, `/api/datasets`,
   `/api/projects/{pid}/views`, `/api/projects/{pid}/reports` and returns one
   bundle.
 - **Emotional:** satisfaction at removing a visible waterfall.
 - **Social:** demonstrably fewer round-trips, partly buying back the double-hop
   latency cost.
 
-*Realism note from brainstorm: aggregation partly offsets the extra hop the BFF
+*Realism note from brainstorm: aggregation partly offsets the extra hop the ui-server
 introduces; a transform reflection still needs a per-node preview hydrate
 (`GET /api/datasets/{id}?include_preview=true`), not just a list re-fetch.*
 
@@ -107,7 +107,7 @@ introduces; a transform reflection still needs a per-node preview hydrate
 
 **Whose job:** the client / `ui/` engineer (delivery safety).
 
-**When** I'm moving the plumbing from direct origins onto the BFF,
+**When** I'm moving the plumbing from direct origins onto the ui-server,
 **I want to** flip one route/endpoint at a time with the old direct path still
 alive, each slice independently shippable and reversible,
 **so I can** avoid a big-bang cutover and roll back any single slice without
@@ -115,7 +115,7 @@ touching the others.
 
 - **Functional:** per-route / per-endpoint flips (route-by-route or feature
   flag); the `DataCatalog` `dataSource` indirection means a slice is "repoint
-  this read at a BFF route," not "rewrite a component."
+  this read at a ui-server route," not "rewrite a component."
 - **Emotional:** safety — every step is provable in the live stack before the
   next.
 - **Social:** matches the merge-queue carpaccio cadence; reads as disciplined
@@ -127,23 +127,23 @@ underneath.*
 
 ---
 
-## J6 — De-risk the BFF and unblock the live assistant-transform with one move
+## J6 — De-risk the ui-server and unblock the live assistant-transform with one move
 
 **Whose job:** the client / `ui/` engineer (sequencing leverage).
 
 **When** I'm choosing where to start,
-**I want to** stand up the BFF seam for ONE endpoint (Phase 0) that proves
+**I want to** stand up the ui-server seam for ONE endpoint (Phase 0) that proves
 "web-ssr authenticates a backend read server-side,"
-**so I can** simultaneously de-risk the whole BFF direction AND unblock the
+**so I can** simultaneously de-risk the whole ui-server direction AND unblock the
 M2M-clean live-transform skeleton, which needs the same capability.
 
-- **Functional:** one resource route (e.g. `/bff/orgs/me`) via M2M +
+- **Functional:** one resource route (e.g. `/ui-server/orgs/me`) via M2M +
   on-behalf-of, zero blast radius; the direct path still hits `/api/orgs/me`.
 - **Emotional:** momentum from a single small move that pays down two debts.
 - **Social:** a well-chosen first slice that proves the gating question cheaply.
 
 *Realism note from brainstorm: Phase 0 is explicitly the shared prerequisite for
-both the BFF and the live assistant-transform work; do not proceed past it until
+both the ui-server and the live assistant-transform work; do not proceed past it until
 green.*
 
 ---

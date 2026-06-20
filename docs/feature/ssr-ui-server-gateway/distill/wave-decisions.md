@@ -1,8 +1,8 @@
-# DISTILL Decisions — ssr-bff-gateway (Slice 1: live assistant chat wire)
+# DISTILL Decisions — ssr-ui-server-gateway (Slice 1: live assistant chat wire)
 
-> Outside-In walking skeleton for the FIRST slice of the SSR-as-BFF progression:
+> Outside-In walking skeleton for the FIRST slice of the SSR-as-ui-server progression:
 > connect the `ui/` assistant to the live `agent/` rails through a React Router v7
-> **server-side resource route** (`/bff/chat`), removing the `setTimeout` mock for
+> **server-side resource route** (`/ui-server/chat`), removing the `setTimeout` mock for
 > the primary `AssistantOverlay` path. Target tree is **`ui/`** (the new app), NOT
 > `frontend/` (retiring). `frontend/` is reference-only.
 
@@ -10,7 +10,7 @@
 
 Read DISCUSS SSOT: `discuss/idea-capture.md`, `discuss/acceptance-criteria.feature`,
 `discuss/wave-decisions.md`, `discuss/jtbd-job-stories.md`,
-`discuss/journey-ssr-bff-gateway-visual.md`, `discuss/open-questions.md`.
+`discuss/journey-ssr-ui-server-gateway-visual.md`, `discuss/open-questions.md`.
 
 - `+ discuss/idea-capture.md`
 - `+ discuss/acceptance-criteria.feature`
@@ -35,6 +35,15 @@ violated; we are sequencing within the captured intent, not against it.
 
 ## Key Decisions
 
+> **Naming — `ui-server` (formerly `bff`).** The `ui/` server-side resource routes
+> that broker the live agent rails are named **`ui-server`** (`/ui-server/*`),
+> mirroring `ui-state`. They were originally labelled `bff`; the route prefix,
+> filenames, feature slug (`ssr-ui-server-gateway`), and acceptance test were
+> renamed to drop the unspelled initialism. Older git history and closed issues may
+> still say `bff` — same concept. This is purely a domain-language change; the
+> generic "backend-for-frontend" pattern term used elsewhere for `ui-state` and the
+> auth-proxy OAuth2 flow is unrelated and unchanged.
+
 - **[DWD-1] Server runtime for `ui/` is enabled (`ssr:false → ssr:true`).**
   Server-side loaders/resource-routes cannot exist while `ssr:false`. This is the
   approved first step (architect decision A, supplied by the dispatching prompt).
@@ -47,7 +56,7 @@ violated; we are sequencing within the captured intent, not against it.
   on-behalf-of is DEFERRED. Mirrors the `frontend/app/lib/ui-state-client.ts`
   precedent (forward the user Bearer; auth-proxy injects `X-User-Id`/`X-Org-Id`).
 
-- **[DWD-3] SSE relay is an un-buffered passthrough.** `/bff/chat` action calls
+- **[DWD-3] SSE relay is an un-buffered passthrough.** `/ui-server/chat` action calls
   agent `/worker/chat` via auth-proxy server-side and returns
   `new Response(upstream.body, { status, headers })`. The server does NOT read or
   parse the SSE body; frame parsing stays CLIENT-SIDE.
@@ -66,7 +75,7 @@ violated; we are sequencing within the captured intent, not against it.
   faked costly external).** The thinnest faithful proof is a **`ui/` vitest
   integration test**, NOT a Python `tests/acceptance/<feature>/` e2e suite. The
   vitest test exercises the REAL client component (`AssistantOverlay`, mock removed)
-  AND the REAL server-side resource-route `action` (the BFF broker hop) in one
+  AND the REAL server-side resource-route `action` (the ui-server broker hop) in one
   process; the SOLE mock is the true downstream port — auth-proxy's `/worker/chat`
   agent upstream — stubbed via `fetch`. This is port-to-port (client driving port →
   server broker → mocked downstream port) and makes TBU defects structurally
@@ -74,7 +83,7 @@ violated; we are sequencing within the captured intent, not against it.
   live `vite dev` + auth-proxy + agent + backend stack and is heavier than faithful.
 
   Placement: under `ui/app/` (vitest `include: app/**/*.test.{ts,tsx}`) at
-  `ui/app/__acceptance__/ssr-bff-chat-wire.test.tsx`. Tagged conceptually
+  `ui/app/__acceptance__/ssr-ui-server-chat-wire.test.tsx`. Tagged conceptually
   `@walking_skeleton @real-io` (real component + real broker; faked agent port).
 
   **What the fake CANNOT model** (honest limits): real SSE backpressure across an

@@ -1,10 +1,10 @@
-// /bff/health — a resource route (loader only, no component). The Phase-0
-// auth-hop proof for the SSR-BFF gateway: it proves the full chain
+// /ui-server/health — a resource route (loader only, no component). The Phase-0
+// auth-hop proof for the SSR ui-server gateway: it proves the full chain
 //
 //   browser -> RRv7 server (this loader) -> auth-proxy:1042 -> agent /health
 //
 // works server-side with the inbound user credential forwarded, BEFORE the chat
-// relay depends on it. See docs/feature/ssr-bff-gateway/distill/roadmap.json
+// relay depends on it. See docs/feature/ssr-ui-server-gateway/distill/roadmap.json
 // step 3.
 import type { LoaderFunctionArgs } from "react-router";
 
