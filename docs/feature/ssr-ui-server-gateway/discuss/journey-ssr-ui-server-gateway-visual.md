@@ -1,4 +1,4 @@
-# Architecture Journey Sketch — SSR BFF Gateway
+# Architecture Journey Sketch — SSR ui-server Gateway
 
 > DISCUSS-wave capture. A short journey sketch of the **strangler-fig
 > progression Phase 0 → 4** from [`idea-capture.md`](./idea-capture.md). This is
@@ -26,15 +26,15 @@ browser ──┤ /worker/*  ─────────────────
 ## Target (end state)
 
 ```
-browser ── auth-proxy (validate session, inject X-User-Id) ── web-ssr (BFF)
+browser ── auth-proxy (validate session, inject X-User-Id) ── web-ssr (ui-server)
                                                                  │ M2M + on-behalf-of
                                                                  ├──► backend
                                                                  ├──► agent
                                                                  └──► ui-state
 ```
 
-- Client knows ONE origin (its SSR server). The BFF fans out with service creds.
-- Downstream services trust ONLY the BFF.
+- Client knows ONE origin (its SSR server). The ui-server fans out with service creds.
+- Downstream services trust ONLY the ui-server.
 
 ---
 
@@ -42,7 +42,7 @@ browser ── auth-proxy (validate session, inject X-User-Id) ── web-ssr (B
 
 ### Step 0 — Stand up the seam, move nothing  *(Phase 0)*
 
-- **What moves:** nothing functional. One resource route (e.g. `/bff/orgs/me`)
+- **What moves:** nothing functional. One resource route (e.g. `/ui-server/orgs/me`)
   proves `web-ssr` can authenticate ONE backend read server-side via M2M +
   on-behalf-of. Direct path still hits `/api/orgs/me`.
 - **Gating question answered:** "can web-ssr authenticate a backend read
@@ -55,7 +55,7 @@ browser ── auth-proxy (validate session, inject X-User-Id) ── web-ssr (B
 ### Step 1 — Cold reads to server loaders  *(Phase 1)*
 
 - **What moves:** org-global + initial lineage bundle reads, promoted from
-  `clientLoader` to server loaders fetching via the BFF; the 4 lineage calls
+  `clientLoader` to server loaders fetching via the ui-server; the 4 lineage calls
   aggregate into 1. The `DataCatalog` stays, now hydrated from loader data on
   first paint.
 - **What stays put:** live/reflection reads remain client-side.
@@ -67,7 +67,7 @@ browser ── auth-proxy (validate session, inject X-User-Id) ── web-ssr (B
 ### Step 2 — Mutations behind actions/resource routes  *(Phase 2)*
 
 - **What moves:** optimistic write-throughs (audit toggle first, then
-  transforms) flip from `client->auth-proxy->backend` to RRv7 actions the BFF
+  transforms) flip from `client->auth-proxy->backend` to RRv7 actions the ui-server
   executes via M2M-on-behalf-of. Optimistic UI stays in the catalog; only the
   network TARGET changes.
 - **What it cashes in:** the identity-attribution fix.
@@ -78,7 +78,7 @@ browser ── auth-proxy (validate session, inject X-User-Id) ── web-ssr (B
 
 - **What moves:** a resource route proxies the agent SSE (pipe the
   `ReadableStream`, prove NO buffering through hops), then point the chat client
-  at the BFF route instead of `/worker/chat`. ui-state `EventSource` likewise IF
+  at the ui-server route instead of `/worker/chat`. ui-state `EventSource` likewise IF
   full collapse is wanted.
 - **Why last:** the direct path works, and this is where the hot-path risk
   concentrates (backpressure, long-lived connections, memory).
@@ -89,7 +89,7 @@ browser ── auth-proxy (validate session, inject X-User-Id) ── web-ssr (B
 
 - **What moves:** strip the client's knowledge of `/api`, `/worker`,
   `/ui-state`; nginx simplifies to static + everything->ssr; downstream services
-  drop browser-JWT trust to accept ONLY M2M from the BFF.
+  drop browser-JWT trust to accept ONLY M2M from the ui-server.
 - **Why last:** the security win is BANKED at the END, after every path is
   proven.
 - **Engineer confidence:** *tested → consolidated.* Single origin, single trust
@@ -105,7 +105,7 @@ uncertain → grounded → encouraged → committed → tested-under-load → co
 ```
 
 The arc only ever moves up because **the old direct path stays alive** until each
-BFF slice is proven in the live stack, and **any slice rolls back
+ui-server slice is proven in the live stack, and **any slice rolls back
 independently** (per-route / per-endpoint flips). The `DataCatalog` `dataSource`
 indirection is the harness that makes each step a small repoint, not a rewrite.
 
@@ -115,6 +115,6 @@ indirection is the harness that makes each step a small repoint, not a rewrite.
 
 The single artifact that every step passes forward is the **`DataCatalog`
 `dataSource` seam**. Its single source of truth is `ui/`'s catalog layer
-(`fixtureSource` / `metadataApiSource` today; a BFF source added beneath it). No
+(`fixtureSource` / `metadataApiSource` today; a ui-server source added beneath it). No
 component changes as the plumbing moves — that invariant is what makes the
 journey a strangler fig rather than a cutover.

@@ -1,8 +1,8 @@
 // @vitest-environment node
-// Resource-route loader: server-side BFF code, tested under node's undici.
+// Resource-route loader: server-side ui-server code, tested under node's undici.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { loader } from "./bff-health";
+import { loader } from "./ui-server-health";
 
 const AUTH_PROXY_URL = "http://auth-proxy.test";
 
@@ -20,7 +20,7 @@ function stubFetch(impl: (url: string, init: RequestInit) => Response): string[]
 }
 
 function req(): Request {
-  return new Request("http://localhost/bff/health", {
+  return new Request("http://localhost/ui-server/health", {
     headers: new Headers({ cookie: "session=1" }),
   });
 }
@@ -30,7 +30,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-describe("/bff/health resource route (auth-hop proof)", () => {
+describe("/ui-server/health resource route (auth-hop proof)", () => {
   it("relays the agent health status server-side through /worker/health", async () => {
     const seen = stubFetch(
       () => new Response(JSON.stringify({ status: "ok" }), { status: 200 }),

@@ -1,5 +1,5 @@
 {
-  "feature": "ssr-bff-gateway",
+  "feature": "ssr-ui-server-gateway",
   "slice": "slice-3-assistant-transform-intent",
   "goal": "Live assistant applies transforms against an open dataset (agent resolves the dataset schema from the backend) and the AssistantOverlay shows its dataset context.",
   "entry_wave": "DISTILL",

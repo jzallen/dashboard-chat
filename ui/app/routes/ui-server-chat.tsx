@@ -1,4 +1,4 @@
-// /bff/chat — a resource route (action only, no component): the ui/ server-side
+// /ui-server/chat — a resource route (action only, no component): the ui/ server-side
 // broker that relays the agent's chat SSE stream straight back to the client.
 //
 // The SSE RELAY is an UN-BUFFERED PASSTHROUGH (DWD-3): the action POSTs to agent
@@ -10,7 +10,7 @@
 // server. A non-2xx upstream (e.g. auth-proxy 401) passes through unchanged so the
 // client can react / the slice can roll back cleanly.
 //
-// See docs/feature/ssr-bff-gateway/distill/roadmap.json step 4.
+// See docs/feature/ssr-ui-server-gateway/distill/roadmap.json step 4.
 import type { ActionFunctionArgs } from "react-router";
 
 import { agentFetch } from "../lib/agent-client";

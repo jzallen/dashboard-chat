@@ -1,8 +1,8 @@
 // @vitest-environment node
-// Resource-route action: server-side BFF code, tested under node's undici.
+// Resource-route action: server-side ui-server code, tested under node's undici.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { action } from "./bff-chat";
+import { action } from "./ui-server-chat";
 
 const AUTH_PROXY_URL = "http://auth-proxy.test";
 
@@ -22,7 +22,7 @@ function stubFetch(response: Response): () => Captured {
 }
 
 function chatRequest(body: unknown): Request {
-  return new Request("http://localhost/bff/chat", {
+  return new Request("http://localhost/ui-server/chat", {
     method: "POST",
     headers: new Headers({
       cookie: "session=1",
@@ -37,7 +37,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-describe("/bff/chat resource route (agent SSE relay)", () => {
+describe("/ui-server/chat resource route (agent SSE relay)", () => {
   it("relays POST /worker/chat server-side, forwarding the credential and body", async () => {
     const captured = stubFetch(
       new Response('data: {"type":"finish"}\n\n', {

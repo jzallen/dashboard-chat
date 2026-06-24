@@ -1,4 +1,4 @@
-# DISCUSS Decisions — ssr-bff-gateway
+# DISCUSS Decisions — ssr-ui-server-gateway
 
 > **Mode: CAPTURE-ONLY.** This DISCUSS wave preserved a brainstormed architecture
 > direction into faithful idea-preservation artifacts. It deliberately produced
@@ -10,7 +10,7 @@
 ## Key Decisions
 
 - **[D1] Capture, do not design.** The user was thinking out loud about an
-  architecture direction (SSR server as a single-integration-point BFF) and
+  architecture direction (SSR server as a single-integration-point ui-server) and
   wanted it checkpointed so it is not lost. Scope held to preservation. (see:
   [`idea-capture.md`](./idea-capture.md))
 - **[D2] Idea preserved verbatim-in-substance.** `idea-capture.md` reproduces the
@@ -21,7 +21,7 @@
 - **[D3] Genuinely-undecided points recorded as open questions, not invented
   answers.** SSE relay mechanics, ui-state collapse, on-behalf-of scoping,
   latency budget, auth-proxy's end-state role, preview hydrate, flip mechanism,
-  and BFF credential handling are all left for DESIGN. (see:
+  and ui-server credential handling are all left for DESIGN. (see:
   [`open-questions.md`](./open-questions.md))
 - **[D4] Decided points flagged to prevent re-litigation.** Reactive reads stay
   client-side; SSE last; security banked last; Phase 0 is the shared
@@ -31,16 +31,16 @@
 ## Requirements Summary
 
 - **Primary jobs/user needs:** one stable client integration surface (the SSR
-  server as a BFF); downstream services trusting one M2M caller instead of
+  server as a ui-server); downstream services trusting one M2M caller instead of
   browser-forwarded JWTs; real data on first paint; collapsing the 4-fetch
   lineage waterfall into one response; migrating one read/mutation/stream at a
   time with independent rollback; a Phase-0 seam that simultaneously de-risks the
-  BFF and unblocks the live assistant-transform skeleton. (see:
+  ui-server and unblocks the live assistant-transform skeleton. (see:
   [`jtbd-job-stories.md`](./jtbd-job-stories.md))
-- **Walking skeleton scope:** Phase 0 — stand up the BFF seam for ONE downstream
-  read (illustratively `/bff/orgs/me`) via M2M + on-behalf-of, zero blast radius,
+- **Walking skeleton scope:** Phase 0 — stand up the ui-server seam for ONE downstream
+  read (illustratively `/ui-server/orgs/me`) via M2M + on-behalf-of, zero blast radius,
   direct path untouched. Not designed here; named as the captured starting point.
-- **Feature type:** cross-cutting (frontend SSR/BFF + auth/identity + downstream
+- **Feature type:** cross-cutting (frontend SSR/ui-server + auth/identity + downstream
   service trust), captured at the architecture-direction level.
 
 ## Constraints Established (from the brainstorm, not invented)
@@ -50,7 +50,7 @@
   loaders.
 - The SSR node server moves onto the hot path for everything once migration
   completes; SSE relay is the hard, last part and concentrates the hot-path risk.
-- The old direct path stays alive until each BFF slice is proven; every slice is
+- The old direct path stays alive until each ui-server slice is proven; every slice is
   independently shippable and reversible (carpaccio, merge-queue cadence).
 - The `DataCatalog` `dataSource` abstraction is the strangler-fig harness — a
   slice is a repoint, not a component rewrite.
@@ -68,7 +68,7 @@
 |----------|------|
 | Idea capture (committed FIRST) | [`idea-capture.md`](./idea-capture.md) |
 | JTBD job stories | [`jtbd-job-stories.md`](./jtbd-job-stories.md) |
-| Architecture-journey sketch (Phase 0→4) | [`journey-ssr-bff-gateway-visual.md`](./journey-ssr-bff-gateway-visual.md) |
+| Architecture-journey sketch (Phase 0→4) | [`journey-ssr-ui-server-gateway-visual.md`](./journey-ssr-ui-server-gateway-visual.md) |
 | Given-When-Then acceptance criteria | [`acceptance-criteria.feature`](./acceptance-criteria.feature) |
 | Open questions | [`open-questions.md`](./open-questions.md) |
 | This summary | `wave-decisions.md` |

@@ -1,5 +1,5 @@
 // @vitest-environment node
-// agent-client is server-side BFF code; test it under node's undici Request/
+// agent-client is server-side ui-server code; test it under node's undici Request/
 // Headers/fetch (matching the RRv7 server runtime), not happy-dom.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -38,7 +38,7 @@ describe("agentFetch — ui/ server-side downstream client", () => {
     // A server-received Request carries the Cookie header. Build it from a
     // pre-made Headers (guard "none") so the forbidden-name filter the object-init
     // path applies does not strip `cookie` (the runtime delivers it intact).
-    const request = new Request("http://localhost/bff/health", {
+    const request = new Request("http://localhost/ui-server/health", {
       headers: new Headers({
         cookie: "session=1; auth_token=abc",
         authorization: "Bearer user-jwt",
@@ -56,7 +56,7 @@ describe("agentFetch — ui/ server-side downstream client", () => {
 
   it("passes method and body through for POST relays", async () => {
     const calls = stubFetch(new Response("ok"));
-    const request = new Request("http://localhost/bff/chat", {
+    const request = new Request("http://localhost/ui-server/chat", {
       method: "POST",
       headers: { cookie: "session=1" },
       body: JSON.stringify({ messages: [] }),
@@ -84,7 +84,7 @@ describe("agentFetch — ui/ server-side downstream client", () => {
       headers: { "content-type": "text/event-stream" },
     });
     stubFetch(upstream);
-    const request = new Request("http://localhost/bff/chat", {
+    const request = new Request("http://localhost/ui-server/chat", {
       method: "POST",
     });
 
@@ -95,7 +95,7 @@ describe("agentFetch — ui/ server-side downstream client", () => {
 
   it("omits credential headers that are absent on the inbound request", async () => {
     const calls = stubFetch(new Response("ok"));
-    const request = new Request("http://localhost/bff/health"); // no cookie/auth
+    const request = new Request("http://localhost/ui-server/health"); // no cookie/auth
 
     await agentFetch(request, "/health");
 

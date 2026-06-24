@@ -599,7 +599,7 @@ async function buildAgentIdentityHeaders(
   });
 
   // ui-cookie-session (C1/D3): read the credential header-first, cookie
-  // fallback. The agent hop (ssr-bff-gateway slice-2) REHYDRATES this validated
+  // fallback. The agent hop (ssr-ui-server-gateway slice-2) REHYDRATES this validated
   // token as `Authorization: Bearer <token>` on the upstream request so the
   // agent's extractJwt sees a real bearer and its downstream backend-client can
   // re-enter auth-proxy's `/api/*` catch-all. Set explicitly (not relied upon

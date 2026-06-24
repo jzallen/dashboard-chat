@@ -1,4 +1,4 @@
-# Idea Capture — SSR BFF Gateway
+# Idea Capture — SSR ui-server Gateway
 
 > **DISCUSS-wave capture, CAPTURE-ONLY.** This document preserves a brainstormed
 > architecture direction faithfully so it is not lost. It is **not** a design.
@@ -44,7 +44,7 @@
 
 ---
 
-## The core idea — SSR server as the single client integration point (a BFF)
+## The core idea — SSR server as the single client integration point (a ui-server)
 
 - What is most interesting about the SSR build: give the client **ONE point of
   integration** — its own RRv7 SSR node server. All communication becomes:
@@ -63,7 +63,7 @@
 
 ## Feasibility verdict (as stated)
 
-- **Feasible and idiomatic** — this is the **Backend-for-Frontend (BFF)
+- **Feasible and idiomatic** — this is the **Backend-for-Frontend (ui-server)
   pattern**, the standard RRv7 shape: loaders/actions for route data, **RESOURCE
   ROUTES** for arbitrary client-callable endpoints. Same shape as Next route
   handlers / SvelteKit endpoints. The client knows one origin; the server
@@ -72,17 +72,17 @@
 - It resolves two existing pain points:
 
   1. **The identity-attribution TODO** (`auth-proxy/lib/m2m.ts:29-38` — the agent
-     currently forwards the USER's JWT). The BFF is the natural home for
+     currently forwards the USER's JWT). The ui-server is the natural home for
      "service identity + on-behalf-of": auth-proxy validates the session and
      injects `X-User-Id` at the edge; the SSR server holds service creds, mints
      M2M (auth-proxy already mints `client_credentials` at `POST
-     /api/auth/token`), and calls downstream as the BFF acting for user X.
+     /api/auth/token`), and calls downstream as the ui-server acting for user X.
      Downstream services stop trusting browser-forwarded JWTs and trust ONE
      caller.
 
   2. **The 4-fetch lineage waterfall**: `fetchLineageBundle` currently makes the
      BROWSER fire `/api/sources`, `/api/datasets`, `/api/projects/{pid}/views`,
-     `/api/projects/{pid}/reports` as four client round-trips. A BFF loader
+     `/api/projects/{pid}/reports` as four client round-trips. A ui-server loader
      **AGGREGATES** those server-side into one client response.
 
 ---
@@ -102,8 +102,8 @@
 - A **double hop** (client -> auth-proxy -> ssr -> backend) adds per-call
   latency, partly bought back by aggregation.
 
-- **Auth on-behalf-of logic moves into the BFF** — impersonation must be scoped
-  correctly (the BFF must not over-grant).
+- **Auth on-behalf-of logic moves into the ui-server** — impersonation must be scoped
+  correctly (the ui-server must not over-grant).
 
 ---
 
@@ -114,23 +114,23 @@
   from `catalog` and never change. That indirection is the strangler-fig
   harness.
 
-### Phase 0 — stand up the BFF seam, move nothing
+### Phase 0 — stand up the ui-server seam, move nothing
 
 Give `web-ssr` a server-side HTTP client that calls ONE downstream endpoint via
 M2M + on-behalf-of header, behind a single resource route (e.g.
-`/bff/orgs/me`). Existing client path still hits `/api/orgs/me` directly. This
+`/ui-server/orgs/me`). Existing client path still hits `/api/orgs/me` directly. This
 answers the gating question **"can web-ssr authenticate a backend read
 server-side?"** for one endpoint, zero blast radius. Do not proceed until green.
 
 > **NOTE:** Phase 0 is also the prerequisite for the live assistant-transform
 > work — both need "web-ssr authenticates a backend call server-side" — so doing
-> Phase 0 de-risks the BFF AND unblocks the M2M-clean live-transform skeleton
+> Phase 0 de-risks the ui-server AND unblocks the M2M-clean live-transform skeleton
 > with the same work.
 
 ### Phase 1 — move COLD/INITIAL reads to SERVER loaders
 
 The SSR-worthy, static-after-load set: org-global, initial lineage bundle.
-Promote the relevant `clientLoader`s to server loaders fetching via the BFF,
+Promote the relevant `clientLoader`s to server loaders fetching via the ui-server,
 **aggregating the 4 lineage calls into 1**. The `DataCatalog` stays; it is now
 hydrated from loader data on first paint instead of client-fetching.
 Live/reflection stays client-side. One route at a time (`project-layout` first,
@@ -139,23 +139,23 @@ most-trafficked), prove, then the rest.
 ### Phase 2 — move MUTATIONS behind actions/resource routes
 
 The optimistic write-throughs (audit toggle first, then transforms) flip from
-`client->auth-proxy->backend` to RRv7 actions the BFF executes via
+`client->auth-proxy->backend` to RRv7 actions the ui-server executes via
 M2M-on-behalf-of. Optimistic UI stays in the catalog; only the network TARGET
 changes. **This cashes in the identity-attribution fix.**
 
 ### Phase 3 — relay the STREAMS (hard, last)
 
 A resource route proxies the agent SSE (pipe the `ReadableStream`, prove no
-buffering through hops), then point the chat client at the BFF route instead of
+buffering through hops), then point the chat client at the ui-server route instead of
 `/worker/chat`. ui-state `EventSource` likewise if full collapse is wanted. Last
 because the direct path works and this is where the hot-path risk concentrates.
 
 ### Phase 4 — collapse remaining direct origins + tighten downstream
 
-Once reads/mutations/streams all route through the BFF, strip the client's
+Once reads/mutations/streams all route through the ui-server, strip the client's
 knowledge of `/api`, `/worker`, `/ui-state`; nginx simplifies to static +
 everything->ssr; downstream services drop browser-JWT trust to accept ONLY M2M
-from the BFF — **the security win banked at the END, after every path is
+from the ui-server — **the security win banked at the END, after every path is
 proven.**
 
 ---
@@ -164,11 +164,11 @@ proven.**
 
 - **Per-route / per-endpoint flips** (route-by-route or a feature flag) so any
   slice rolls back independently.
-- **Old direct path stays alive** until each BFF slice is proven in the live
+- **Old direct path stays alive** until each ui-server slice is proven in the live
   stack.
 - **Each slice independently shippable (carpaccio)**, matching the merge-queue
   cadence.
-- A slice = **"repoint this read at a BFF route,"** not "rewrite a component,"
+- A slice = **"repoint this read at a ui-server route,"** not "rewrite a component,"
   because of the catalog `dataSource` indirection.
 
 ---

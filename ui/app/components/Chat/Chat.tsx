@@ -102,7 +102,7 @@ export function AssistantOverlay({
   }, [msgs, typing]);
 
   // The live assistant turn: POST the message to the ui/ server broker
-  // (/bff/chat), which relays the agent SSE straight back, and stream the
+  // (/ui-server/chat), which relays the agent SSE straight back, and stream the
   // assistant's reply into the transcript. A dataset-mutating domain event
   // (transform_applied, column_renamed, row_*) triggers a scoped catalog
   // revalidation so the lineage reflects the change. (The setTimeout script mock
@@ -120,7 +120,7 @@ export function AssistantOverlay({
     let started = false;
 
     try {
-      const res = await fetch("/bff/chat", {
+      const res = await fetch("/ui-server/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({

@@ -7,7 +7,7 @@
  *
  * No React, no HTTP, no auth imports — just `snake_case` backend resource → the
  * catalog's `camelCase` DTO. Kept free of side effects so both the client source
- * and the BFF loader map identically off one definition (no drift).
+ * and the ui-server loader map identically off one definition (no drift).
  */
 import type { OrgMember, OrgSettings, ProjectSummary } from "../models";
 

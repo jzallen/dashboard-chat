@@ -1,13 +1,13 @@
 /**
  * @vitest-environment happy-dom
  *
- * WALKING SKELETON — SSR-BFF gateway, slice 1 (live assistant chat wire).
+ * WALKING SKELETON — SSR ui-server gateway, slice 1 (live assistant chat wire).
  * Tag: @walking_skeleton @real-io
  *
- * Port-to-port proof of the FIRST slice of the SSR-as-BFF progression:
+ * Port-to-port proof of the FIRST slice of the SSR-as-ui-server progression:
  *
  *   AssistantOverlay submit        (client driving port — the user)
- *     -> POST /bff/chat            (the ui/ SERVER broker: a REAL RRv7 resource
+ *     -> POST /ui-server/chat            (the ui/ SERVER broker: a REAL RRv7 resource
  *                                    route action, NOT a network stub)
  *       -> POST /worker/chat       (the SOLE mocked downstream port: auth-proxy's
  *                                    agent upstream, stubbed via fetch)
@@ -20,7 +20,7 @@
  * reached through auth-proxy at AUTH_PROXY_URL + /worker/chat) is faked; the broker
  * hop and the client are both real. See distill/wave-decisions.md (DWD-5, DWD-6).
  *
- * RED until DELIVER lands steps 4-7 (the /bff/chat action, the SSE reader, the
+ * RED until DELIVER lands steps 4-7 (the /ui-server/chat action, the SSE reader, the
  * AssistantOverlay rewire, and the public catalog.revalidateScope()).
  */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -38,7 +38,7 @@ import {
 import { fixtureSource } from "../catalog";
 import { AssistantOverlay } from "../components/Chat/Chat";
 import { catalog, installCatalogForTest } from "../components/useCatalog";
-import { action as bffChatAction } from "../routes/bff-chat";
+import { action as uiServerChatAction } from "../routes/ui-server-chat";
 
 // The downstream origin the server-side broker targets (agent via auth-proxy).
 const AUTH_PROXY_URL = "http://auth-proxy.test";
@@ -73,7 +73,7 @@ const realFetch = globalThis.fetch;
 
 beforeAll(() => {
   process.env.AUTH_PROXY_URL = AUTH_PROXY_URL;
-  // Route fetch: /worker/chat is the SOLE mock; /bff/chat runs the REAL broker
+  // Route fetch: /worker/chat is the SOLE mock; /ui-server/chat runs the REAL broker
   // action so the server hop is exercised, not stubbed.
   vi.stubGlobal(
     "fetch",
@@ -90,12 +90,12 @@ beforeAll(() => {
           headers: { "content-type": "text/event-stream" },
         });
       }
-      if (url.includes("/bff/chat")) {
+      if (url.includes("/ui-server/chat")) {
         const request =
           input instanceof Request
             ? input
-            : new Request(new URL("/bff/chat", "http://localhost"), init);
-        return bffChatAction({ request, params: {}, context: {} } as never);
+            : new Request(new URL("/ui-server/chat", "http://localhost"), init);
+        return uiServerChatAction({ request, params: {}, context: {} } as never);
       }
       throw new Error(`unexpected fetch in acceptance test: ${url}`);
     },
@@ -114,8 +114,8 @@ beforeEach(async () => {
   await installCatalogForTest(fixtureSource, fixtureSource);
 });
 
-describe("SSR-BFF gateway · slice 1 · live assistant chat wire", () => {
-  it("streams a real assistant turn through /bff/chat and revalidates the catalog on transform_applied", async () => {
+describe("SSR ui-server gateway · slice 1 · live assistant chat wire", () => {
+  it("streams a real assistant turn through /ui-server/chat and revalidates the catalog on transform_applied", async () => {
     const revalidateSpy = vi
       .spyOn(catalog, "revalidateScope")
       .mockResolvedValue(undefined);

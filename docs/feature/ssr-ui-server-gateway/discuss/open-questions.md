@@ -1,4 +1,4 @@
-# Open Questions — SSR BFF Gateway
+# Open Questions — SSR ui-server Gateway
 
 > DISCUSS-wave capture. These are the points the brainstorm
 > ([`idea-capture.md`](./idea-capture.md)) left genuinely undecided. They are
@@ -21,10 +21,10 @@ near-term priority, and it concentrates the hot-path risk.
 
 ---
 
-## OQ2 — Is ui-state's EventSource collapsed into the BFF too, or does it stay direct?
+## OQ2 — Is ui-state's EventSource collapsed into the ui-server too, or does it stay direct?
 
 The brainstorm says ui-state `EventSource` is relayed "likewise IF full collapse
-is wanted" — i.e. whether ui-state is folded behind the BFF or remains a direct
+is wanted" — i.e. whether ui-state is folded behind the ui-server or remains a direct
 origin is explicitly optional and undecided.
 
 **Why it matters:** it changes the scope of Phase 3/4 and whether "single client
@@ -32,11 +32,11 @@ origin" (J1) is literal or near-literal.
 
 ---
 
-## OQ3 — How is on-behalf-of M2M scoping bounded so the BFF does not over-grant?
+## OQ3 — How is on-behalf-of M2M scoping bounded so the ui-server does not over-grant?
 
-The auth on-behalf-of logic moves into the BFF; the brainstorm states
-"impersonation must be scoped correctly (the BFF must not over-grant)" but does
-not decide the scoping model, audience/permission constraints, or how a BFF token
+The auth on-behalf-of logic moves into the ui-server; the brainstorm states
+"impersonation must be scoped correctly (the ui-server must not over-grant)" but does
+not decide the scoping model, audience/permission constraints, or how a ui-server token
 acting for user X is prevented from exceeding user X's authority.
 
 **Why it matters:** this is the core of the security win (J2); getting the
@@ -55,10 +55,10 @@ whether aggregation actually offsets the hop for a given route.
 
 ---
 
-## OQ5 — Does auth-proxy stay the edge, or is it folded into the BFF?
+## OQ5 — Does auth-proxy stay the edge, or is it folded into the ui-server?
 
 The brainstorm consistently describes auth-proxy as the edge (validates session,
-injects `X-User-Id`) AND the BFF as the downstream broker, but does not decide
+injects `X-User-Id`) AND the ui-server as the downstream broker, but does not decide
 whether auth-proxy remains a separate edge service long-term or is eventually
 folded into web-ssr.
 
@@ -67,14 +67,14 @@ validation vs. service-credential brokering live.
 
 ---
 
-## OQ6 — How is a transform reflection's per-node preview hydrate handled under the BFF?
+## OQ6 — How is a transform reflection's per-node preview hydrate handled under the ui-server?
 
 A backend-contract finding: `GET /api/datasets` returns NO preview rows;
 transform-aware preview only exists on
 `GET /api/datasets/{id}?include_preview=true`. So a transform reflection needs a
 per-node preview hydrate, not just a list re-fetch. The brainstorm records this
 constraint but, consistent with keeping reactive reads client-side, does not
-decide whether/how the BFF participates in that hydrate.
+decide whether/how the ui-server participates in that hydrate.
 
 **Why it matters:** it sits at the boundary between "reactive reads stay
 client-side" (which-data-goes-where) and the live assistant-transform priority.
@@ -92,14 +92,14 @@ deploy-time or runtime.
 
 ---
 
-## OQ8 — Where does the BFF hold and refresh its service credentials?
+## OQ8 — Where does the ui-server hold and refresh its service credentials?
 
-The BFF "holds service creds" and mints M2M (auth-proxy already mints
+The ui-server "holds service creds" and mints M2M (auth-proxy already mints
 `client_credentials` at `POST /api/auth/token`). The brainstorm does not decide
 how web-ssr stores those creds, how tokens are cached/refreshed, or the failure
 behavior when minting fails.
 
-**Why it matters:** it is the operational backbone of every BFF downstream call
+**Why it matters:** it is the operational backbone of every ui-server downstream call
 and a single point of failure on the new hot path.
 
 ---
@@ -116,7 +116,7 @@ inputs, not choices:
   concentrates there.
 - **The security tightening is banked at the END** (Phase 4), after every path
   is proven.
-- **Phase 0 is the shared prerequisite** for both the BFF and the M2M-clean live
+- **Phase 0 is the shared prerequisite** for both the ui-server and the M2M-clean live
   assistant-transform skeleton.
 - **A slice is a "repoint," not a "rewrite,"** because of the `DataCatalog`
   `dataSource` indirection.

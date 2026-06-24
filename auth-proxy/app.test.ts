@@ -877,7 +877,7 @@ describe("ui-cookie-session: header>cookie credential read at all four sites (C1
   });
 });
 
-// ssr-bff-gateway slice-2 (workos-auth-hop): the /worker hop REHYDRATES the
+// ssr-ui-server-gateway slice-2 (workos-auth-hop): the /worker hop REHYDRATES the
 // validated credential as `Authorization: Bearer <token>` on the upstream
 // request to the agent. Without it, a cookie-only chat turn reaches the agent
 // with NO Authorization header; the agent's extractJwt yields "" and its
@@ -886,7 +886,7 @@ describe("ui-cookie-session: header>cookie credential read at all four sites (C1
 // the agent forward a real token that re-enters the catch-all and resolves to
 // backend identity headers. Applied in BOTH dev and workos branches (dev was
 // also broken: the dev branch injected DEV_USER without reading a credential).
-describe("ssr-bff-gateway slice-2: /worker rehydrates the credential as a Bearer for the agent hop", () => {
+describe("ssr-ui-server-gateway slice-2: /worker rehydrates the credential as a Bearer for the agent hop", () => {
   const originalAuthMode = process.env.AUTH_MODE;
   const originalWorkosClient = process.env.WORKOS_CLIENT_ID;
 
