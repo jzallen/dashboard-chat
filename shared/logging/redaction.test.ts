@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { redact, redactionKeys } from "./redaction";
+import { maskValue, redact, redactionKeys } from "./redaction";
 
 /**
  * Redaction regression guard (ADR-053 §2, US-7 AC7.2).
@@ -13,10 +13,6 @@ import { redact, redactionKeys } from "./redaction";
  * high-entropy secrets would only trip secret scanners without making the test
  * any stronger. The guarantee: whatever value a sensitive key carries, it never
  * survives serialization.
- *
- * This test ships RED — the redaction stubs pass values through unchanged, so
- * the placeholder values leak and the assertions fail. Making it GREEN is the
- * next sub-issue; do not weaken these assertions to match the scaffold.
  */
 
 /** Placeholder credential values, keyed by the attribute name a caller would use. */
@@ -63,5 +59,57 @@ describe("redact", () => {
     const out = redact({ principal_id: "user_01HQZX4F7R", decision: "allow" });
 
     expect(out).toEqual({ principal_id: "user_01HQZX4F7R", decision: "allow" });
+  });
+
+  it("matches sensitive keys case-insensitively", () => {
+    const out = redact({
+      Authorization: SENSITIVE_ATTRIBUTES.authorization,
+      "X-Refresh-TOKEN": SENSITIVE_ATTRIBUTES.access_token,
+    });
+
+    expect(out.Authorization).toBe(redactionKeys.mask);
+    expect(out["X-Refresh-TOKEN"]).toBe(redactionKeys.mask);
+  });
+
+  it("redacts credentials nested in objects and arrays", () => {
+    const out = redact({
+      request: {
+        headers: { authorization: SENSITIVE_ATTRIBUTES.authorization },
+        path: "/projects",
+      },
+      clients: [
+        { id: "c1", client_secret: SENSITIVE_ATTRIBUTES.client_secret },
+        { id: "c2" },
+      ],
+    });
+
+    const request = out.request as Record<string, unknown>;
+    expect((request.headers as Record<string, unknown>).authorization).toBe(
+      redactionKeys.mask,
+    );
+    expect(request.path).toBe("/projects");
+
+    const clients = out.clients as Array<Record<string, unknown>>;
+    expect(clients[0].client_secret).toBe(redactionKeys.mask);
+    expect(clients[0].id).toBe("c1");
+    expect(clients[1]).toEqual({ id: "c2" });
+  });
+
+  it("does not mutate the input attributes bag", () => {
+    const input = { authorization: SENSITIVE_ATTRIBUTES.authorization };
+    redact(input);
+
+    expect(input.authorization).toBe(SENSITIVE_ATTRIBUTES.authorization);
+  });
+});
+
+describe("maskValue", () => {
+  it("masks a sensitive key and passes a non-sensitive one through", () => {
+    expect(maskValue("password", "hunter2")).toBe(redactionKeys.mask);
+    expect(maskValue("decision", "allow")).toBe("allow");
+  });
+
+  it("is a no-op for an absent value even on a sensitive key", () => {
+    expect(maskValue("authorization", undefined)).toBeUndefined();
   });
 });
