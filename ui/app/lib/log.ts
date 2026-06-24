@@ -9,15 +9,18 @@
  *   level                 → log.level
  *   payload               → attributes      (OTel-style structured fields)
  *
- * Readable console output is the default. Two startup-read localStorage knobs:
- *   - `ui:log`      = debug | info | warn | error  (verbosity; default info)
+ * Readable console output is the default. Verbosity resolves from the in-browser
+ * `ui:log` localStorage knob when set, otherwise the server-side `LOG_LEVEL`
+ * env (SSR / Node), defaulting to INFO (ADR-053 D6). Two startup-read knobs:
+ *   - `ui:log`      = debug | info | warn | error  (in-browser verbosity override)
  *   - `ui:log.json` = "1"  → emit one-line ECS JSON per event (parse/ship)
  */
 import {
+  type Logger,
   type LogLevel,
   type LogRecord,
-  type Logger,
   redact,
+  resolveLogLevel,
 } from "@dashboard-chat/shared-logging";
 import { createConsola, LogLevels,type LogObject } from "consola";
 
@@ -25,7 +28,7 @@ import { createConsola, LogLevels,type LogObject } from "consola";
 // ruleset are owned by @dashboard-chat/shared-logging (ADR-053 §1/§2). Consola
 // is the isomorphic emit backend for this surface only; it conforms to the
 // shared contract and runs every JSON line through the shared redact().
-export type { LogLevel, LogRecord, Logger };
+export type { Logger,LogLevel, LogRecord };
 
 const LEVEL_VALUE: Record<LogLevel, number> = {
   error: LogLevels.error,
@@ -52,9 +55,16 @@ function readSetting(key: string): string | null {
   }
 }
 
-function configuredLevel(): number {
-  const v = readSetting("ui:log") as LogLevel | null;
-  return v && v in LEVEL_VALUE ? LEVEL_VALUE[v] : LogLevels.info;
+/**
+ * Resolve the active verbosity. The in-browser `ui:log` localStorage knob wins
+ * when set; otherwise honour the server-side `LOG_LEVEL` env (SSR / Node),
+ * defaulting to INFO. Exported for testing. (ADR-053 D6)
+ */
+export function configuredLevel(): number {
+  const stored = readSetting("ui:log") as LogLevel | null;
+  if (stored && stored in LEVEL_VALUE) return LEVEL_VALUE[stored];
+  const env = typeof process !== "undefined" ? process.env : undefined;
+  return LEVEL_VALUE[resolveLogLevel(env)];
 }
 
 /** Project a consola LogObject onto the ECS/OTel record. Exported for testing. */

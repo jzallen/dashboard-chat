@@ -1,7 +1,12 @@
 import { LogLevels,type LogObject } from "consola";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createLogger, ecsJsonReporter, toEcsRecord } from "./log";
+import {
+  configuredLevel,
+  createLogger,
+  ecsJsonReporter,
+  toEcsRecord,
+} from "./log";
 
 /** A minimal consola LogObject for the mapper under test. */
 function logObject(partial: Partial<LogObject>): LogObject {
@@ -84,6 +89,30 @@ describe("ecsJsonReporter redaction (consola transport)", () => {
       expect(attributes[key]).toBe("[REDACTED]");
     }
     expect(attributes.user_id).toBe("u1");
+  });
+});
+
+describe("configuredLevel (LOG_LEVEL vs localStorage precedence)", () => {
+  afterEach(() => {
+    localStorage.clear();
+    delete process.env.LOG_LEVEL;
+  });
+
+  it("uses the in-browser ui:log knob when set, ignoring LOG_LEVEL", () => {
+    localStorage.setItem("ui:log", "error");
+    process.env.LOG_LEVEL = "debug";
+
+    expect(configuredLevel()).toBe(LogLevels.error);
+  });
+
+  it("honours server-side LOG_LEVEL when no ui:log knob is set", () => {
+    process.env.LOG_LEVEL = "debug";
+
+    expect(configuredLevel()).toBe(LogLevels.debug);
+  });
+
+  it("defaults to info when neither ui:log nor LOG_LEVEL is set", () => {
+    expect(configuredLevel()).toBe(LogLevels.info);
   });
 });
 
