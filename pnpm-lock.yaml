@@ -140,6 +140,8 @@ importers:
         specifier: ^3.24.2
         version: 3.25.76
 
+  shared/logging: {}
+
   shared/ui-state-wire: {}
 
   ui:

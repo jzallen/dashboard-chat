@@ -4,6 +4,7 @@ ui/node_modules
 agent/node_modules
 auth-proxy/node_modules
 shared/chat/node_modules
+shared/logging/node_modules
 shared/failure-simulation/node_modules
 shared/ui-state-wire/node_modules
 .venv
