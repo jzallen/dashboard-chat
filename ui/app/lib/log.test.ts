@@ -1,7 +1,7 @@
 import { LogLevels,type LogObject } from "consola";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createLogger, toEcsRecord } from "./log";
+import { createLogger, ecsJsonReporter, toEcsRecord } from "./log";
 
 /** A minimal consola LogObject for the mapper under test. */
 function logObject(partial: Partial<LogObject>): LogObject {
@@ -41,6 +41,49 @@ describe("toEcsRecord", () => {
     expect(record["event.module"]).toBe("auth");
     expect(record["event.action"]).toBe("login.failed");
     expect(record.attributes).toBeUndefined();
+  });
+});
+
+describe("ecsJsonReporter redaction (consola transport)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /**
+   * The redaction regression guarantee (ADR-053 §2, US-7 AC7.2) re-run on the
+   * consola transport: production-shaped credentials carried as attributes never
+   * survive serialization on the JSON path, while ordinary fields are preserved.
+   */
+  const SENSITIVE_ATTRIBUTES = {
+    authorization: "Bearer test-access-token",
+    cookie: "session=test-session-value",
+    access_token: "test-personal-access-token",
+    client_secret: "test-m2m-client-secret",
+    password: "test-password-value",
+    email: "user@example.com",
+  } as const;
+
+  it("masks sensitive attributes before the line is serialized", () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    ecsJsonReporter.log(
+      logObject({
+        tag: "auth",
+        level: LogLevels.warn,
+        args: ["login.denied", { ...SENSITIVE_ATTRIBUTES, user_id: "u1" }],
+      }),
+    );
+
+    const line = spy.mock.calls[0]?.[0] as string;
+    for (const value of Object.values(SENSITIVE_ATTRIBUTES)) {
+      expect(line.includes(value)).toBe(false);
+    }
+
+    const attributes = JSON.parse(line).attributes as Record<string, unknown>;
+    for (const key of Object.keys(SENSITIVE_ATTRIBUTES)) {
+      expect(attributes[key]).toBe("[REDACTED]");
+    }
+    expect(attributes.user_id).toBe("u1");
   });
 });
 
