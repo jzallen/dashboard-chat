@@ -146,6 +146,9 @@ importers:
 
   ui:
     dependencies:
+      '@dashboard-chat/shared-logging':
+        specifier: '*'
+        version: link:../shared/logging
       '@dashboard-chat/ui-state-wire':
         specifier: '*'
         version: link:../shared/ui-state-wire
