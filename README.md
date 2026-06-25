@@ -19,7 +19,8 @@ want to stand up data infrastructure just to explore an idea.
      Or, to attach the video directly, drag-and-drop the file into the GitHub
      PR/issue editor and paste the generated user-images.githubusercontent.com URL here. -->
 
-_🎥 Demo video coming soon._
+<img width="400" height="224" alt="Recording 2026-06-25 145043" src="https://github.com/user-attachments/assets/17810a88-b60b-4195-8639-629c0ad43122" />
+
 
 ## The Prototyping Workflow
 
