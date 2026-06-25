@@ -11,6 +11,16 @@ want to stand up data infrastructure just to explore an idea.
 > 📖 **[Read the full product vision](docs/vision.md)** — the prototyping workflow,
 > target users, and handoff model.
 
+## Demo
+
+<!-- TODO: replace this placeholder with the demo video.
+     For a hosted file, embed a thumbnail that links to it:
+       [![Watch the demo](docs/assets/demo-thumbnail.png)](https://link-to-video)
+     Or, to attach the video directly, drag-and-drop the file into the GitHub
+     PR/issue editor and paste the generated user-images.githubusercontent.com URL here. -->
+
+_🎥 Demo video coming soon._
+
 ## The Prototyping Workflow
 
 ```
