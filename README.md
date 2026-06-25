@@ -9,7 +9,7 @@ It's built for people who have domain expertise and maybe know some SQL, but don
 want to stand up data infrastructure just to explore an idea.
 
 > 📖 **[Read the full product vision](docs/vision.md)** — the prototyping workflow,
-> target users, healthcare/Synthea strategy, and handoff model.
+> target users, and handoff model.
 
 ## The Prototyping Workflow
 
@@ -18,8 +18,8 @@ want to stand up data infrastructure just to explore an idea.
 │   1. UPLOAD  │    │  2. MODEL    │    │  3. PREVIEW  │    │  4. HANDOFF  │
 │              │───►│              │───►│              │───►│              │
 │  CSV, Excel, │    │ Clean, join, │    │ Live dashboard│   │ dbt project  │
-│  Synthea,    │    │ filter, view │    │ preview with  │   │ + renderable │
-│  FHIR        │    │ via chat     │    │ hot reload    │   │ dashboard    │
+│  JSON,       │    │ filter, view │    │ preview with  │   │ + renderable │
+│  Parquet     │    │ via chat     │    │ hot reload    │   │ dashboard    │
 └──────────────┘    └──────────────┘    └──────────────┘    └──────────────┘
    COMPLETE            COMPLETE            PLANNED          dbt COMPLETE
                   (reports in progress)
@@ -28,9 +28,6 @@ want to stand up data infrastructure just to explore an idea.
 1. **Upload** — Drop in structured files. The system auto-detects format, converts to
    Parquet, stores it in S3-compatible object storage, and generates previews with
    column profiles. Supported: CSV, Excel (`.xlsx`/`.xls`), JSON, Parquet, FHIR bundles.
-   For healthcare prototyping, generate synthetic patient populations with
-   [Synthea](https://github.com/synthetichealth/synthea) and upload the output directly —
-   no PHI ever enters the system.
 
 2. **Model with natural language** — With a dataset loaded, every operation happens
    through chat: clean (trim, standardize casing, fill nulls), filter, transform
@@ -42,7 +39,7 @@ want to stand up data infrastructure just to explore an idea.
 
 3. **Preview** *(planned)* — The agent first proposes a cheap grid-layout mockup in
    chat (sub-2s via Groq) so you can rearrange the layout before any expensive
-   generation. Once confirmed, the planner generates renderable Vizro code that renders
+   generation. Once confirmed, the system generates renderable Vizro code that renders
    in a separate preview tab with hot reload. Dashboard interactions run locally against
    a DuckDB WASM instance in the browser for sub-10ms drill-downs.
 
@@ -67,8 +64,6 @@ want to stand up data infrastructure just to explore an idea.
 4. **Live preview with hot reload** — The feedback loop is seconds, not sprint cycles.
 5. **Standard handoff formats** — dbt projects and renderable Vizro code, not
    proprietary exports.
-6. **Synthetic-first for healthcare** — Prototype against Synthea data, hand off to
-   engineers who connect real EHR data. No PHI in the prototyping environment.
 
 ## Architecture
 
@@ -84,16 +79,18 @@ role** — the two layers are intentionally decoupled (see
 | **Backend** (`backend/`) | FastAPI + SQLAlchemy (async) + DuckDB + Alembic | REST endpoints, upload pipeline, transforms, dbt export |
 | **Auth-Proxy** (`auth-proxy/`) | Hono (Node.js) | JWT verification, M2M token minting, identity-header injection, multi-upstream routing |
 | **UI-State** (`ui-state/`) | Hono + XState v5 actor system + Redis | Backend-for-frontend holding flow state across machines |
-| **Planner** (`planner/`) | LangGraph multi-agent (Claude) | Vizro dashboard code generation *(planned integration)* |
 | **Shared** (`shared/chat/`) | TypeScript | Single source of truth for the chat event schema, imported by `agent/` and `ui/` |
 
-**Supporting infrastructure:** `pg_duckdb` (analytical query engine over Parquet via
-`httpfs`), MinIO (S3-compatible object storage), PostgreSQL (metadata), and an optional
-Mirth Connect integration (HL7v2 → FHIR) under the `healthcare` Compose profile.
+> A `planner/` service (LangGraph + Claude, for Vizro dashboard-code generation) and a
+> healthcare track (Synthea synthetic data, Mirth Connect HL7v2 → FHIR) also live in the
+> repo for deeper exploration. Both are the least-developed parts of the system and are
+> intentionally left out of the topology above.
 
-**External services:** Groq (fast LLM inference, `llama-3.3-70b-versatile`), Anthropic
-(`claude-sonnet-4-6`, planner generation), WorkOS (production SSO + directory sync),
-Stream.io (chat persistence), and Synthea (synthetic patient data, external CLI).
+**Supporting infrastructure:** `pg_duckdb` (analytical query engine over Parquet via
+`httpfs`), MinIO (S3-compatible object storage), and PostgreSQL (metadata).
+
+**External services:** Groq (fast LLM inference, `llama-3.3-70b-versatile`), WorkOS
+(production SSO + directory sync), and Stream.io (chat persistence).
 
 ```
         Browser (chat + preview)
