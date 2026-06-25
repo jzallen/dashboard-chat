@@ -1,5 +1,5 @@
 /**
- * Cross-service structured-logging contract (the durable seam, ADR-053 §1).
+ * Cross-service structured-logging contract — the durable seam.
  *
  * Promoted verbatim from `ui/app/lib/log.ts` so every surface — the isomorphic
  * `ui/` (consola) and the Node services (pino) — emits the **same** ECS/OTel

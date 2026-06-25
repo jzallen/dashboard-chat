@@ -55,9 +55,9 @@ describe("ecsJsonReporter redaction (consola transport)", () => {
   });
 
   /**
-   * The redaction regression guarantee (ADR-053 §2, US-7 AC7.2) re-run on the
-   * consola transport: production-shaped credentials carried as attributes never
-   * survive serialization on the JSON path, while ordinary fields are preserved.
+   * The redaction regression guarantee, re-run on the consola transport:
+   * production-shaped credentials carried as attributes never survive
+   * serialization on the JSON path, while ordinary fields are preserved.
    */
   const SENSITIVE_ATTRIBUTES = {
     authorization: "Bearer test-access-token",
@@ -84,11 +84,15 @@ describe("ecsJsonReporter redaction (consola transport)", () => {
       expect(line.includes(value)).toBe(false);
     }
 
-    const attributes = JSON.parse(line).attributes as Record<string, unknown>;
-    for (const key of Object.keys(SENSITIVE_ATTRIBUTES)) {
-      expect(attributes[key]).toBe("[REDACTED]");
-    }
-    expect(attributes.user_id).toBe("u1");
+    expect(JSON.parse(line).attributes).toEqual({
+      authorization: "[REDACTED]",
+      cookie: "[REDACTED]",
+      access_token: "[REDACTED]",
+      client_secret: "[REDACTED]",
+      password: "[REDACTED]",
+      email: "[REDACTED]",
+      user_id: "u1",
+    });
   });
 });
 

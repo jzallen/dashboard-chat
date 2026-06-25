@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { maskValue, redact, redactionKeys } from "./redaction";
 
 /**
- * Redaction regression guard (ADR-053 §2, US-7 AC7.2).
+ * Redaction regression guard.
  *
  * The inputs are keyed by the attribute names a caller would use — an
  * `Authorization` header, a `Cookie`, a PAT, an M2M client secret, a raw
@@ -67,8 +67,10 @@ describe("redact", () => {
       "X-Refresh-TOKEN": SENSITIVE_ATTRIBUTES.access_token,
     });
 
-    expect(out.Authorization).toBe(redactionKeys.mask);
-    expect(out["X-Refresh-TOKEN"]).toBe(redactionKeys.mask);
+    expect(out).toEqual({
+      Authorization: redactionKeys.mask,
+      "X-Refresh-TOKEN": redactionKeys.mask,
+    });
   });
 
   it("redacts credentials nested in objects and arrays", () => {
@@ -83,16 +85,13 @@ describe("redact", () => {
       ],
     });
 
-    const request = out.request as Record<string, unknown>;
-    expect((request.headers as Record<string, unknown>).authorization).toBe(
-      redactionKeys.mask,
-    );
-    expect(request.path).toBe("/projects");
-
-    const clients = out.clients as Array<Record<string, unknown>>;
-    expect(clients[0].client_secret).toBe(redactionKeys.mask);
-    expect(clients[0].id).toBe("c1");
-    expect(clients[1]).toEqual({ id: "c2" });
+    expect(out).toEqual({
+      request: {
+        headers: { authorization: redactionKeys.mask },
+        path: "/projects",
+      },
+      clients: [{ id: "c1", client_secret: redactionKeys.mask }, { id: "c2" }],
+    });
   });
 
   it("does not mutate the input attributes bag", () => {
@@ -104,8 +103,13 @@ describe("redact", () => {
 });
 
 describe("maskValue", () => {
-  it("masks a sensitive key and passes a non-sensitive one through", () => {
-    expect(maskValue("password", "hunter2")).toBe(redactionKeys.mask);
+  it("masks a value whose key is sensitive", () => {
+    expect(maskValue("password", "test-password-value")).toBe(
+      redactionKeys.mask,
+    );
+  });
+
+  it("passes a value whose key is not sensitive through unchanged", () => {
     expect(maskValue("decision", "allow")).toBe("allow");
   });
 

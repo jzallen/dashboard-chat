@@ -1,5 +1,5 @@
 /**
- * Runtime verbosity resolution (ADR-053 D6).
+ * Runtime verbosity resolution.
  *
  * Pure mapping from a `LOG_LEVEL` environment string to a `LogLevel`, defaulting
  * to INFO when unset or unrecognized. Takes an explicit env bag rather than

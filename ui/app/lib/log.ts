@@ -11,7 +11,7 @@
  *
  * Readable console output is the default. Verbosity resolves from the in-browser
  * `ui:log` localStorage knob when set, otherwise the server-side `LOG_LEVEL`
- * env (SSR / Node), defaulting to INFO (ADR-053 D6). Two startup-read knobs:
+ * env (SSR / Node), defaulting to INFO. Two startup-read knobs:
  *   - `ui:log`      = debug | info | warn | error  (in-browser verbosity override)
  *   - `ui:log.json` = "1"  → emit one-line ECS JSON per event (parse/ship)
  */
@@ -25,9 +25,9 @@ import {
 import { createConsola, LogLevels,type LogObject } from "consola";
 
 // The envelope contract (LogRecord / Logger / LogLevel) and the redaction
-// ruleset are owned by @dashboard-chat/shared-logging (ADR-053 §1/§2). Consola
-// is the isomorphic emit backend for this surface only; it conforms to the
-// shared contract and runs every JSON line through the shared redact().
+// ruleset are owned by @dashboard-chat/shared-logging. Consola is the isomorphic
+// emit backend for this surface only; it conforms to the shared contract and
+// runs every JSON line through the shared redact().
 export type { Logger,LogLevel, LogRecord };
 
 const LEVEL_VALUE: Record<LogLevel, number> = {
@@ -58,7 +58,7 @@ function readSetting(key: string): string | null {
 /**
  * Resolve the active verbosity. The in-browser `ui:log` localStorage knob wins
  * when set; otherwise honour the server-side `LOG_LEVEL` env (SSR / Node),
- * defaulting to INFO. Exported for testing. (ADR-053 D6)
+ * defaulting to INFO. Exported for testing.
  */
 export function configuredLevel(): number {
   const stored = readSetting("ui:log") as LogLevel | null;
@@ -87,8 +87,8 @@ export function toEcsRecord(obj: LogObject): LogRecord {
  * Opt-in reporter: one-line ECS JSON per event, via the matching console method.
  * Every line's attributes pass through the shared `redact()` before serialization
  * so a credential carried in an attribute never reaches the console/sink — the
- * same ruleset the pino backends use (ADR-053 §2). Exported for the redaction
- * regression test on the consola transport.
+ * same ruleset the pino backends use. Exported for the redaction regression
+ * test on the consola transport.
  */
 export const ecsJsonReporter = {
   log(obj: LogObject): void {

@@ -1,5 +1,5 @@
 /**
- * Redaction ruleset — one source of truth, two transports (ADR-053 §2).
+ * Redaction ruleset — one source of truth, two transports.
  *
  * The sensitive-key ruleset and the pure helpers that apply it live here once.
  * Both emit backends consume them: the pino serializer (auth-proxy / agent /
@@ -26,7 +26,7 @@ export interface RedactionConfig {
   mask: string;
 }
 
-/** Single source of truth for sensitive keys (ADR-053 §2). */
+/** Single source of truth for sensitive keys. */
 export const redactionKeys: RedactionConfig = {
   exactKeys: ["authorization", "cookie", "password", "email"],
   substringKeys: ["token", "secret"],
