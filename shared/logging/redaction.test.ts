@@ -100,6 +100,52 @@ describe("redact", () => {
 
     expect(input.authorization).toBe(SENSITIVE_ATTRIBUTES.authorization);
   });
+
+  it("breaks reference cycles instead of overflowing the stack", () => {
+    const node: Record<string, unknown> = { id: "n1" };
+    node.self = node;
+    const ring: Record<string, unknown> = { a: { id: "a" } };
+    (ring.a as Record<string, unknown>).back = ring;
+
+    expect(() => redact(node)).not.toThrow();
+    expect(redact(node)).toEqual({ id: "n1", self: "[Circular]" });
+    expect(redact(ring)).toEqual({ a: { id: "a", back: "[Circular]" } });
+  });
+
+  it("masks a credential that closes a cycle before the cycle is broken", () => {
+    const ctx: Record<string, unknown> = {
+      authorization: SENSITIVE_ATTRIBUTES.authorization,
+    };
+    ctx.parent = ctx;
+
+    expect(redact(ctx)).toEqual({
+      authorization: redactionKeys.mask,
+      parent: "[Circular]",
+    });
+  });
+
+  it("passes non-plain objects through without flattening them", () => {
+    const at = new Date("2026-06-07T00:00:00.000Z");
+    const tags = new Set(["a", "b"]);
+    const out = redact({ at, tags, note: "ok" });
+
+    expect(out.at).toBe(at);
+    expect(out.tags).toBe(tags);
+    expect(out.note).toBe("ok");
+  });
+
+  it("preserves an Error's message while redacting its attached credentials", () => {
+    const err = Object.assign(new Error("boom"), {
+      access_token: SENSITIVE_ATTRIBUTES.access_token,
+      attempt: 2,
+    });
+    const out = redact({ err }) as { err: Record<string, unknown> };
+
+    expect(out.err.name).toBe("Error");
+    expect(out.err.message).toBe("boom");
+    expect(out.err.access_token).toBe(redactionKeys.mask);
+    expect(out.err.attempt).toBe(2);
+  });
 });
 
 describe("maskValue", () => {
