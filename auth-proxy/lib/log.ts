@@ -8,17 +8,13 @@
  * onto the shared `LogRecord` field set (`event.module`/`event.action`/
  * `attributes`) and runs every line through the redaction seam before emit, so an
  * auth decision can be audited without the credential ever reaching a log line.
- *
- * The emit path and the redaction serializer are not implemented yet: a logger
- * method and the serializer hook both throw, so no line is emitted until the pino
- * backend is wired behind these signatures.
  */
 
 import {
-  type LogLevel,
   type Logger,
-  type RedactionConfig,
+  type LogLevel,
   redact,
+  type RedactionConfig,
   redactionKeys,
   resolveLogLevel,
 } from "@dashboard-chat/shared-logging";

@@ -100,8 +100,8 @@ describe("legacy stdout lines remain unchanged", () => {
       .lines()
       .find((logLine) => logLine.includes('"event":"ready_reached"'));
     expect(kpiLine, "the ready_reached KPI line must still be emitted").toBeDefined();
-    // Whole-object compare: the line carries exactly the legacy KPI fields and
-    // nothing from the LogRecord envelope.
+    // An exact compare proves the line was not rerouted through the LogRecord
+    // envelope — it carries only the legacy KPI fields.
     expect(JSON.parse(kpiLine as string)).toEqual({
       event: "ready_reached",
       request_id: "R-doc-5c1a",

@@ -92,9 +92,9 @@ describe("createLogger — shared LogRecord envelope", () => {
     const logLine = capture.records.find(
       (r) => r["event.action"] === "auth.jwt.rejected",
     );
-    // Whole-record compare: channel + action + level map onto the envelope, the
-    // attributes bag is carried through, and nothing extra leaks. `@timestamp` is
-    // a runtime value, so it is matched against the ISO-8601 UTC shape in place.
+    // Comparing the whole record (not a projection) also asserts no field leaks
+    // past the envelope; `@timestamp` is a runtime value, so it is matched against
+    // the ISO-8601 UTC shape rather than a literal.
     expect(logLine).toEqual({
       "@timestamp": expect.stringMatching(ISO_8601_UTC),
       "log.level": "warn",
