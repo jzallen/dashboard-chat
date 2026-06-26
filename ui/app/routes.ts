@@ -1,15 +1,31 @@
-// Route table. The app-shell layout is the persistent outer chrome (auth gate +
-// Topbar + overlays) — a single instance that never remounts on a project switch.
-// Nested inside it, the `project/:projectId` layout re-scopes the catalog to the
-// path project whenever :projectId changes (the re-scope seam).
-//
-// Project identity lives in the PATH (/project/:projectId/{dataset|view|report}/:id),
-// matching how the API scopes resources by project. org + query-engines are
-// org-global and sit outside the project layout; chats nest under the project
-// because sessions are project-scoped.
-//
-// File paths resolve relative to appDirectory ("app"), so the leading `app/`
-// segment is omitted.
+/**
+ * The application route table.
+ *
+ * The app-shell layout is the persistent outer chrome (auth gate + Topbar +
+ * overlays) — a single instance that never remounts on a project switch. Nested
+ * inside it, the `project/:projectId` layout re-scopes the catalog to the path
+ * project whenever `:projectId` changes (the re-scope seam).
+ *
+ * Project identity lives in the PATH
+ * (`/project/:projectId/{dataset|view|report}/:id`), matching how the API scopes
+ * resources by project. `org` and `query-engines` are org-global and sit outside
+ * the project layout; `chats` nests under the project because sessions are
+ * project-scoped. `onboarding` is top-level and outside the app-shell because the
+ * principal has no org yet, so there is no shell to scope.
+ *
+ * The `/ui-server/*` routes are loader/action-only resource routes (no React) —
+ * top-level so they carry none of the app-shell chrome or its clientLoader, and
+ * run purely server-side as the SSR brokers to the backend through auth-proxy.
+ * `health` is the auth-hop proof and `chat` relays the agent SSE; the catalog
+ * mutations are RRv7 `action`s (ADR-034) the components submit to via
+ * `<Form>` / `useFetcher`, brokering the write and letting the active loaders
+ * auto-revalidate. The single `datasets/:datasetId` route is body-agnostic — both
+ * a display-name rename and a model_name change hit the one backend
+ * `/api/datasets/{id}` endpoint.
+ *
+ * File paths resolve relative to `appDirectory` ("app"), so the leading `app/`
+ * segment is omitted.
+ */
 import type { RouteConfig } from "@react-router/dev/routes";
 import { index, layout, route } from "@react-router/dev/routes";
 
@@ -17,19 +33,15 @@ export default [
   route("/login", "routes/login.tsx"),
   route("/logout", "routes/logout.tsx"),
   route("/auth/callback", "routes/auth-callback.tsx"),
-  // Top-level, OUTSIDE the app-shell layout (D6): onboarding renders with no
-  // Topbar/overlays — the principal has no org yet, so no shell to scope.
   route("/onboarding", "routes/onboarding.tsx"),
-  // ui-server resource routes (loader/action only, no React). Top-level so they carry
-  // none of the app-shell chrome or its clientLoader; they run purely server-side
-  // and broker the live agent rails (SSR ui-server gateway, slice 1). /ui-server/health is
-  // the auth-hop proof; /ui-server/chat relays the agent SSE.
-  route("/ui-server/health", "routes/ui-server-health.tsx"),
-  route("/ui-server/chat", "routes/ui-server-chat.tsx"),
-  // S4 archive/restore actions retain their /bff paths here; reconciliation to
-  // the /ui-server convention (DC-104) lands with the S5 work that revisits them.
-  route("/bff/datasets/:datasetId/archive", "routes/bff-dataset-archive.tsx"),
-  route("/bff/datasets/:datasetId/restore", "routes/bff-dataset-restore.tsx"),
+  route("/ui-server/health", "routes/ui-server/health.tsx"),
+  route("/ui-server/chat", "routes/ui-server/chat.tsx"),
+  route("/ui-server/datasets/:datasetId/archive", "routes/ui-server/dataset-archive.tsx"),
+  route("/ui-server/datasets/:datasetId/restore", "routes/ui-server/dataset-restore.tsx"),
+  route("/ui-server/datasets/:datasetId", "routes/ui-server/dataset-update.tsx"),
+  route("/ui-server/projects/:projectId/views/:viewId", "routes/ui-server/view-rename.tsx"),
+  route("/ui-server/projects/:projectId/reports/:reportId", "routes/ui-server/report-rename.tsx"),
+  route("/ui-server/projects/:projectId/audit/:auditEntryId", "routes/ui-server/audit-update.tsx"),
   layout("routes/app-shell.tsx", [
     index("routes/home-redirect.tsx"),
     route("org", "routes/org.tsx"),

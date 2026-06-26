@@ -1,8 +1,8 @@
 // @vitest-environment node
-// Resource-route action: server-side BFF code, tested under node's undici.
+// Resource-route action: ui-server-side code, tested under node's undici.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { action } from "./bff-dataset-archive";
+import { action } from "./report-rename";
 
 const AUTH_PROXY_URL = "http://auth-proxy.test";
 
@@ -21,13 +21,15 @@ function stubFetch(response: Response): () => Captured {
   return () => captured;
 }
 
-function archiveRequest(): Request {
-  return new Request("http://localhost/bff/datasets/d1/archive", {
-    method: "POST",
+function renameRequest(body: unknown): Request {
+  return new Request("http://localhost/ui-server/projects/p1/reports/r1", {
+    method: "PATCH",
     headers: new Headers({
       cookie: "session=1",
       authorization: "Bearer user-jwt",
+      "content-type": "application/json",
     }),
+    body: JSON.stringify(body),
   });
 }
 
@@ -36,65 +38,65 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-describe("/bff/datasets/:datasetId/archive resource route", () => {
-  it("forwards POST to the backend archive endpoint through auth-proxy, carrying the user credential", async () => {
+describe("/ui-server/projects/:projectId/reports/:reportId resource route", () => {
+  it("forwards PATCH to the backend report endpoint through auth-proxy, carrying the credential AND the JSON body", async () => {
     const captured = stubFetch(new Response("{}", { status: 200 }));
 
     await action({
-      request: archiveRequest(),
-      params: { datasetId: "d1" },
+      request: renameRequest({ name: "Revenue" }),
+      params: { projectId: "p1", reportId: "r1" },
       context: {},
     } as never);
 
     const { url, init } = captured();
-    expect(url).toBe(`${AUTH_PROXY_URL}/api/datasets/d1/archive`);
-    expect(init.method).toBe("POST");
+    expect(url).toBe(`${AUTH_PROXY_URL}/api/projects/p1/reports/r1`);
+    expect(init.method).toBe("PATCH");
     expect(new Headers(init.headers).get("cookie")).toBe("session=1");
     expect(new Headers(init.headers).get("authorization")).toBe(
       "Bearer user-jwt",
     );
+    expect(JSON.parse(init.body as string)).toEqual({ name: "Revenue" });
   });
 
-  it("passes a 2xx upstream status through", async () => {
-    stubFetch(new Response("{}", { status: 200 }));
+  it("forwards the upstream 2xx status AND body through (not a canned response)", async () => {
+    // A distinctive upstream body proves the action returns what the backend
+    // actually sent, not a hardcoded status/body.
+    stubFetch(new Response('{"id":"r1","name":"X"}', { status: 200 }));
 
     const res = await action({
-      request: archiveRequest(),
-      params: { datasetId: "d1" },
+      request: renameRequest({ name: "X" }),
+      params: { projectId: "p1", reportId: "r1" },
       context: {},
     } as never);
 
     expect(res.status).toBe(200);
+    expect(await res.text()).toBe('{"id":"r1","name":"X"}');
   });
 
   it("passes a non-2xx upstream through unchanged WITHOUT redirecting (rollback-friendly)", async () => {
     stubFetch(new Response("nope", { status: 401 }));
 
     const res = await action({
-      request: archiveRequest(),
-      params: { datasetId: "d1" },
+      request: renameRequest({ name: "X" }),
+      params: { projectId: "p1", reportId: "r1" },
       context: {},
     } as never);
 
-    // A 401 must surface as 401, NOT a 302 to /login — this is a fetch target.
     expect(res.status).toBe(401);
     expect(res.headers.get("location")).toBeNull();
   });
 
-  it("URL-encodes the datasetId when building the upstream path", async () => {
+  it("URL-encodes the projectId and reportId when building the upstream path", async () => {
     const captured = stubFetch(new Response("{}", { status: 200 }));
 
     await action({
-      request: new Request("http://localhost/bff/datasets/x/archive", {
-        method: "POST",
-        headers: new Headers({ cookie: "session=1" }),
-      }),
-      params: { datasetId: "ds/with space" },
+      request: renameRequest({ name: "X" }),
+      params: { projectId: "p/1", reportId: "r 1" },
       context: {},
     } as never);
 
     expect(captured().url).toBe(
-      `${AUTH_PROXY_URL}/api/datasets/ds%2Fwith%20space/archive`,
+      `${AUTH_PROXY_URL}/api/projects/p%2F1/reports/r%201`,
     );
   });
 });

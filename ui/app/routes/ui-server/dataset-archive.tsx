@@ -1,4 +1,4 @@
-// /bff/datasets/:datasetId/archive — a resource route (action only, no
+// /ui-server/datasets/:datasetId/archive — a resource route (action only, no
 // component): the ui/ server-side broker for a dataset soft-delete. The browser
 // POSTs here same-origin (riding its session cookie); the action forwards the
 // archive to the backend `/api/datasets/{id}/archive` through auth-proxy via
@@ -11,7 +11,7 @@
 // its optimistic change back).
 import type { ActionFunctionArgs } from "react-router";
 
-import { apiFetch } from "../lib/api-client";
+import { apiFetch } from "../../lib/api-client";
 
 export async function action({
   request,

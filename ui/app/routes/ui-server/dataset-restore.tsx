@@ -1,4 +1,4 @@
-// /bff/datasets/:datasetId/restore — a resource route (action only, no
+// /ui-server/datasets/:datasetId/restore — a resource route (action only, no
 // component): the ui/ server-side broker for un-archiving a soft-deleted
 // dataset. Mirror of the archive broker: the browser POSTs here same-origin
 // (riding its session cookie); the action forwards to the backend
@@ -10,7 +10,7 @@
 // relies on the non-ok status to roll its optimistic change back).
 import type { ActionFunctionArgs } from "react-router";
 
-import { apiFetch } from "../lib/api-client";
+import { apiFetch } from "../../lib/api-client";
 
 export async function action({
   request,

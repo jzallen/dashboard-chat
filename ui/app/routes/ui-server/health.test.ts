@@ -2,7 +2,7 @@
 // Resource-route loader: server-side ui-server code, tested under node's undici.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { loader } from "./ui-server-health";
+import { loader } from "./health";
 
 const AUTH_PROXY_URL = "http://auth-proxy.test";
 

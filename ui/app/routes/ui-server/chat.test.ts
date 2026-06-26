@@ -2,7 +2,7 @@
 // Resource-route action: server-side ui-server code, tested under node's undici.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { action } from "./ui-server-chat";
+import { action } from "./chat";
 
 const AUTH_PROXY_URL = "http://auth-proxy.test";
 

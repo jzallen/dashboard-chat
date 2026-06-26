@@ -13,7 +13,7 @@
 // See docs/feature/ssr-ui-server-gateway/distill/roadmap.json step 4.
 import type { ActionFunctionArgs } from "react-router";
 
-import { agentFetch } from "../lib/agent-client";
+import { agentFetch } from "../../lib/agent-client";
 
 export async function action({ request }: ActionFunctionArgs): Promise<Response> {
   // The request body (messages + dataset/project context) is small JSON — reading

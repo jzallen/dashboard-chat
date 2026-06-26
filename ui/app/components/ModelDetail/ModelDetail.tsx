@@ -1,5 +1,6 @@
 /* Model detail view — header, dependency strip, AI audit, columns, SQL. */
 import { Fragment, type ReactNode, useState } from "react";
+import { useFetcher } from "react-router";
 
 import type { LineageNode, Model } from "../../catalog";
 import { Icon, LayerBadge, LayerDot, SqlBlock, TAG_ICON } from "../primitives";
@@ -67,6 +68,7 @@ function CopyBtn({ text }: { text: string }) {
 
 function AuditPanel({ node }: { node: LineageNode }) {
   const m = modelOf(node);
+  const fetcher = useFetcher();
   const audit = catalog.auditFor(node.id);
   // map transform before/after samples onto matching audit lines for datasets
   const samples = (m.kind === "dataset" ? m.transforms : []).map(
@@ -121,7 +123,16 @@ function AuditPanel({ node }: { node: LineageNode }) {
                   aria-label={`Toggle ${a.say}`}
                   checked={a.enabled ?? false}
                   onChange={() =>
-                    catalog.toggleAudit(node.id, a.auditEntryId!, !a.enabled)
+                    fetcher.submit(
+                      { enabled: !a.enabled },
+                      {
+                        method: "PATCH",
+                        action: `/ui-server/projects/${encodeURIComponent(
+                          catalog.getCurrentProject()?.id ?? "",
+                        )}/audit/${encodeURIComponent(a.auditEntryId!)}`,
+                        encType: "application/json",
+                      },
+                    )
                   }
                 />
               )}
@@ -314,15 +325,18 @@ function DataPreview({ node }: { node: LineageNode }) {
 }
 
 /**
- * The dataset display name as a click-to-edit header. Click commits the draft
- * via `catalog.renameSource` (the existing optimistic write-through path that
- * PATCHes `display_name` and rolls back on rejection); Enter/blur commits,
- * Escape cancels, and an empty/whitespace or unchanged draft is a no-op.
+ * The dataset display name as a click-to-edit header. Click commits the draft by
+ * submitting a PATCH `{ display_name }` via `useFetcher` to the
+ * `/ui-server/datasets/:datasetId` action (ADR-034: the action brokers the write
+ * to the backend and RRv7 auto-revalidates the active loaders on success).
+ * Pessimistic-by-default — no optimistic flip; Enter/blur commits, Escape
+ * cancels, and an empty/whitespace or unchanged draft is a no-op.
  *
  * Editing is gated to dataset nodes — views/reports render a static label.
  */
 function DetName({ node }: { node: LineageNode }) {
   const editable = modelOf(node).kind === "dataset";
+  const fetcher = useFetcher();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(node.label);
 
@@ -348,7 +362,14 @@ function DetName({ node }: { node: LineageNode }) {
     setEditing(false);
     const next = draft.trim();
     if (!next || next === node.label) return; // no-op / cancel
-    catalog.renameSource(node.id, next);
+    fetcher.submit(
+      { display_name: next },
+      {
+        method: "PATCH",
+        action: `/ui-server/datasets/${encodeURIComponent(node.id)}`,
+        encType: "application/json",
+      },
+    );
   };
 
   return (
@@ -434,10 +455,16 @@ function ConfirmModelName({
  *
  * For VIEW / REPORT nodes there is no machine name, so the friendly model name
  * (`m.name`) is shown READ-ONLY — distinct from the technical header label.
+ *
+ * On confirm the change is submitted as a PATCH `{ model_name }` via `useFetcher`
+ * to the shared `/ui-server/datasets/:datasetId` action (ADR-034). model_name is
+ * inherently pessimistic — write-first; the action surfaces a non-2xx (e.g. a 409
+ * collision) to the caller and RRv7 auto-revalidates only on success.
  */
 function DetSubline({ node, m }: { node: LineageNode; m: Model }) {
   const isDataset = m.kind === "dataset";
   const text = isDataset ? node.modelName : m.name;
+  const fetcher = useFetcher();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(text ?? "");
   const [pending, setPending] = useState<string | null>(null);
@@ -461,7 +488,14 @@ function DetSubline({ node, m }: { node: LineageNode; m: Model }) {
             setDraft(text);
           }}
           onConfirm={() => {
-            catalog.setModelName(node.id, pending);
+            fetcher.submit(
+              { model_name: pending },
+              {
+                method: "PATCH",
+                action: `/ui-server/datasets/${encodeURIComponent(node.id)}`,
+                encType: "application/json",
+              },
+            );
             setPending(null);
           }}
         />
