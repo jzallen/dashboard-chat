@@ -110,10 +110,30 @@ function redactError(
 }
 
 /**
- * Recurse into arrays, plain objects, and `Error`s; pass every other value
- * (primitives, `Date`, `Map`, `Set`, class instances) through untouched. A
- * `seen` set tracks the current ancestor chain so a reference cycle resolves to
+ * Run `recurse` with `value` marked on the current ancestor chain, restoring the
+ * chain on the way out so a value may still appear under sibling keys. If `value`
+ * is already an ancestor the reference closes a cycle, so short-circuit to
  * `[Circular]` instead of recursing forever and crashing the emit path.
+ */
+function withCycleGuard<T>(
+  value: object,
+  seen: WeakSet<object>,
+  recurse: () => T,
+): T | typeof CIRCULAR {
+  if (seen.has(value)) return CIRCULAR;
+  seen.add(value);
+  try {
+    return recurse();
+  } finally {
+    seen.delete(value);
+  }
+}
+
+/**
+ * Recurse into arrays, plain objects, and `Error`s; pass every other value
+ * (primitives, `Date`, `Map`, `Set`, class instances) through untouched.
+ * Recursion into a container is wrapped in `withCycleGuard` so a reference cycle
+ * resolves to `[Circular]`.
  */
 function redactValue(
   value: unknown,
@@ -121,25 +141,15 @@ function redactValue(
   seen: WeakSet<object>,
 ): unknown {
   if (Array.isArray(value)) {
-    if (seen.has(value)) return CIRCULAR;
-    seen.add(value);
-    const out = value.map((item) => redactValue(item, config, seen));
-    seen.delete(value);
-    return out;
+    return withCycleGuard(value, seen, () =>
+      value.map((item) => redactValue(item, config, seen)),
+    );
   }
   if (value instanceof Error) {
-    if (seen.has(value)) return CIRCULAR;
-    seen.add(value);
-    const out = redactError(value, config, seen);
-    seen.delete(value);
-    return out;
+    return withCycleGuard(value, seen, () => redactError(value, config, seen));
   }
   if (isPlainObject(value)) {
-    if (seen.has(value)) return CIRCULAR;
-    seen.add(value);
-    const out = redactRecord(value, config, seen);
-    seen.delete(value);
-    return out;
+    return withCycleGuard(value, seen, () => redactRecord(value, config, seen));
   }
   return value;
 }
