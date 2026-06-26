@@ -527,13 +527,16 @@ export function metadataApiSource(
       uploadId: string,
       choices?: Record<string, unknown>,
     ): Promise<{ datasetId: string }> {
-      // POST .../process → 200 JSON:API datasets (the linked/appended staging
-      // Dataset). apiPost returns the RAW body, so the id is read off `data.id`.
-      // A 4xx throws — notably a 422 SchemaMismatch (whose body carries the
-      // missing/extra/type_mismatch columns) the saga reports as
-      // source_upload_failed and the surface renders as a recovery affordance.
+      // The process write goes same-origin to the ui-server action
+      // (`POST /ui-server/sources/{id}/uploads/{id}/process`), which forwards to
+      // the backend `.../process` server-side and passes its 200 JSON:API
+      // datasets body (the linked/appended staging Dataset) — and any non-2xx —
+      // straight back. apiPost returns the RAW body, so the id is read off
+      // `data.id`. A 4xx throws (with the body) — notably a 422 SchemaMismatch
+      // (whose byte-intact missing/extra/type_mismatch detail the saga reports as
+      // source_upload_failed and the surface renders as a recovery affordance).
       const body = await apiPost<{ data: { id: string } }>(
-        `/api/sources/${encodeURIComponent(sourceId)}/uploads/${encodeURIComponent(uploadId)}/process`,
+        `/ui-server/sources/${encodeURIComponent(sourceId)}/uploads/${encodeURIComponent(uploadId)}/process`,
         choices ? { choices } : undefined,
         deps.getToken(),
       );
