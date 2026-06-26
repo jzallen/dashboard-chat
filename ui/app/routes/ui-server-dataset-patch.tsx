@@ -20,11 +20,12 @@
 // reflection is opt-in only where latency warrants it.
 import type { ActionFunctionArgs } from "react-router";
 
+import { brokerPatch } from "../lib/ui-server-patch";
+
 export async function action({
   request,
   params,
 }: ActionFunctionArgs): Promise<Response> {
-  void request;
-  void params;
-  throw new Error("not implemented");
+  const datasetId = params.datasetId ?? "";
+  return brokerPatch(request, `/datasets/${encodeURIComponent(datasetId)}`);
 }

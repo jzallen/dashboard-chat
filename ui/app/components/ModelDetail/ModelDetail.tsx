@@ -1,5 +1,6 @@
 /* Model detail view — header, dependency strip, AI audit, columns, SQL. */
 import { Fragment, type ReactNode, useState } from "react";
+import { useFetcher } from "react-router";
 
 import type { LineageNode, Model } from "../../catalog";
 import { Icon, LayerBadge, LayerDot, SqlBlock, TAG_ICON } from "../primitives";
@@ -314,15 +315,18 @@ function DataPreview({ node }: { node: LineageNode }) {
 }
 
 /**
- * The dataset display name as a click-to-edit header. Click commits the draft
- * via `catalog.renameSource` (the existing optimistic write-through path that
- * PATCHes `display_name` and rolls back on rejection); Enter/blur commits,
- * Escape cancels, and an empty/whitespace or unchanged draft is a no-op.
+ * The dataset display name as a click-to-edit header. Click commits the draft by
+ * submitting a PATCH `{ display_name }` via `useFetcher` to the
+ * `/ui-server/datasets/:datasetId` action (ADR-034: the action brokers the write
+ * to the backend and RRv7 auto-revalidates the active loaders on success).
+ * Pessimistic-by-default — no optimistic flip; Enter/blur commits, Escape
+ * cancels, and an empty/whitespace or unchanged draft is a no-op.
  *
  * Editing is gated to dataset nodes — views/reports render a static label.
  */
 function DetName({ node }: { node: LineageNode }) {
   const editable = modelOf(node).kind === "dataset";
+  const fetcher = useFetcher();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(node.label);
 
@@ -348,7 +352,14 @@ function DetName({ node }: { node: LineageNode }) {
     setEditing(false);
     const next = draft.trim();
     if (!next || next === node.label) return; // no-op / cancel
-    catalog.renameSource(node.id, next);
+    fetcher.submit(
+      { display_name: next },
+      {
+        method: "PATCH",
+        action: `/ui-server/datasets/${encodeURIComponent(node.id)}`,
+        encType: "application/json",
+      },
+    );
   };
 
   return (
