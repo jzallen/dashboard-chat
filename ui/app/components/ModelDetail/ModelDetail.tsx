@@ -445,10 +445,16 @@ function ConfirmModelName({
  *
  * For VIEW / REPORT nodes there is no machine name, so the friendly model name
  * (`m.name`) is shown READ-ONLY — distinct from the technical header label.
+ *
+ * On confirm the change is submitted as a PATCH `{ model_name }` via `useFetcher`
+ * to the shared `/ui-server/datasets/:datasetId` action (ADR-034). model_name is
+ * inherently pessimistic — write-first; the action surfaces a non-2xx (e.g. a 409
+ * collision) to the caller and RRv7 auto-revalidates only on success.
  */
 function DetSubline({ node, m }: { node: LineageNode; m: Model }) {
   const isDataset = m.kind === "dataset";
   const text = isDataset ? node.modelName : m.name;
+  const fetcher = useFetcher();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(text ?? "");
   const [pending, setPending] = useState<string | null>(null);
@@ -472,7 +478,14 @@ function DetSubline({ node, m }: { node: LineageNode; m: Model }) {
             setDraft(text);
           }}
           onConfirm={() => {
-            catalog.setModelName(node.id, pending);
+            fetcher.submit(
+              { model_name: pending },
+              {
+                method: "PATCH",
+                action: `/ui-server/datasets/${encodeURIComponent(node.id)}`,
+                encType: "application/json",
+              },
+            );
             setPending(null);
           }}
         />
