@@ -5,7 +5,7 @@ import { defineConfig } from "vite";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 
-// Dev-loop default for the in-process RRv7 server: the `/bff/*` resource routes
+// Dev-loop default for the in-process RRv7 server: the `/ui-server/*` resource routes
 // fetch auth-proxy server-side via AUTH_PROXY_URL (app/lib/agent-client.ts). In
 // dev that is the host-forwarded auth-proxy container at localhost:1042 — the same
 // origin the `/api` + `/ui-state` proxies below target. Production runs the server

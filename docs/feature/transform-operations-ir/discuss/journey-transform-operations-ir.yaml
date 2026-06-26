@@ -1,0 +1,172 @@
+schema_version: 1
+# Feature-level journey contract — transform-operations-ir (backend IR perspective).
+#
+# This is NOT yet a product-SSOT journey. It is the backend operations-IR
+# contract that underlies the provisional SSOT journey J-005 ("Transform
+# toggles: preview / apply / undo"). J-005's full promotion to
+# docs/product/journeys/ needs its UI/state-machine dimension too (JOB-002); this
+# file supplies the server-owned source-of-truth half. See _inventory.md note.
+#
+# Human-readable perspective + emotional arc:
+#   journey-transform-operations-ir-visual.md
+# Gherkin:
+#   journey-transform-operations-ir.feature
+
+journey:
+  id: "J-005-backend"          # provisional; promotes into J-005 when UI dimension lands
+  name: "Shaping a dataset's staging layer through the operations IR"
+  goal: >
+    Capture every staging-layer change — authored directly or imported from
+    Excel/Power Query (M) — as one canonical, sequenced, tool-agnostic list of
+    operations that deterministically renders to ibis/SQL, validated at the
+    boundary, so the preview, the ejected dbt, and the imported M all describe the
+    same intent and no tool's dialect leaks into the stored authority.
+
+  job_references:
+    - id: JOB-003
+      relationship: "primary — this journey IS the surface that exercises JOB-003's canonical, deterministic, tool-agnostic operations IR"
+    - id: JOB-001
+      relationship: "foundational — the reproducibility invariant makes JOB-001's assertions stable across the eject-to-dbt boundary"
+    - id: JOB-002
+      relationship: "compositional — the operations list is the server-owned source of truth that J-005's transform-toggle state machine projects"
+
+  primary_personas:
+    - id: PERSONA-CHAT-AUTHOR
+      name: "Chat-driven author"
+      role: "user shaping a dataset's staging layer via natural language"
+      context: "issues add / reorder / remove operations and expects the preview to reflect exactly what was asked, in order"
+    - id: PERSONA-AGENT
+      name: "Agent (programmatic author)"
+      role: "the AI agent translating intent into transform operations"
+      context: "writes operations through the same use-case boundary; needs malformed operations rejected, not silently degraded"
+    - id: PERSONA-EXCEL-IMPORTER
+      name: "Excel / Power Query importer"
+      role: "user bringing an existing M (Power Query) script into the dataset"
+      context: "expects the supported subset imported as operations and any unsupported construct named, never silently dropped"
+
+# Lifecycle of an operation set, modeled as server-observable states.
+# ibis/SQL are always DERIVED — never a state that is read back as authority.
+state_machine:
+  initial: "drafting"
+  authority: "operations_list"   # the only durable source of truth
+  states:
+    - id: "drafting"
+      kind: "client-side"
+      description: >
+        Author or agent composes one or more operations (filter | clean | alias |
+        map) to add, reorder, or remove. Not yet submitted.
+      transitions:
+        - on: "submit_operations"
+          to: "validating"
+        - on: "import_m_script"
+          to: "parsing_m"
+
+    - id: "parsing_m"
+      kind: "in-flight"
+      description: >
+        Bounded M parser recognizes the M subset that maps to the operation
+        vocabulary and emits neutral operations. Only inbound writer besides
+        direct authoring.
+      transitions:
+        - on: "m_subset_recognized"
+          to: "validating"
+        - on: "m_out_of_vocabulary"
+          to: "rejected_unsupported_construct"
+
+    - id: "validating"
+      kind: "in-flight"
+      description: >
+        Pydantic discriminated union validates operation shape at the use-case
+        boundary BEFORE persistence (mirrors ViewFilterVariant).
+      transitions:
+        - on: "shape_valid"
+          to: "persisted"
+        - on: "shape_invalid"
+          to: "rejected_malformed"
+
+    - id: "persisted"
+      kind: "durable"
+      description: >
+        Operations written to the transforms table with an explicit per-dataset
+        `sequence`. This is the canonical source of truth.
+      invariants:
+        - "every operation has a non-null sequence"
+        - "sequence is unique within a dataset"
+        - "created_at is provenance only, never load-bearing for order"
+      transitions:
+        - on: "render_requested"
+          to: "rendered"
+        - on: "reorder_requested"
+          to: "validating"     # re-validate, re-persist with new sequence
+
+    - id: "rendered"
+      kind: "derived"
+      description: >
+        ibis renderer (visitor over the dispatch catalog) compiles the
+        sequence-ordered operations to an ibis Table → DuckDB/dbt SQL. Sidecars
+        (operation_ibis_args / operation_m_args) shape per-instance render only.
+      invariants:
+        - "render is a pure function of (operations_list, sequence, sidecars)"
+        - "compiling the same operations yields byte-identical SQL across runs"
+        - "no path reads SQL or a compiled ibis expression back as authority"
+      transitions:
+        - on: "operations_changed"
+          to: "drafting"
+
+    # --- error / terminal states ---
+    - id: "rejected_malformed"
+      kind: "terminal-error"
+      description: >
+        Malformed operation (missing required field / unknown discriminator)
+        rejected at the boundary with a structured error. Nothing persisted.
+        Never degrades to a `-- Error generating SQL` comment.
+      recovery: "author fixes the operation and resubmits; no half-written state"
+
+    - id: "rejected_unsupported_construct"
+      kind: "terminal-error"
+      description: >
+        M construct outside the operation vocabulary (join, pivot, type engine)
+        rejected at parse time with an error NAMING the construct. No partial
+        import, no placeholder operation.
+      recovery: "author removes/rewrites the unsupported step; supported subset re-imports cleanly"
+
+build_time_guards:
+  - id: "renderer_completeness_probe"
+    description: >
+      Static check: every operation discriminator has an entry in every active
+      visitor (ibis, display, and future M). A missing entry fails the build — a
+      silent runtime skip can never ship.
+
+shared_artifacts:
+  - name: "operations_list"
+    source_of_truth: "transforms table (canonical, persisted, sequenced)"
+    owner: "Operation Validator + Transform use cases"
+    derived: false
+  - name: "sequence"
+    source_of_truth: "assigned at write time, per-dataset, gap-tolerant integers"
+    owner: "Transform use cases"
+    derived: false
+  - name: "operation_ibis_args"
+    source_of_truth: "sparse sidecar table (one optional row per operation)"
+    owner: "ibis render boundary"
+    derived: false
+    note: "internal-only; never in Transform.serialize()"
+  - name: "operation_m_args"
+    source_of_truth: "sparse sidecar table (one optional row per operation)"
+    owner: "M render boundary"
+    derived: false
+    note: "internal-only"
+  - name: "dispatch_catalog"
+    source_of_truth: "single code catalog keyed by operation discriminator"
+    owner: "renderer module (refactor of types.py:120-267)"
+    derived: false
+  - name: "staging_sql"
+    source_of_truth: "ibis renderer output"
+    owner: "dataset_sql.build_ibis_table"
+    derived: true
+    note: "DERIVED — never read back, never stored as authority"
+
+integration_checkpoints:
+  - "operations_list is the single authority — M parser writes in, ibis renders out, neither inspects the other's artifact"
+  - "boundary validation precedes persistence on create_transforms / update_transforms"
+  - "loaders order by sequence, not created_at (repository.py:619 must change)"

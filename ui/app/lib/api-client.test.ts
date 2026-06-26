@@ -1,5 +1,5 @@
 // @vitest-environment node
-// api-client is server-side BFF code; test it under node's undici Request/
+// api-client is server-side ui-server code; test it under node's undici Request/
 // Headers/fetch (matching the RRv7 server runtime), not happy-dom.
 //
 // AC1 (DC-8): `apiFetch` targets `/api/<path>`, forwards the inbound credential,

@@ -1,147 +1,147 @@
 # Dashboard Chat
 
-A full-stack web application that combines a data table dashboard with an AI-powered chat interface. Users can control table operations (filtering, sorting, adding/deleting rows) using natural language commands through LLM tool calling.
+**A chat-first prototyping tool for data models and dashboards.** Upload raw files
+(or synthetic data), shape a data model entirely through natural language, preview a
+live dashboard, then hand off a working dbt project and renderable dashboard code to
+your engineering teams.
 
-**[Live Demo](https://dashboard-chat.pages.dev/)**
+It's built for people who have domain expertise and maybe know some SQL, but don't
+want to stand up data infrastructure just to explore an idea.
 
-## Features
+> 📖 **[Read the full product vision](docs/vision.md)** — the prototyping workflow,
+> target users, and handoff model.
 
-**Chat-Driven Table Operations**
-- Filter data by any column with multiple operators (equals, contains, greater than, less than, etc.)
-- Sort columns ascending or descending
-- Add and delete rows through conversation
-- Clear filters and sorting with natural language
+## Demo
 
-**Interactive Data Table**
-- Powered by TanStack React Table
-- Multi-column filtering with active filter display
-- Sortable columns
-- Pagination
-- Responsive layout
+<!-- TODO: replace this placeholder with the demo video.
+     For a hosted file, embed a thumbnail that links to it:
+       [![Watch the demo](docs/assets/demo-thumbnail.png)](https://link-to-video)
+     Or, to attach the video directly, drag-and-drop the file into the GitHub
+     PR/issue editor and paste the generated user-images.githubusercontent.com URL here. -->
 
-**Real-Time Streaming**
-- Server-Sent Events (SSE) for streaming AI responses
-- Automatic tool call detection and execution
-- Loading states and error handling
+<img width="400" height="224" alt="Recording 2026-06-25 145043" src="https://github.com/user-attachments/assets/17810a88-b60b-4195-8639-629c0ad43122" />
 
-## Tech Stack
 
-**Frontend**
-- React 18 + TypeScript
-- Vite (build tool)
-- TanStack React Table
-- Tailwind CSS
+## The Prototyping Workflow
 
-**Backend**
-- Cloudflare Workers
-- Groq API (llama-3.3-70b-versatile)
-- Server-Sent Events streaming
-
-**Testing**
-- Vitest (unit tests)
-- Playwright (E2E tests)
-- Testing Library
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js 18+
-- npm
-- [Groq API key](https://console.groq.com)
-
-### Installation
-
-```bash
-npm install
+```
+┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+│   1. UPLOAD  │    │  2. MODEL    │    │  3. PREVIEW  │    │  4. HANDOFF  │
+│              │───►│              │───►│              │───►│              │
+│  CSV, Excel, │    │ Clean, join, │    │ Live dashboard│   │ dbt project  │
+│  JSON,       │    │ filter, view │    │ preview with  │   │ + renderable │
+│  Parquet     │    │ via chat     │    │ hot reload    │   │ dashboard    │
+└──────────────┘    └──────────────┘    └──────────────┘    └──────────────┘
+   COMPLETE            COMPLETE            PLANNED          dbt COMPLETE
+                  (reports in progress)
 ```
 
-### Environment Setup
+1. **Upload** — Drop in structured files. The system auto-detects format, converts to
+   Parquet, stores it in S3-compatible object storage, and generates previews with
+   column profiles. Supported: CSV, Excel (`.xlsx`/`.xls`), JSON, Parquet, FHIR bundles.
 
-**Backend API** (optional):
-```bash
-DATABASE_URL=sqlite+aiosqlite:///./data/app.db
-CORS_ORIGINS=http://localhost:5173
-DEBUG=true
-```
+2. **Model with natural language** — With a dataset loaded, every operation happens
+   through chat: clean (trim, standardize casing, fill nulls), filter, transform
+   (rename, sort, add/delete rows), build views (join datasets, set grain and
+   materialization), and build reports (dimensions, measures, aggregations — *backend
+   ready, agent tools in progress*). Every operation is a reproducible transform in a
+   3-stage Ibis pipeline (MUTATE → FILTER → RENAME). Nothing is destructive — the raw
+   Parquet is never modified, and transforms can be disabled and re-enabled.
 
-**Chat Worker** - Create a `.dev.vars` file in the project root:
-```
-GROQ_API_KEY=your_groq_api_key_here
-CORS_ORIGIN=http://localhost:5173
-API_URL=http://api:8000
-```
+3. **Preview** *(planned)* — The agent first proposes a cheap grid-layout mockup in
+   chat (sub-2s via Groq) so you can rearrange the layout before any expensive
+   generation. Once confirmed, the system generates renderable Vizro code that renders
+   in a separate preview tab with hot reload. Dashboard interactions run locally against
+   a DuckDB WASM instance in the browser for sub-10ms drill-downs.
 
-## Development
+4. **Handoff** — The prototype produces artifacts engineers already know how to use:
+   - **dbt project** → data engineers — a 4-layer dbt archive (sources → staging →
+     intermediate → marts) with YAML schemas, macros, model SQL, and `profiles.yml`.
+     `dbt run` works out of the box.
+   - **Renderable dashboard code** *(planned)* → software engineers — generated Vizro
+     Python, not a screenshot, that can be connected to real data and deployed.
+   - **SQL access** → analysts — enable SQL on a project to provision a `pg_duckdb`
+     schema with foreign tables, reachable from any client over the PostgreSQL wire
+     protocol.
 
-Start all services with Docker Compose:
+## What Makes This Different
 
-```bash
-docker compose up
-```
-
-Open http://localhost:5173 to use the application.
-
-## Testing
-
-**Unit tests:**
-```bash
-npm test              # Watch mode
-npm run test:run      # Single run
-```
-
-**E2E tests** (requires both dev servers running):
-```bash
-npm run test:e2e:local    # Run tests
-npm run test:e2e:ui       # UI mode
-npm run test:e2e:debug    # Debug mode
-```
-
-## Deployment
-
-The application deploys to Cloudflare:
-
-```bash
-npm run build             # Build frontend
-npm run deploy:pages      # Deploy frontend to Cloudflare Pages
-npm run deploy:worker     # Deploy backend to Cloudflare Workers
-```
-
-GitHub Actions automatically deploys on push to main.
+1. **Prototyping, not production** — The output is a handoff artifact, not a hosted
+   analytics platform. Users sketch ideas; engineers build the real thing.
+2. **Chat-native** — Every operation, from cleaning to dashboard design, is natural
+   language. The LLM sees the actual schema and emits structured tool calls, not raw SQL.
+3. **Non-destructive exploration** — All operations are reversible. Raw Parquet is never
+   mutated.
+4. **Live preview with hot reload** — The feedback loop is seconds, not sprint cycles.
+5. **Standard handoff formats** — dbt projects and renderable Vizro code, not
+   proprietary exports.
 
 ## Architecture
 
+Dashboard Chat is a multi-service monorepo. Source-tree directories are named for the
+**body of source** they contain; Docker Compose services are named for their **runtime
+role** — the two layers are intentionally decoupled (see
+[ADR-033](docs/decisions/adr-033-source-tree-topology-separation.md)).
+
+| Service | Stack | Responsibility |
+|---|---|---|
+| **Frontend** (`ui/`) | React 18 + React Router v7 (framework mode) | Chat panel + preview tab |
+| **Agent** (`agent/`) | Hono (Node.js) | Chat API with SSE streaming via Groq + tool calling |
+| **Backend** (`backend/`) | FastAPI + SQLAlchemy (async) + DuckDB + Alembic | REST endpoints, upload pipeline, transforms, dbt export |
+| **Auth-Proxy** (`auth-proxy/`) | Hono (Node.js) | JWT verification, M2M token minting, identity-header injection, multi-upstream routing |
+| **UI-State** (`ui-state/`) | Hono + XState v5 actor system + Redis | Backend-for-frontend holding flow state across machines |
+| **Shared** (`shared/chat/`) | TypeScript | Single source of truth for the chat event schema, imported by `agent/` and `ui/` |
+
+> A `planner/` service (LangGraph + Claude, for Vizro dashboard-code generation) and a
+> healthcare track (Synthea synthetic data, Mirth Connect HL7v2 → FHIR) also live in the
+> repo for deeper exploration. Both are the least-developed parts of the system and are
+> intentionally left out of the topology above.
+
+**Supporting infrastructure:** `pg_duckdb` (analytical query engine over Parquet via
+`httpfs`), MinIO (S3-compatible object storage), and PostgreSQL (metadata).
+
+**External services:** Groq (fast LLM inference, `llama-3.3-70b-versatile`), WorkOS
+(production SSO + directory sync), and Stream.io (chat persistence).
+
 ```
-┌─────────────────┐     POST /chat      ┌───────────────────┐
-│                 │ ──────────────────► │                   │
-│  React Frontend │                     │ Cloudflare Worker │
-│                 │ ◄────────────────── │                   │
-└─────────────────┘    SSE Stream       └───────────────────┘
-        │                                        │
-        │                                        │
-        ▼                                        ▼
-┌─────────────────┐                     ┌───────────────────┐
-│  TanStack Table │                     │     Groq API      │
-│  (state mgmt)   │                     │  (tool calling)   │
-└─────────────────┘                     └───────────────────┘
+        Browser (chat + preview)
+              │
+              ▼
+   ┌──────────────────────┐   POST /chat (SSE)   ┌──────────┐    ┌──────────┐
+   │   Frontend  (ui/)     │ ───────────────────► │  Agent   │──► │   Groq   │
+   │   React 18 / RRv7     │ ◄─────────────────── │  (Hono)  │    └──────────┘
+   └──────────────────────┘     REST API          └──────────┘
+              │
+              ▼
+   ┌──────────────────────┐      ┌──────────────┐      ┌──────────────┐
+   │   Backend (FastAPI)   │ ───► │   pg_duckdb  │ ───► │    MinIO     │
+   │   transforms / dbt    │      │ query engine │ S3   │  (Parquet)   │
+   └──────────────────────┘      └──────────────┘      └──────────────┘
+              │  dbt export
+              ▼
+   dbt project → data engineers   |   Vizro code → software engineers
 ```
 
-1. User sends a natural language message
-2. Frontend POSTs message history to `/chat` endpoint
-3. Worker streams response from Groq API via SSE
-4. Frontend parses tool calls and executes table operations
-5. TanStack Table state updates trigger UI re-render
+See [`docs/architecture/`](docs/architecture/) for the full C4 container diagram,
+agent topology, auth flow, and backend/frontend layer breakdowns. Technology choices
+are recorded as [ADRs](docs/decisions/README.md).
 
-## Available Tool Calls
+## Development Methodology
 
-| Tool | Description |
-|------|-------------|
-| `filterTable` | Filter by column with operators: equals, notEquals, contains, gt, lt, gte, lte |
-| `sortTable` | Sort column ascending or descending |
-| `addRow` | Add a new row with specified data |
-| `deleteRow` | Delete row matching search text |
-| `clearFilters` | Remove all active filters |
-| `clearSort` | Remove current sorting |
+This project follows **[nwave-ai](docs/decisions/adr-013-nwave-adoption.md)** as its
+SDLC framework. Features flow through waves (DISCUSS → DESIGN → DISTILL → DELIVER) with
+Outside-In TDD and a hexagonal architecture. As a brownfield codebase, work enters at
+later waves — see [CLAUDE.md](CLAUDE.md) for the routing matrix, conventions, and the
+testing discipline that govern contributions.
+
+## Documentation
+
+- [Product Vision](docs/vision.md) — the prototyping workflow and handoff model
+- [Architecture](docs/architecture/) — C4 diagrams, service topology, layer breakdowns
+- [Domain](docs/domain/) — entities, dataset lifecycle, tool-call registry
+- [API Endpoints](docs/api/endpoints.md) — REST endpoints across the backend routers
+- [Architecture Decision Records](docs/decisions/README.md) — technology and design decisions
+- [CLAUDE.md](CLAUDE.md) — developer workflow, conventions, and quick commands
 
 ## License
 

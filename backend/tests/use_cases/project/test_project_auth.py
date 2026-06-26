@@ -13,7 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.types import AuthUser
 from app.repositories import set_session
 from app.repositories.metadata import ProjectRecord
-from app.use_cases.project import create_project, list_projects
+from app.use_cases.project import (
+    create_project,
+    delete_project,
+    get_project,
+    list_projects,
+    update_project,
+)
 from tests.uuidv7_fixtures import (
     ORG_1,
     ORG_OTHER,
@@ -77,6 +83,53 @@ class TestListProjectsAuth:
                 assert data["items"][0]["id"] == PROJECT_OTHER
             case Failure(error):
                 pytest.fail(f"list_projects should succeed, got: {error}")
+
+
+class TestCrossTenantPointAccess:
+    """get/update/delete reject a cross-tenant project_id at the repository layer.
+
+    The repository scopes its query by the caller's org, so a project owned by a
+    different org is indistinguishable from not-found even if the router edge
+    check were bypassed — this exercises that defense-in-depth via the use case.
+    """
+
+    async def _seed(self, db_session: AsyncSession):
+        set_session(db_session)
+        db_session.add(ProjectRecord(id=PROJECT_MINE, name="Mine", org_id=ORG_1))
+        db_session.add(ProjectRecord(id=PROJECT_OTHER, name="Theirs", org_id=ORG_OTHER))
+        await db_session.commit()
+
+    async def test_get_project_for_other_org_returns_not_found(self, db_session: AsyncSession):
+        await self._seed(db_session)
+        result = await get_project(project_id=PROJECT_OTHER, user=TEST_USER)
+        assert isinstance(result, Failure)
+        assert "not found" in str(result.failure())
+
+    async def test_update_project_for_other_org_returns_not_found_and_no_mutation(
+        self, db_session: AsyncSession
+    ):
+        await self._seed(db_session)
+        result = await update_project(
+            project_id=PROJECT_OTHER, update_data={"name": "Hijacked"}, user=TEST_USER
+        )
+        assert isinstance(result, Failure)
+        assert "not found" in str(result.failure())
+        # The other org's row is untouched.
+        other_user = AuthUser(id="other", email="o@test.com", org_id=ORG_OTHER)
+        reread = await get_project(project_id=PROJECT_OTHER, user=other_user)
+        assert reread.unwrap()["name"] == "Theirs"
+
+    async def test_delete_project_for_other_org_returns_not_found_and_no_delete(
+        self, db_session: AsyncSession
+    ):
+        await self._seed(db_session)
+        result = await delete_project(project_id=PROJECT_OTHER, user=TEST_USER)
+        assert isinstance(result, Failure)
+        assert "not found" in str(result.failure())
+        # The other org's row still exists.
+        other_user = AuthUser(id="other", email="o@test.com", org_id=ORG_OTHER)
+        reread = await get_project(project_id=PROJECT_OTHER, user=other_user)
+        assert isinstance(reread, Success)
 
 
 class TestCreateProjectAuth:

@@ -1,7 +1,7 @@
 /**
  * agentFetch — the server-side authenticated client for the agent worker, reached
  * through auth-proxy's `/worker/*` prefix. Runs ONLY in RRv7 server loaders/actions
- * (the ui/ BFF).
+ * (the ui-server).
  *
  * A thin `/worker`-prefixed wrapper over the shared {@link proxyFetch} primitive:
  * it forwards the inbound USER credential (`cookie` + `authorization`) to

@@ -1,0 +1,172 @@
+schema_version: 1
+# Feature-level journey contract — log-coverage-and-quality (operator/observability perspective).
+#
+# This is NOT yet a product-SSOT journey. It is the operator diagnosis loop that
+# the logging sweep must support, catalogued provisionally as J-008 in
+# docs/product/journeys/_inventory.md. Observability is a cross-cutting concern
+# (like token-expiry / org-switching) rather than an end-user product flow, so it
+# stays a feature-level contract unless/until it is deliberately promoted.
+#
+# Human-readable perspective + emotional arc:
+#   journey-observability-sweep-visual.md
+# Gherkin:
+#   journey-observability-sweep.feature
+
+journey:
+  id: "J-008-observability"
+  name: "Diagnosing a cross-service failure through the logs"
+  goal: >
+    Let an on-call engineer or security reviewer follow a single user action across
+    all five runtime surfaces via one correlation id, read the reason for every
+    failure and every auth/business decision (never the credential), and raise
+    verbosity at runtime — turning logs from silence-or-noise into a trustworthy
+    audit trail.
+
+  job_references:
+    - id: JOB-004
+      relationship: "primary — this journey IS the diagnosis loop JOB-004 must make complete"
+    - id: JOB-002
+      relationship: "compositional — ui-state's server-owned flow machines are a primary instrumented surface; their transition/error logs feed Step 3"
+    - id: JOB-001
+      relationship: "supportive — correlatable, structured logs let an integration test triage workflow-vs-data failures (JOB-001 O6)"
+
+  primary_personas:
+    - id: PERSONA-ONCALL
+      name: "On-call engineer (Ops)"
+      role: "diagnoses a user-reported failure under time pressure"
+      context: "starts from a timestamp + symptom; needs one id to grep and a logged reason at the failing hop"
+    - id: PERSONA-DEV
+      name: "Backend / full-stack developer"
+      role: "confirms a happy path executed correctly and that no failure is swallowed"
+      context: "reads INFO entry/exit markers and WARN/ERROR-with-context instead of attaching a debugger"
+    - id: PERSONA-SEC
+      name: "Security / compliance reviewer"
+      role: "audits authentication/authorization decisions"
+      context: "needs every auth decision logged with outcome + reason + principal, and a guarantee no credential/PII is ever logged"
+
+  # The five surfaces this journey spans. ui/app/lib/log.ts is the envelope anchor.
+  instrumented_surfaces:
+    - id: auth-proxy
+      role: "ingress — mints the correlation id; logs every auth decision"
+    - id: backend
+      role: "FastAPI — request lifecycle + DomainException outcomes + tenant context"
+    - id: agent
+      role: "chat API — turn boundaries, Groq, tool dispatch"
+    - id: ui-state
+      role: "flow state machines — transitions, Redis, SSE (already has request_id pattern)"
+    - id: ui
+      role: "SSR/BFF + client — gateway relays, loaders/actions, chat fetch/SSE; envelope anchor"
+
+# The diagnosis loop, modeled as operator-observable states.
+state_machine:
+  initial: "report_received"
+  authority: "log_records"   # the structured LogRecord stream is the only diagnosis surface
+  states:
+    - id: "report_received"
+      kind: "external"
+      description: "A user reports a failure (or a dev needs to confirm a path). Operator has a timestamp/symptom."
+      transitions:
+        - on: "has_correlation_id"
+          to: "tracing"
+        - on: "no_correlation_id"
+          to: "blocked_no_id"
+
+    - id: "tracing"
+      kind: "in-flight"
+      description: "Operator greps one correlation id across all five surfaces' logs."
+      invariants:
+        - "every log line for a request carries the same correlation_id"
+        - "the id is minted at auth-proxy ingress and propagated to every downstream hop"
+      transitions:
+        - on: "failing_hop_found"
+          to: "reading_failure"
+
+    - id: "reading_failure"
+      kind: "in-flight"
+      description: "Operator reads the failing hop's INFO entry/exit + WARN/ERROR with reason, stack, and tenant context."
+      invariants:
+        - "every critical path has an INFO entry and a completion marker"
+        - "no failure on a catalogued critical path is swallowed silently"
+      transitions:
+        - on: "reason_is_auth"
+          to: "reading_decision"
+        - on: "reason_is_clear"
+          to: "diagnosed"
+        - on: "need_more_detail"
+          to: "raising_verbosity"
+
+    - id: "reading_decision"
+      kind: "in-flight"
+      description: "For auth/authorization failures, operator reads the decision reason + principal."
+      invariants:
+        - "every auth decision logs outcome + reason + principal_id/client_id"
+        - "no token, cookie, secret, or PII appears in any log line (redaction guard)"
+      transitions:
+        - on: "reason_understood"
+          to: "diagnosed"
+
+    - id: "raising_verbosity"
+      kind: "in-flight"
+      description: "Operator sets LOG_LEVEL=debug on the service and re-runs to see DEBUG detail."
+      invariants:
+        - "every service honours LOG_LEVEL at runtime; default INFO"
+      transitions:
+        - on: "detail_seen"
+          to: "diagnosed"
+
+    - id: "diagnosed"
+      kind: "terminal-success"
+      description: "Operator has localized the failing hop and understands the reason. Diagnosis complete."
+
+    # --- the failure mode this feature removes ---
+    - id: "blocked_no_id"
+      kind: "terminal-error"
+      description: >
+        Today's dead-end: no correlation id on the error response, so the operator
+        cannot follow the request across services and must reconstruct the path by
+        hand. This state is what the feature eliminates.
+      recovery: "error responses must carry correlation_id (US-1); then re-enter at tracing"
+
+build_time_guards:
+  - id: "redaction_regression_test"
+    description: >
+      A test proves known-sensitive keys (authorization, cookie, *token*, *secret*,
+      password, raw email) are never serialized by any logger. Born inside the
+      auth-proxy slice; re-asserted by every subsequent slice.
+  - id: "no_raw_console_lint"
+    description: >
+      Optional CI guard (open question) forbidding bare console.* / print() outside
+      the logger modules, to prevent regression back to debug debris.
+
+shared_artifacts:
+  - name: "log_record"
+    source_of_truth: "ECS/OTel LogRecord envelope (ui/app/lib/log.ts), emitted by every service's createLogger(channel)"
+    owner: "each service's logger module (Node) / dictConfig JSON formatter (Python)"
+    derived: false
+    note: "fields: @timestamp, log.level, event.module, event.action, attributes"
+  - name: "correlation_id"
+    source_of_truth: "minted at auth-proxy ingress (generalize app.ts:958) if absent on x-request-id / x-correlation-id"
+    owner: "auth-proxy ingress; bound per-request via AsyncLocalStorage (Node) / contextvars (Python)"
+    derived: false
+    note: "propagated on every upstream hop; attached to every log line; echoed on error responses"
+  - name: "tenant_context"
+    source_of_truth: "auth identity (org_id / user_id / principal_id) + resource ids (project_id, dataset_id, session_id, thread_id, flow_id)"
+    owner: "the request-context binding of each service"
+    derived: false
+    note: "attributes-only; never the credential that proved the identity"
+  - name: "log_level"
+    source_of_truth: "LOG_LEVEL env var per service"
+    owner: "each service's logger config"
+    derived: false
+    note: "fixes ui/ SSR limitation where configuredLevel() reads only localStorage"
+  - name: "event_action_keys"
+    source_of_truth: "a documented namespace of stable dotted keys (e.g. auth.jwt.rejected, chat.turn.start)"
+    owner: "this feature (conventions in wave-decisions.md); shared chat keys align via shared/chat"
+    derived: false
+
+integration_checkpoints:
+  - "correlation_id is minted once (auth-proxy) and only ever read/propagated downstream, never re-minted mid-stack"
+  - "the LogRecord envelope is identical across stacks — same field names in Node and Python"
+  - "redaction runs in the serializer of every logger, before emit"
+  - "existing KPI-event JSON lines (auth-proxy app.ts:838-848) and startup image-identity lines are preserved, not replaced"
+  - "chat event.action keys align across agent (producer) and ui (consumer) via shared/chat"

@@ -1,6 +1,6 @@
 /**
  * Server-side authenticated `/api` client, reached through auth-proxy's `/api/*`
- * prefix. Runs ONLY in RRv7 server loaders/actions (the ui/ BFF) — the cookie→Bearer
+ * prefix. Runs ONLY in RRv7 server loaders/actions (the ui-server) — the cookie→Bearer
  * hop for the backend `/api` upstream, sibling of the agent's `/worker` hop
  * ({@link agentFetch}). Both share the one forwarding primitive {@link proxyFetch} —
  * no duplicated cookie-copy logic.

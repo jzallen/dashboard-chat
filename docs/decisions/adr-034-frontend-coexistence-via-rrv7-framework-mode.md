@@ -1,6 +1,6 @@
 # ADR-034: Frontend coexistence via React Router v7 framework mode (supersedes ADR-031 §1, §3, §4)
 
-**Status:** Accepted (2026-05-12) · §"Build pipeline" + §Topology asset-serving amended by [ADR-047](adr-047-ssr-single-source-of-frontend-assets.md) (2026-05-30)
+**Status:** Accepted (2026-05-12) · §"Build pipeline" + §Topology asset-serving amended by [ADR-047](adr-047-ssr-single-source-of-frontend-assets.md) (2026-05-30) · Open Question 1 resolved and the idiomatic-RRv7 catalog-data direction recorded by an in-place amendment (2026-06-25, §"Amendment" below)
 **Date:** 2026-05-12
 **Originating wave:** ad-hoc review of ADR-031's strangler-fig framing
 **Companion artifacts:**
@@ -9,6 +9,49 @@
 - Inherits unchanged: ADR-031 §2 (what stays in nginx), §7 (auth path)
 - Related: [ADR-033](adr-033-source-tree-topology-separation.md) (source-tree/topology layer separation — applied here)
 - Reviewer: nw-solution-architect (foreground analysis, 2026-05-12)
+
+## Amendment (2026-06-25): idiomatic RRv7 for catalog data; SSE is a revalidation trigger (resolves Open Question 1)
+
+Moving the `ui/` catalog data layer behind the SSR gateway surfaced a fork: keep the
+bespoke client-side `DataCatalog` write-through (optimistic commit + rollback + manual
+scope revalidation, invoked imperatively by components) or converge on React Router's
+native data lifecycle. The bespoke path makes every mutation a hand-rolled special case —
+a single client object owning reads, writes, optimism, graph derivation, cross-route
+persistence, *and* live reflection at once. That is the "parallel framework" smell this
+ADR exists to avoid, recast at the data layer: a developer fluent in RRv7 should recognize
+the data flow, not have to learn a local framework that kept some RRv7 pieces and discarded
+the rest.
+
+**Decision — catalog data follows RRv7 idioms end to end:**
+
+- **Reads** are server `loader`s (already this ADR's §"What ADR-031 supersedes" §3): the
+  loader fetches through auth-proxy and derives the lineage graph server-side; the
+  component consumes `useLoaderData()`.
+- **Writes** are route `action`s invoked via `<Form>` / `useFetcher`; on completion RRv7
+  auto-revalidates the active loaders. Optimistic UI — only where a mutation's latency
+  warrants it — is RRv7's opt-in layer (`useFetcher` / `useOptimistic`), not a bespoke
+  store. Pessimistic-by-default is the norm.
+- The standalone client `DataCatalog` write-through (imperative `catalog.x()` calls, manual
+  rollback, `revalidateScoped`, captured-pid fences) is converged *away from*, not extended.
+
+**Open Question 1 (SSE-streamed chat vs SSR loaders) — resolved.** The agent's SSE stream
+is **not** a parallel client data path and does not justify a bespoke client model. SSE is
+a **signal**: an `EventSource` subscription calls `revalidator.revalidate()` (or a scoped
+`fetcher.load()`) when a `transform_applied` / `row_*` / `column_renamed` event arrives, and
+the loader re-runs and re-derives from server truth. This is the literal intent of SSE — the
+server emits, the client responds — expressed in the framework's own vocabulary. Derivation
+stays server-side in the loader; there is no client-side graph state and no client-side
+delta-merge. (If revalidation latency ever proves perceptible for high-frequency events, a
+narrowly-scoped reflection overlay seeded from loader data is the measured fallback — a last
+resort, not the default. This supersedes the original "opt out of SSR via `clientLoader`"
+pragmatic answer, which kept the data client-side rather than treating SSE as a trigger.)
+
+**Consequence for the in-flight migration.** Routing the catalog's mutations through
+same-origin `/ui-server/*` resource routes remains a valid step — that server hop is what an
+`action` needs regardless. What changes is the end-state: the resource route becomes the home
+of an RRv7 `action`, not a transparent pass-through for a client-orchestrated `fetch`. The
+project-level "keep optimistic commits client-side + action revalidation" lean recorded during
+DISCUSS is superseded by this stance and should be reconciled to point here.
 
 ## Context
 
@@ -153,7 +196,7 @@ The `/api/channels/:id/presentation-state` → agent direct rule is **load-beari
 
 ## Open questions
 
-1. **Is there an SSR data-fetching concern with the agent's SSE-streamed chat and the `presentation-state` endpoints?** Routes that include the chat surface (e.g., an eventual `/chat/:channelId`) would have RRv7 loaders trying to render server-side, but the chat stream is intrinsically client-side (SSE). Pragmatic answer: those routes opt out of SSR via `clientLoader` only. Flag during the relevant route's migration MR; not a blocker for MR-0.
+1. **Is there an SSR data-fetching concern with the agent's SSE-streamed chat and the `presentation-state` endpoints?** **Resolved (2026-06-25) — see §"Amendment" above.** SSE is treated as a revalidation *trigger* (`revalidator.revalidate()` on each event), not a parallel client data path; loaders/actions remain the idiomatic data lifecycle and derivation stays server-side. This replaces the earlier "opt out of SSR via `clientLoader`" answer. (The `presentation-state` endpoint's nginx routing is unchanged — see Open Question 3.)
 
 2. **Should the SSR build artifact ship in the same npm workspace as the SPA, or as a sibling workspace?** RRv7's Vite plugin assumes single-workspace. The current `frontend/` is already one workspace. Default: keep as one workspace; MR-0 confirms.
 

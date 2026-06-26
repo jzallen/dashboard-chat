@@ -34,7 +34,7 @@ async def get_project(
         ProjectNotFound: If project with given ID does not exist.
     """
     metadata_repo = repositories.metadata
-    project_dict = await metadata_repo.get_project(project_id)
+    project_dict = await metadata_repo.get_project(project_id, org_id=user.org_id if user else None)
     if project_dict is None:
         raise ProjectNotFound(project_id)
     return project_dict

@@ -724,7 +724,7 @@ export async function createDataCatalog(
     /**
      * Revalidate the CURRENTLY-scoped project against fresh server state — the
      * public seam for live reactive reads (e.g. the assistant-transform
-     * reflection: an SSE `transform_applied` event from /bff/chat triggers this so
+     * reflection: an SSE `transform_applied` event from /ui-server/chat triggers this so
      * the lineage/preview re-derives). Wraps the private scoped revalidation with
      * `fresh:true` (drop the source's per-project cache first). No-op until a
      * project is scoped (the captured-pid guard also drops a late commit if the

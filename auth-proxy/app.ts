@@ -3,7 +3,6 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { Hono } from "hono";
 
 import { IDENTITY_HEADERS, isPublicPath, verifyToken } from "./lib/auth.ts";
-import { runOrgCreateInterception } from "./lib/org-create-workflow.ts";
 import {
   buildSetCookie,
   COOKIE_AUTH_TOKEN,
@@ -17,6 +16,7 @@ import {
   issueM2mToken,
 } from "./lib/m2m.ts";
 import { openApiDocument } from "./lib/openapi.ts";
+import { runOrgCreateInterception } from "./lib/org-create-workflow.ts";
 import {
   isPatToken,
   issuePat,
@@ -599,7 +599,7 @@ async function buildAgentIdentityHeaders(
   });
 
   // ui-cookie-session (C1/D3): read the credential header-first, cookie
-  // fallback. The agent hop (ssr-bff-gateway slice-2) REHYDRATES this validated
+  // fallback. The agent hop (ssr-ui-server-gateway slice-2) REHYDRATES this validated
   // token as `Authorization: Bearer <token>` on the upstream request so the
   // agent's extractJwt sees a real bearer and its downstream backend-client can
   // re-enter auth-proxy's `/api/*` catch-all. Set explicitly (not relied upon
@@ -632,7 +632,10 @@ async function buildAgentIdentityHeaders(
   try {
     const identity = await verifyToken(token);
     headers.set("X-User-Id", identity.userId);
-    headers.set("X-Org-Id", identity.orgId);
+    // An empty org_id is the org-less signal; never inject an empty X-Org-Id
+    // (omitting it reads as "no tenant" upstream, same as an empty value would
+    // be normalised to, without putting a blank tenant on the wire).
+    if (identity.orgId) headers.set("X-Org-Id", identity.orgId);
     headers.set("X-User-Email", identity.email);
     headers.set("Authorization", `Bearer ${token}`);
     return { headers };
@@ -721,7 +724,8 @@ app.all("/ui-state/*", async (c) => {
     try {
       const identity = await verifyToken(token);
       incomingHeaders.set("X-User-Id", identity.userId);
-      incomingHeaders.set("X-Org-Id", identity.orgId);
+      // Org-less identities carry org_id ""; never inject an empty X-Org-Id.
+      if (identity.orgId) incomingHeaders.set("X-Org-Id", identity.orgId);
       incomingHeaders.set("X-User-Email", identity.email);
     } catch {
       return c.json({ error: "Invalid or expired token" }, 401);
@@ -887,9 +891,12 @@ app.all("*", async (c) => {
   try {
     const identity = await verifyToken(token);
 
-    // Set identity headers for the backend
+    // Set identity headers for the backend. An org-less identity (org_id "")
+    // injects NO X-Org-Id — the org-create interception below sets the freshly-
+    // provisioned org id on the forward, and other routes read an absent header
+    // as "no tenant" rather than a blank tenant string.
     incomingHeaders.set("X-User-Id", identity.userId);
-    incomingHeaders.set("X-Org-Id", identity.orgId);
+    if (identity.orgId) incomingHeaders.set("X-Org-Id", identity.orgId);
     incomingHeaders.set("X-User-Email", identity.email);
 
     // CDO-S5: WorkOS org-create interception. Cheap path+method+mode guard so

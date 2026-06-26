@@ -1,5 +1,5 @@
 /**
- * Dataset-schema resolution for the agent (ssr-bff-gateway slice 3).
+ * Dataset-schema resolution for the agent (ssr-ui-server-gateway slice 3).
  *
  * The cookie-only `ui/` chat POST omits `tableSchema`, so the agent fetches the
  * dataset's columns from the backend itself and maps them into the

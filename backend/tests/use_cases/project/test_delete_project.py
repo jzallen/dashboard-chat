@@ -68,10 +68,10 @@ class TestDeleteProject:
         set_session(seeded_db)
 
         class FailingMetadataRepository:
-            async def get_project(self, project_id):
+            async def get_project(self, project_id, org_id=None):
                 return {"id": PROJECT_1, "org_id": ORG_1, "name": "Test"}
 
-            async def delete_project(self, project_id):
+            async def delete_project(self, project_id, org_id=None):
                 raise SQLAlchemyError("Database connection lost")
 
         result = await delete_project(
