@@ -24,19 +24,19 @@ function rejectionReason(error: unknown): string {
 }
 
 /**
- * Verify one principal kind and audit the decision: run `verify`, then project
- * its claims onto {@link AuthResult}. An INFO line names the resolved principal
- * on success; a WARN line names the reason (and the principal when already
- * resolved) on any failure, before the original error propagates so the HTTP
- * mapping is unchanged. The token is never passed into the attributes bag.
+ * Wrap one principal kind's verification in audit logging: run `verifyCallback`,
+ * then project its claims onto {@link AuthResult}. An INFO line names the resolved
+ * principal on success; a WARN line names the reason (and the principal when
+ * already resolved) on any failure, before the original error propagates so the
+ * HTTP mapping is unchanged. The token is never passed into the attributes bag.
  */
-async function verifyAndAudit(
+async function withAuditLogging(
   kind: AuthKind,
-  verify: () => Promise<JWTPayload>,
+  verifyCallback: () => Promise<JWTPayload>,
 ): Promise<AuthResult> {
   let payload: JWTPayload;
   try {
-    payload = await verify();
+    payload = await verifyCallback();
   } catch (error) {
     log.warn(`auth.${kind}.rejected`, { reason: rejectionReason(error) });
     throw error;
@@ -174,27 +174,27 @@ export async function verifyToken(token: string): Promise<AuthResult> {
   // M2M tokens carry a fixed kid and verify against auth-proxy's local keypair.
   // This dispatch keeps the existing JWKS-based path unchanged for WorkOS / dev backend tokens.
   if (isM2mToken(token)) {
-    return verifyAndAudit("m2m", () => verifyM2mToken(token));
+    return withAuditLogging("m2m", () => verifyM2mToken(token));
   }
 
   // PATs share the same dispatch shape but additionally consult the PAT
   // store, so revocation takes effect immediately rather than waiting for
   // JWT expiry.
   if (isPatToken(token)) {
-    return verifyAndAudit("pat", () => verifyPatToken(token));
+    return withAuditLogging("pat", () => verifyPatToken(token));
   }
 
   // User tokens are auth-proxy-minted (Stage 1 of the
   // auth-proxy-mints-user-tokens feature). Distinguished by their kid,
   // verified against the same shared keypair.
   if (isUserToken(token)) {
-    return verifyAndAudit("user", () => verifyUserToken(token));
+    return withAuditLogging("user", () => verifyUserToken(token));
   }
 
   // Default: remote JWKS path for WorkOS / dev backend tokens. The config
   // guard throws inside the verify closure so an unconfigured JWKS source is
   // audited as a rejection alongside a signature/claim failure.
-  return verifyAndAudit("jwt", async () => {
+  return withAuditLogging("jwt", async () => {
     const config = readJwksConfig();
     if (!config) {
       if ((process.env.AUTH_MODE || "dev") === "dev") {
