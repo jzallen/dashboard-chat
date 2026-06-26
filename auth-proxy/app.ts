@@ -539,7 +539,7 @@ app.post("/api/auth/pats", async (c) => {
 
   log.info("auth.pat.issued", {
     principal_id: user.identity.userId,
-    jti: record.id,
+    pat_id: record.id,
     name: record.name,
   });
 
@@ -608,7 +608,7 @@ app.delete("/api/auth/pats/:id", async (c) => {
   }
   log.info("auth.pat.revoked", {
     principal_id: user.identity.userId,
-    jti: id,
+    pat_id: id,
   });
   return c.body(null, 204);
 });
