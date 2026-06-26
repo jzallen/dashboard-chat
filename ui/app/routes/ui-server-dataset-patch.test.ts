@@ -92,6 +92,19 @@ describe("/ui-server/datasets/:datasetId resource route", () => {
     expect(await res.text()).toBe('{"id":"d1","display_name":"X"}');
   });
 
+  it("defaults a body-less 2xx to an empty JSON object so a fetcher can parse it", async () => {
+    stubFetch(new Response("", { status: 200 }));
+
+    const res = await action({
+      request: patchRequest({ display_name: "X" }),
+      params: { datasetId: "d1" },
+      context: {},
+    } as never);
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("{}");
+  });
+
   it("passes a non-2xx upstream (e.g. 409 collision) through unchanged WITHOUT redirecting", async () => {
     stubFetch(new Response("conflict", { status: 409 }));
 

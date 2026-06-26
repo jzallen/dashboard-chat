@@ -231,8 +231,6 @@ describe("ModelDetail subheader — editable dbt machine name (Slice C)", () => 
       screen.getByRole("button", { name: /change machine name/i }).click();
     });
 
-    // Decoupling contract: the subline edits the machine name only — the body
-    // carries `model_name`, never `display_name`.
     await waitFor(() => expect(captured.dataset).toBeDefined());
     expect(captured.dataset?.body).toEqual({ model_name: "warm_leads" });
   });

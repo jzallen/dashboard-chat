@@ -36,7 +36,10 @@ export async function brokerPatch(
     "content-type",
     upstream.headers.get("content-type") ?? "application/json",
   );
-  return new Response(await upstream.text(), {
+  // Default a body-less 2xx to an empty JSON object so a fetcher reading the
+  // response as JSON still parses (mirrors the archive/restore brokers).
+  const body = await upstream.text();
+  return new Response(body === "" ? "{}" : body, {
     status: upstream.status,
     headers,
   });
