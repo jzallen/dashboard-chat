@@ -9,6 +9,7 @@ import {
   COOKIE_SESSION_FLAG,
   parseCookieHeader,
 } from "./lib/cookies.ts";
+import { createLogger } from "./lib/log.ts";
 import {
   authenticateClient,
   isM2mEnabled,
@@ -90,6 +91,14 @@ function readCredential(c: {
 // the SSR loader forwarded the browser's bearer verbatim. Dev-mode gated:
 // in production both the capture branch and the read endpoint are 404.
 let lastSeenAuthorization: string | null = null;
+
+/**
+ * Audit channel for issuance/revocation decisions on auth-proxy's owned surface
+ * (M2M mint, PAT issue/revoke). Each emits one who/what/when line — the `@timestamp`
+ * envelope field is the *when*, the dotted `event.action` the *what*, and the
+ * principal/client id the *who* — never the minted token or client secret.
+ */
+const log = createLogger("auth");
 
 const app = new Hono();
 
@@ -471,6 +480,10 @@ app.post("/api/auth/token", async (c) => {
   }
 
   const { token, expiresIn } = await issueM2mToken(client);
+  log.info("auth.m2m.issued", {
+    client_id: clientId,
+    principal_id: client.sub,
+  });
   return c.json({
     access_token: token,
     token_type: "Bearer",
@@ -524,6 +537,12 @@ app.post("/api/auth/pats", async (c) => {
     { name, expiresInSeconds },
   );
 
+  log.info("auth.pat.issued", {
+    principal_id: user.identity.userId,
+    jti: record.id,
+    name: record.name,
+  });
+
   return c.json(
     {
       id: record.id,
@@ -576,7 +595,21 @@ app.delete("/api/auth/pats/:id", async (c) => {
 
   const id = c.req.param("id");
   const ok = revokePat(id, user.identity.userId);
-  if (!ok) return c.json({ error: "not_found" }, 404);
+  if (!ok) {
+    // No-op revoke (absent / not owned / already revoked) collapses to one
+    // reason so the audit line never discloses which — and so never leaks
+    // whether another user's PAT exists.
+    log.warn("auth.pat.revoke_noop", {
+      principal_id: user.identity.userId,
+      pat_id: id,
+      reason: "not_found_or_not_owned",
+    });
+    return c.json({ error: "not_found" }, 404);
+  }
+  log.info("auth.pat.revoked", {
+    principal_id: user.identity.userId,
+    jti: id,
+  });
   return c.body(null, 204);
 });
 
