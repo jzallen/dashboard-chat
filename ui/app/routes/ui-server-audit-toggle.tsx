@@ -15,11 +15,16 @@
 // suppresses revalidation.
 import type { ActionFunctionArgs } from "react-router";
 
+import { brokerPatch } from "../lib/ui-server-patch";
+
 export async function action({
   request,
   params,
 }: ActionFunctionArgs): Promise<Response> {
-  void request;
-  void params;
-  throw new Error("not implemented");
+  const projectId = params.projectId ?? "";
+  const auditEntryId = params.auditEntryId ?? "";
+  return brokerPatch(
+    request,
+    `/projects/${encodeURIComponent(projectId)}/audit/${encodeURIComponent(auditEntryId)}`,
+  );
 }

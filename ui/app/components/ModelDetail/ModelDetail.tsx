@@ -68,6 +68,7 @@ function CopyBtn({ text }: { text: string }) {
 
 function AuditPanel({ node }: { node: LineageNode }) {
   const m = modelOf(node);
+  const fetcher = useFetcher();
   const audit = catalog.auditFor(node.id);
   // map transform before/after samples onto matching audit lines for datasets
   const samples = (m.kind === "dataset" ? m.transforms : []).map(
@@ -122,7 +123,16 @@ function AuditPanel({ node }: { node: LineageNode }) {
                   aria-label={`Toggle ${a.say}`}
                   checked={a.enabled ?? false}
                   onChange={() =>
-                    catalog.toggleAudit(node.id, a.auditEntryId!, !a.enabled)
+                    fetcher.submit(
+                      { enabled: !a.enabled },
+                      {
+                        method: "PATCH",
+                        action: `/ui-server/projects/${encodeURIComponent(
+                          catalog.getCurrentProject()?.id ?? "",
+                        )}/audit/${encodeURIComponent(a.auditEntryId!)}`,
+                        encType: "application/json",
+                      },
+                    )
                   }
                 />
               )}
