@@ -1160,7 +1160,7 @@ describe("metadataApiSource — getSources (lineage source list)", () => {
   });
 });
 
-describe("metadataApiSource — createSource (POST /api/sources)", () => {
+describe("metadataApiSource — createSource (POST /ui-server/sources)", () => {
   it("POSTs project_id + name and returns the created source id (JSON:API unwrap)", async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,
@@ -1179,7 +1179,10 @@ describe("metadataApiSource — createSource (POST /api/sources)", () => {
 
     expect(res).toEqual({ id: "src.new" });
     const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(call[0]).toBe("/api/sources");
+    // The saga's source-create write goes same-origin to the ui-server action,
+    // which forwards to the backend `/api/sources` server-side through
+    // auth-proxy — NOT a browser-direct `/api/...` call.
+    expect(call[0]).toBe("/ui-server/sources");
     expect(call[1].method).toBe("POST");
     expect(JSON.parse(call[1].body as string)).toEqual({
       project_id: "p1",
@@ -1203,7 +1206,7 @@ describe("metadataApiSource — createSource (POST /api/sources)", () => {
   });
 });
 
-describe("metadataApiSource — requestUpload (POST .../uploads, RAW 202)", () => {
+describe("metadataApiSource — requestUpload (POST /ui-server/sources/:id/uploads, RAW 202)", () => {
   it("POSTs the file descriptor and returns the raw presign body (NOT envelope-unwrapped)", async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,
@@ -1227,7 +1230,10 @@ describe("metadataApiSource — requestUpload (POST .../uploads, RAW 202)", () =
       storageKey: "uploads/p1/s1/up.1/orders.csv",
     });
     const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(call[0]).toBe("/api/sources/s1/uploads");
+    // The presign-mint write goes same-origin to the ui-server action, which
+    // forwards to the backend `/api/sources/{id}/uploads`; only the subsequent
+    // presigned PUT stays a direct browser→storage call.
+    expect(call[0]).toBe("/ui-server/sources/s1/uploads");
     expect(call[1].method).toBe("POST");
     expect(JSON.parse(call[1].body as string)).toEqual({
       filename: "orders.csv",
@@ -1287,7 +1293,7 @@ describe("metadataApiSource — putToStorage (DIRECT browser→MinIO PUT)", () =
   });
 });
 
-describe("metadataApiSource — processUpload (POST .../process)", () => {
+describe("metadataApiSource — processUpload (POST /ui-server/sources/:id/uploads/:id/process)", () => {
   it("POSTs the process step and unwraps the linked dataset id", async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,
@@ -1307,7 +1313,10 @@ describe("metadataApiSource — processUpload (POST .../process)", () => {
 
     expect(res).toEqual({ datasetId: "ds.linked" });
     const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(call[0]).toBe("/api/sources/s1/uploads/up.1/process");
+    // The process write goes same-origin to the ui-server action, which forwards
+    // to the backend `/api/sources/{id}/uploads/{id}/process` and passes a 422
+    // SchemaMismatch body back to the recovery UX byte-intact.
+    expect(call[0]).toBe("/ui-server/sources/s1/uploads/up.1/process");
     expect(call[1].method).toBe("POST");
     expect(call[1].credentials).toBe("include");
   });
