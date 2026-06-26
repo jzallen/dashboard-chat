@@ -1,7 +1,12 @@
 import { LogLevels,type LogObject } from "consola";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createLogger, toEcsRecord } from "./log";
+import {
+  configuredLevel,
+  createLogger,
+  ecsJsonReporter,
+  toEcsRecord,
+} from "./log";
 
 /** A minimal consola LogObject for the mapper under test. */
 function logObject(partial: Partial<LogObject>): LogObject {
@@ -41,6 +46,77 @@ describe("toEcsRecord", () => {
     expect(record["event.module"]).toBe("auth");
     expect(record["event.action"]).toBe("login.failed");
     expect(record.attributes).toBeUndefined();
+  });
+});
+
+describe("ecsJsonReporter redaction (consola transport)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /**
+   * The redaction regression guarantee, re-run on the consola transport:
+   * production-shaped credentials carried as attributes never survive
+   * serialization on the JSON path, while ordinary fields are preserved.
+   */
+  const SENSITIVE_ATTRIBUTES = {
+    authorization: "Bearer test-access-token",
+    cookie: "session=test-session-value",
+    access_token: "test-personal-access-token",
+    client_secret: "test-m2m-client-secret",
+    password: "test-password-value",
+    email: "user@example.com",
+  } as const;
+
+  it("masks sensitive attributes before the line is serialized", () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    ecsJsonReporter.log(
+      logObject({
+        tag: "auth",
+        level: LogLevels.warn,
+        args: ["login.denied", { ...SENSITIVE_ATTRIBUTES, user_id: "u1" }],
+      }),
+    );
+
+    const line = spy.mock.calls[0]?.[0] as string;
+    for (const value of Object.values(SENSITIVE_ATTRIBUTES)) {
+      expect(line.includes(value)).toBe(false);
+    }
+
+    expect(JSON.parse(line).attributes).toEqual({
+      authorization: "[REDACTED]",
+      cookie: "[REDACTED]",
+      access_token: "[REDACTED]",
+      client_secret: "[REDACTED]",
+      password: "[REDACTED]",
+      email: "[REDACTED]",
+      user_id: "u1",
+    });
+  });
+});
+
+describe("configuredLevel (LOG_LEVEL vs localStorage precedence)", () => {
+  afterEach(() => {
+    localStorage.clear();
+    delete process.env.LOG_LEVEL;
+  });
+
+  it("uses the in-browser ui:log knob when set, ignoring LOG_LEVEL", () => {
+    localStorage.setItem("ui:log", "error");
+    process.env.LOG_LEVEL = "debug";
+
+    expect(configuredLevel()).toBe(LogLevels.error);
+  });
+
+  it("honours server-side LOG_LEVEL when no ui:log knob is set", () => {
+    process.env.LOG_LEVEL = "debug";
+
+    expect(configuredLevel()).toBe(LogLevels.debug);
+  });
+
+  it("defaults to info when neither ui:log nor LOG_LEVEL is set", () => {
+    expect(configuredLevel()).toBe(LogLevels.info);
   });
 });
 

@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@dashboard-chat/shared-logging": "*",
     "@dashboard-chat/ui-state-wire": "*",
     "@xstate/react": "^6.1.0",
     "consola": "^3.4.2",

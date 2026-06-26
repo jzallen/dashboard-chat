@@ -105,13 +105,9 @@ class TestCrossTenantPointAccess:
         assert isinstance(result, Failure)
         assert "not found" in str(result.failure())
 
-    async def test_update_project_for_other_org_returns_not_found_and_no_mutation(
-        self, db_session: AsyncSession
-    ):
+    async def test_update_project_for_other_org_returns_not_found_and_no_mutation(self, db_session: AsyncSession):
         await self._seed(db_session)
-        result = await update_project(
-            project_id=PROJECT_OTHER, update_data={"name": "Hijacked"}, user=TEST_USER
-        )
+        result = await update_project(project_id=PROJECT_OTHER, update_data={"name": "Hijacked"}, user=TEST_USER)
         assert isinstance(result, Failure)
         assert "not found" in str(result.failure())
         # The other org's row is untouched.
@@ -119,9 +115,7 @@ class TestCrossTenantPointAccess:
         reread = await get_project(project_id=PROJECT_OTHER, user=other_user)
         assert reread.unwrap()["name"] == "Theirs"
 
-    async def test_delete_project_for_other_org_returns_not_found_and_no_delete(
-        self, db_session: AsyncSession
-    ):
+    async def test_delete_project_for_other_org_returns_not_found_and_no_delete(self, db_session: AsyncSession):
         await self._seed(db_session)
         result = await delete_project(project_id=PROJECT_OTHER, user=TEST_USER)
         assert isinstance(result, Failure)

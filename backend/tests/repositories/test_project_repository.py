@@ -136,18 +136,14 @@ class TestOrgScopedPointLookups:
         await self._seed_two_orgs(db_session)
         assert (await repo.get_project(PROJECT_2)) is not None
 
-    async def test_update_project_returns_none_and_no_mutation_for_cross_tenant_org(
-        self, repo, db_session
-    ):
+    async def test_update_project_returns_none_and_no_mutation_for_cross_tenant_org(self, repo, db_session):
         await self._seed_two_orgs(db_session)
         result = await repo.update_project(PROJECT_2, {"name": "Hijacked"}, org_id=ORG_1)
         assert result is None
         # The other org's row is untouched.
         assert (await repo.get_project(PROJECT_2))["name"] == "Theirs"
 
-    async def test_delete_project_returns_false_and_no_delete_for_cross_tenant_org(
-        self, repo, db_session
-    ):
+    async def test_delete_project_returns_false_and_no_delete_for_cross_tenant_org(self, repo, db_session):
         await self._seed_two_orgs(db_session)
         assert await repo.delete_project(PROJECT_2, org_id=ORG_1) is False
         assert (await repo.get_project(PROJECT_2)) is not None
