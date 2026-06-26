@@ -1,0 +1,26 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@aspect_rules_js//npm:defs.bzl", "npm_package")
+load("@npm//:defs.bzl", "npm_link_all_packages")
+
+npm_link_all_packages()
+
+js_library(
+    name = "lib",
+    srcs = glob(
+        ["**/*.ts", "**/*.json"],
+        exclude = ["**/*.test.ts"],
+    ),
+    visibility = ["//visibility:public"],
+    deps = [
+        ":node_modules",
+    ],
+)
+
+# First-party workspace package. Linked into the Node services' node_modules
+# via @dashboard-chat/shared-logging. Resolved by aspect_rules_js
+# `//shared/logging:pkg` target when other packages reference the workspace dep.
+npm_package(
+    name = "pkg",
+    srcs = [":lib"],
+    visibility = ["//visibility:public"],
+)

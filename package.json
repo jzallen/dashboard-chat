@@ -9,6 +9,7 @@
     "agent",
     "auth-proxy",
     "shared/chat",
+    "shared/logging",
     "shared/failure-simulation",
     "shared/ui-state-wire"
   ],
