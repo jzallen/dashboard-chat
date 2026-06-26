@@ -12,6 +12,8 @@
 // call and never reaches here.
 import type { ActionFunctionArgs } from "react-router";
 
-export async function action(_args: ActionFunctionArgs): Promise<Response> {
-  throw new Error("not implemented");
+import { brokerPost } from "../../lib/ui-server-client";
+
+export async function action({ request }: ActionFunctionArgs): Promise<Response> {
+  return brokerPost(request, "/sources");
 }

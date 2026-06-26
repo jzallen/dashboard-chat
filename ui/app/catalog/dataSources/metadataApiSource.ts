@@ -464,12 +464,15 @@ export function metadataApiSource(
     },
 
     async createSource(name: string): Promise<{ id: string }> {
-      // POST /api/sources {project_id, name} → 201 JSON:API single. apiPost
-      // returns the RAW body (no unwrap), so the id is read off `data.id`.
-      // Rejects on a non-2xx (apiPost throws) so the saga reports failure.
+      // The saga's source-create write goes same-origin to the ui-server action
+      // (`POST /ui-server/sources`), which forwards `{project_id, name}` to the
+      // backend `/api/sources` server-side through auth-proxy and passes the 201
+      // JSON:API single body straight back. apiPost returns the RAW body (no
+      // unwrap), so the id is read off `data.id`. Rejects on a non-2xx (apiPost
+      // throws) so the saga reports failure.
       const pid = await scopedProjectId();
       const body = await apiPost<{ data: { id: string } }>(
-        "/api/sources",
+        "/ui-server/sources",
         { project_id: pid, name },
         deps.getToken(),
       );
