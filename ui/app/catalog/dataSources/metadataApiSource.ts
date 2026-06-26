@@ -464,12 +464,15 @@ export function metadataApiSource(
     },
 
     async createSource(name: string): Promise<{ id: string }> {
-      // POST /api/sources {project_id, name} → 201 JSON:API single. apiPost
-      // returns the RAW body (no unwrap), so the id is read off `data.id`.
-      // Rejects on a non-2xx (apiPost throws) so the saga reports failure.
+      // The saga's source-create write goes same-origin to the ui-server action
+      // (`POST /ui-server/sources`), which forwards `{project_id, name}` to the
+      // backend `/api/sources` server-side through auth-proxy and passes the 201
+      // JSON:API single body straight back. apiPost returns the RAW body (no
+      // unwrap), so the id is read off `data.id`. Rejects on a non-2xx (apiPost
+      // throws) so the saga reports failure.
       const pid = await scopedProjectId();
       const body = await apiPost<{ data: { id: string } }>(
-        "/api/sources",
+        "/ui-server/sources",
         { project_id: pid, name },
         deps.getToken(),
       );
@@ -480,16 +483,20 @@ export function metadataApiSource(
       sourceId: string,
       file: File,
     ): Promise<{ uploadId: string; putUrl: string; storageKey: string }> {
-      // POST /api/sources/{id}/uploads {filename, content_type, size} → 202 RAW
-      // (NOT JSON:API): {upload_id, put_url, storage_key, status}. The browser
-      // uploads the bytes itself via putToStorage — no bytes are sent here.
+      // The presign-mint write goes same-origin to the ui-server action
+      // (`POST /ui-server/sources/{id}/uploads`), which forwards
+      // {filename, content_type, size} to the backend
+      // `/api/sources/{id}/uploads` server-side and passes the 202 RAW body
+      // (NOT JSON:API): {upload_id, put_url, storage_key, status} straight back.
+      // The browser uploads the bytes itself via putToStorage — only that
+      // presigned PUT stays a direct browser→storage call (no bytes here).
       const body = await apiPost<{
         upload_id: string;
         put_url: string;
         storage_key: string;
         status: string;
       }>(
-        `/api/sources/${encodeURIComponent(sourceId)}/uploads`,
+        `/ui-server/sources/${encodeURIComponent(sourceId)}/uploads`,
         { filename: file.name, content_type: file.type, size: file.size },
         deps.getToken(),
       );
@@ -520,13 +527,16 @@ export function metadataApiSource(
       uploadId: string,
       choices?: Record<string, unknown>,
     ): Promise<{ datasetId: string }> {
-      // POST .../process → 200 JSON:API datasets (the linked/appended staging
-      // Dataset). apiPost returns the RAW body, so the id is read off `data.id`.
-      // A 4xx throws — notably a 422 SchemaMismatch (whose body carries the
-      // missing/extra/type_mismatch columns) the saga reports as
-      // source_upload_failed and the surface renders as a recovery affordance.
+      // The process write goes same-origin to the ui-server action
+      // (`POST /ui-server/sources/{id}/uploads/{id}/process`), which forwards to
+      // the backend `.../process` server-side and passes its 200 JSON:API
+      // datasets body (the linked/appended staging Dataset) — and any non-2xx —
+      // straight back. apiPost returns the RAW body, so the id is read off
+      // `data.id`. A 4xx throws (with the body) — notably a 422 SchemaMismatch
+      // (whose byte-intact missing/extra/type_mismatch detail the saga reports as
+      // source_upload_failed and the surface renders as a recovery affordance).
       const body = await apiPost<{ data: { id: string } }>(
-        `/api/sources/${encodeURIComponent(sourceId)}/uploads/${encodeURIComponent(uploadId)}/process`,
+        `/ui-server/sources/${encodeURIComponent(sourceId)}/uploads/${encodeURIComponent(uploadId)}/process`,
         choices ? { choices } : undefined,
         deps.getToken(),
       );
