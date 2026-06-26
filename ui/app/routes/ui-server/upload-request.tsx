@@ -11,6 +11,15 @@
 // routes through here. A non-2xx is NOT turned into a /login redirect.
 import type { ActionFunctionArgs } from "react-router";
 
-export async function action(_args: ActionFunctionArgs): Promise<Response> {
-  throw new Error("not implemented");
+import { brokerPost } from "../../lib/ui-server-client";
+
+export async function action({
+  request,
+  params,
+}: ActionFunctionArgs): Promise<Response> {
+  const sourceId = params.sourceId ?? "";
+  return brokerPost(
+    request,
+    `/sources/${encodeURIComponent(sourceId)}/uploads`,
+  );
 }

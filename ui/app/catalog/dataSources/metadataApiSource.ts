@@ -483,16 +483,20 @@ export function metadataApiSource(
       sourceId: string,
       file: File,
     ): Promise<{ uploadId: string; putUrl: string; storageKey: string }> {
-      // POST /api/sources/{id}/uploads {filename, content_type, size} → 202 RAW
-      // (NOT JSON:API): {upload_id, put_url, storage_key, status}. The browser
-      // uploads the bytes itself via putToStorage — no bytes are sent here.
+      // The presign-mint write goes same-origin to the ui-server action
+      // (`POST /ui-server/sources/{id}/uploads`), which forwards
+      // {filename, content_type, size} to the backend
+      // `/api/sources/{id}/uploads` server-side and passes the 202 RAW body
+      // (NOT JSON:API): {upload_id, put_url, storage_key, status} straight back.
+      // The browser uploads the bytes itself via putToStorage — only that
+      // presigned PUT stays a direct browser→storage call (no bytes here).
       const body = await apiPost<{
         upload_id: string;
         put_url: string;
         storage_key: string;
         status: string;
       }>(
-        `/api/sources/${encodeURIComponent(sourceId)}/uploads`,
+        `/ui-server/sources/${encodeURIComponent(sourceId)}/uploads`,
         { filename: file.name, content_type: file.type, size: file.size },
         deps.getToken(),
       );
