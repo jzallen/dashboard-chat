@@ -42,6 +42,9 @@ export default [
   route("/ui-server/projects/:projectId/views/:viewId", "routes/ui-server/view-rename.tsx"),
   route("/ui-server/projects/:projectId/reports/:reportId", "routes/ui-server/report-rename.tsx"),
   route("/ui-server/projects/:projectId/audit/:auditEntryId", "routes/ui-server/audit-update.tsx"),
+  route("/ui-server/sources", "routes/ui-server/source-create.tsx"),
+  route("/ui-server/sources/:sourceId/uploads", "routes/ui-server/upload-request.tsx"),
+  route("/ui-server/sources/:sourceId/uploads/:uploadId/process", "routes/ui-server/upload-process.tsx"),
   layout("routes/app-shell.tsx", [
     index("routes/home-redirect.tsx"),
     route("org", "routes/org.tsx"),
