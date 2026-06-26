@@ -1,8 +1,8 @@
 // @vitest-environment node
-// Resource-route action: server-side BFF code, tested under node's undici.
+// Resource-route action: ui-server-side code, tested under node's undici.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { action } from "./bff-dataset-restore";
+import { action } from "./ui-server-dataset-archive";
 
 const AUTH_PROXY_URL = "http://auth-proxy.test";
 
@@ -21,8 +21,8 @@ function stubFetch(response: Response): () => Captured {
   return () => captured;
 }
 
-function restoreRequest(): Request {
-  return new Request("http://localhost/bff/datasets/d1/restore", {
+function archiveRequest(): Request {
+  return new Request("http://localhost/ui-server/datasets/d1/archive", {
     method: "POST",
     headers: new Headers({
       cookie: "session=1",
@@ -36,18 +36,18 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-describe("/bff/datasets/:datasetId/restore resource route", () => {
-  it("forwards POST to the backend restore endpoint through auth-proxy, carrying the user credential", async () => {
+describe("/ui-server/datasets/:datasetId/archive resource route", () => {
+  it("forwards POST to the backend archive endpoint through auth-proxy, carrying the user credential", async () => {
     const captured = stubFetch(new Response("{}", { status: 200 }));
 
     await action({
-      request: restoreRequest(),
+      request: archiveRequest(),
       params: { datasetId: "d1" },
       context: {},
     } as never);
 
     const { url, init } = captured();
-    expect(url).toBe(`${AUTH_PROXY_URL}/api/datasets/d1/restore`);
+    expect(url).toBe(`${AUTH_PROXY_URL}/api/datasets/d1/archive`);
     expect(init.method).toBe("POST");
     expect(new Headers(init.headers).get("cookie")).toBe("session=1");
     expect(new Headers(init.headers).get("authorization")).toBe(
@@ -59,7 +59,7 @@ describe("/bff/datasets/:datasetId/restore resource route", () => {
     stubFetch(new Response("{}", { status: 200 }));
 
     const res = await action({
-      request: restoreRequest(),
+      request: archiveRequest(),
       params: { datasetId: "d1" },
       context: {},
     } as never);
@@ -68,15 +68,16 @@ describe("/bff/datasets/:datasetId/restore resource route", () => {
   });
 
   it("passes a non-2xx upstream through unchanged WITHOUT redirecting (rollback-friendly)", async () => {
-    stubFetch(new Response("not found", { status: 404 }));
+    stubFetch(new Response("nope", { status: 401 }));
 
     const res = await action({
-      request: restoreRequest(),
+      request: archiveRequest(),
       params: { datasetId: "d1" },
       context: {},
     } as never);
 
-    expect(res.status).toBe(404);
+    // A 401 must surface as 401, NOT a 302 to /login — this is a fetch target.
+    expect(res.status).toBe(401);
     expect(res.headers.get("location")).toBeNull();
   });
 
@@ -84,7 +85,7 @@ describe("/bff/datasets/:datasetId/restore resource route", () => {
     const captured = stubFetch(new Response("{}", { status: 200 }));
 
     await action({
-      request: new Request("http://localhost/bff/datasets/x/restore", {
+      request: new Request("http://localhost/ui-server/datasets/x/archive", {
         method: "POST",
         headers: new Headers({ cookie: "session=1" }),
       }),
@@ -93,7 +94,7 @@ describe("/bff/datasets/:datasetId/restore resource route", () => {
     } as never);
 
     expect(captured().url).toBe(
-      `${AUTH_PROXY_URL}/api/datasets/ds%2Fwith%20space/restore`,
+      `${AUTH_PROXY_URL}/api/datasets/ds%2Fwith%20space/archive`,
     );
   });
 });
