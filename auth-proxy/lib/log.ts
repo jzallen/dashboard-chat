@@ -15,24 +15,39 @@
  */
 
 import {
+  type LogLevel,
   type Logger,
   type RedactionConfig,
+  redact,
   redactionKeys,
+  resolveLogLevel,
 } from "@dashboard-chat/shared-logging";
 import pino from "pino";
 
-const NOT_IMPLEMENTED = "not implemented";
-
 /**
- * Shared pino root. Per-channel loggers are children scoped to `event.module`;
- * the `formatters.log` hook is the single seam every line passes through, so
- * redaction is applied in exactly one place for this transport. Lines are
- * written to `process.stdout` so they interleave with — and never disturb — the
- * existing KPI-event and startup image-identity lines on the same stream.
+ * Shared pino root, configured to emit exactly the cross-service `LogRecord`
+ * envelope and nothing else:
+ *
+ *  - `base: null` drops pino's default `pid`/`hostname` bindings;
+ *  - the `timestamp` hook renders `@timestamp` as an ISO-8601 UTC string in
+ *    place of pino's epoch-millis `time`;
+ *  - the `level` formatter renames the level field to `log.level` and emits the
+ *    label (`info`/`warn`/…) rather than pino's numeric severity;
+ *  - the `log` formatter is the single redaction seam — every line's merge
+ *    object passes through it, so a credential carried in `attributes` is masked
+ *    before serialization on EVERY line.
+ *
+ * Lines are written to `process.stdout` so they interleave with — and never
+ * disturb — the existing KPI-event and startup image-identity lines on the same
+ * stream. `LOG_LEVEL` (default `info`) controls verbosity.
  */
 const base = pino(
   {
+    base: null,
+    level: resolveLogLevel(process.env),
+    timestamp: () => `,"@timestamp":"${new Date().toISOString()}"`,
     formatters: {
+      level: (label: string) => ({ "log.level": label }),
       log: (object: Record<string, unknown>) => redactionSerializer(object),
     },
   },
@@ -43,14 +58,14 @@ const base = pino(
  * The redaction serializer seam: pino's per-line hook that scrubs sensitive
  * attributes through the shared ruleset before serialization. The single point
  * at which `@dashboard-chat/shared-logging`'s `redact()` is applied to this
- * transport's output.
+ * transport's output — `redact()` recurses into the nested `attributes` bag, so
+ * a credential passed under a sensitive key never reaches the wire.
  */
 export function redactionSerializer(
   attributes: Record<string, unknown>,
-  _config: RedactionConfig = redactionKeys,
+  config: RedactionConfig = redactionKeys,
 ): Record<string, unknown> {
-  void attributes;
-  throw new Error(NOT_IMPLEMENTED);
+  return redact(attributes, config);
 }
 
 /**
@@ -60,14 +75,21 @@ export function redactionSerializer(
  * redacting pino backend.
  */
 export function createLogger(channel: string): Logger {
-  const _channelLogger = base.child({ "event.module": channel });
-  const notImplemented = (): never => {
-    throw new Error(NOT_IMPLEMENTED);
+  const emit = (
+    level: LogLevel,
+    action: string,
+    attributes?: Record<string, unknown>,
+  ): void => {
+    base[level]({
+      "event.module": channel,
+      "event.action": action,
+      ...(attributes !== undefined ? { attributes } : {}),
+    });
   };
   return {
-    debug: notImplemented,
-    info: notImplemented,
-    warn: notImplemented,
-    error: notImplemented,
+    debug: (action, attributes) => emit("debug", action, attributes),
+    info: (action, attributes) => emit("info", action, attributes),
+    warn: (action, attributes) => emit("warn", action, attributes),
+    error: (action, attributes) => emit("error", action, attributes),
   };
 }
