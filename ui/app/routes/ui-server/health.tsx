@@ -8,7 +8,7 @@
 // step 3.
 import type { LoaderFunctionArgs } from "react-router";
 
-import { agentFetch } from "../lib/agent-client";
+import { agentFetch } from "../../lib/agent-client";
 
 /** 5s is plenty for a health ping; unlike the chat relay this is not long-lived. */
 const HEALTH_TIMEOUT_MS = 5000;

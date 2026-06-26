@@ -11,7 +11,7 @@
 // its optimistic change back).
 import type { ActionFunctionArgs } from "react-router";
 
-import { apiFetch } from "../lib/api-client";
+import { apiFetch } from "../../lib/api-client";
 
 export async function action({
   request,

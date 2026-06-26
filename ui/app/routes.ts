@@ -24,19 +24,19 @@ export default [
   // none of the app-shell chrome or its clientLoader; they run purely server-side
   // and broker the live agent rails (SSR ui-server gateway, slice 1). /ui-server/health is
   // the auth-hop proof; /ui-server/chat relays the agent SSE.
-  route("/ui-server/health", "routes/ui-server-health.tsx"),
-  route("/ui-server/chat", "routes/ui-server-chat.tsx"),
+  route("/ui-server/health", "routes/ui-server/health.tsx"),
+  route("/ui-server/chat", "routes/ui-server/chat.tsx"),
   // Catalog mutations are RRv7 `action`s homed on same-origin /ui-server resource
   // routes (ADR-034): the component submits via <Form>/useFetcher, the action
   // brokers the write through auth-proxy, and the active loaders auto-revalidate.
-  route("/ui-server/datasets/:datasetId/archive", "routes/ui-server-dataset-archive.tsx"),
-  route("/ui-server/datasets/:datasetId/restore", "routes/ui-server-dataset-restore.tsx"),
+  route("/ui-server/datasets/:datasetId/archive", "routes/ui-server/dataset-archive.tsx"),
+  route("/ui-server/datasets/:datasetId/restore", "routes/ui-server/dataset-restore.tsx"),
   // dataset PATCH is body-agnostic: display-name rename AND model_name change
   // both hit the one backend /api/datasets/{id} endpoint.
-  route("/ui-server/datasets/:datasetId", "routes/ui-server-dataset-patch.tsx"),
-  route("/ui-server/projects/:projectId/views/:viewId", "routes/ui-server-view-rename.tsx"),
-  route("/ui-server/projects/:projectId/reports/:reportId", "routes/ui-server-report-rename.tsx"),
-  route("/ui-server/projects/:projectId/audit/:auditEntryId", "routes/ui-server-audit-toggle.tsx"),
+  route("/ui-server/datasets/:datasetId", "routes/ui-server/dataset-update.tsx"),
+  route("/ui-server/projects/:projectId/views/:viewId", "routes/ui-server/view-rename.tsx"),
+  route("/ui-server/projects/:projectId/reports/:reportId", "routes/ui-server/report-rename.tsx"),
+  route("/ui-server/projects/:projectId/audit/:auditEntryId", "routes/ui-server/audit-update.tsx"),
   layout("routes/app-shell.tsx", [
     index("routes/home-redirect.tsx"),
     route("org", "routes/org.tsx"),

@@ -15,7 +15,7 @@
 // suppresses revalidation.
 import type { ActionFunctionArgs } from "react-router";
 
-import { brokerPatch } from "../lib/ui-server-client";
+import { brokerPatch } from "../../lib/ui-server-client";
 
 export async function action({
   request,

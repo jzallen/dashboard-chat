@@ -20,7 +20,7 @@
 // reflection is opt-in only where latency warrants it.
 import type { ActionFunctionArgs } from "react-router";
 
-import { brokerPatch } from "../lib/ui-server-client";
+import { brokerPatch } from "../../lib/ui-server-client";
 
 export async function action({
   request,

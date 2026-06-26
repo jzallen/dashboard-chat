@@ -38,7 +38,7 @@ import {
 import { fixtureSource } from "../catalog";
 import { AssistantOverlay } from "../components/Chat/Chat";
 import { catalog, installCatalogForTest } from "../components/useCatalog";
-import { action as uiServerChatAction } from "../routes/ui-server-chat";
+import { action as uiServerChatAction } from "../routes/ui-server/chat";
 
 // The downstream origin the server-side broker targets (agent via auth-proxy).
 const AUTH_PROXY_URL = "http://auth-proxy.test";

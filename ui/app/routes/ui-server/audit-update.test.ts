@@ -2,7 +2,7 @@
 // Resource-route action: ui-server-side code, tested under node's undici.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { action } from "./ui-server-audit-toggle";
+import { action } from "./audit-update";
 
 const AUTH_PROXY_URL = "http://auth-proxy.test";
 
