@@ -163,7 +163,7 @@ export default function OnboardingRoute({
           <OrgNameForm driver={driver} context={onboarding.context} />
         );
       case "error_recoverable":
-        return <RetrySurface onRetry={() => driver.probeAndReportOrg()} />;
+        return <RetrySurface onRetry={() => driver.probeOrg()} />;
       default:
         // verifying / awaiting_org_report (and any transient) — wait honestly.
         return <LoadingSurface message="Checking your session…" />;

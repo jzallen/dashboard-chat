@@ -182,7 +182,7 @@ describe("reportOrgCreateResult — status → cause mapping", () => {
 
 // ───────────────────────────── org probe (definitive-answers-only) ─────────────────────────────
 
-describe("probeAndReportOrg — definitive-answers-only", () => {
+describe("probeOrg — definitive-answers-only", () => {
   it("200 → org_found {org:{id,name}} posted AND logged", async () => {
     const { report, events } = makeReport();
     const log = makeLog();
@@ -191,7 +191,7 @@ describe("probeAndReportOrg — definitive-answers-only", () => {
     });
     const driver = createOnboardingDriver({ client, report, log });
 
-    await driver.probeAndReportOrg();
+    await driver.probeOrg();
 
     expect(events).toEqual([
       { type: "org_found", payload: { org: { id: "org-1", name: "Globex" } } },
@@ -210,7 +210,7 @@ describe("probeAndReportOrg — definitive-answers-only", () => {
     });
     const driver = createOnboardingDriver({ client, report, log });
 
-    await driver.probeAndReportOrg();
+    await driver.probeOrg();
 
     expect(events).toEqual([{ type: "org_not_found", payload: {} }]);
   });
@@ -225,7 +225,7 @@ describe("probeAndReportOrg — definitive-answers-only", () => {
     });
     const driver = createOnboardingDriver({ client, report, log });
 
-    await driver.probeAndReportOrg();
+    await driver.probeOrg();
 
     expect(events).toEqual([]);
     expect(report).not.toHaveBeenCalled();
@@ -241,7 +241,7 @@ describe("probeAndReportOrg — definitive-answers-only", () => {
     });
     const driver = createOnboardingDriver({ client, report, log });
 
-    await driver.probeAndReportOrg();
+    await driver.probeOrg();
 
     expect(events).toEqual([]);
     expect(report).not.toHaveBeenCalled();
@@ -257,7 +257,7 @@ describe("probeAndReportOrg — definitive-answers-only", () => {
     });
     const driver = createOnboardingDriver({ client, report, log });
 
-    const outcome = await driver.probeAndReportOrg();
+    const outcome = await driver.probeOrg();
 
     expect(events).toEqual([]);
     expect(report).not.toHaveBeenCalled();

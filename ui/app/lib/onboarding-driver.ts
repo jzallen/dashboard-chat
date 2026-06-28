@@ -63,7 +63,7 @@ const AUTH_GATE: AuthGate = { authGate: true };
  *  maps the outcome, posts the past-tense report, and logs the audit entry. */
 export interface OnboardingDriver {
   /** Phase-B org probe (GET /api/orgs/me), definitive-answers-only. */
-  probeAndReportOrg(): Promise<AuthGate | void>;
+  probeOrg(): Promise<AuthGate | void>;
   /** Map an org-create POST result → org_created / org_create_failed. */
   reportOrgCreateResult(orgName: string): Promise<AuthGate | void>;
   /** Phase-D automatic default project (POST /api/projects "My First Project"). */
@@ -135,7 +135,7 @@ export function createOnboardingDriver(
   const isAuthGate = (err: unknown): boolean =>
     err instanceof ApiError && err.status === 401;
 
-  const probeAndReportOrg = async (): Promise<AuthGate | void> => {
+  const probeOrg = async (): Promise<AuthGate | void> => {
     try {
       const body = await client.get(ORG_ME_PATH);
       await postAndLog({ type: "org_found", payload: { org: toSnapshot(body) } });
@@ -226,7 +226,7 @@ export function createOnboardingDriver(
   };
 
   return {
-    probeAndReportOrg,
+    probeOrg,
     reportOrgCreateResult,
     createDefaultProjectAndReport,
     retryProject,
