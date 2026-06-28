@@ -139,9 +139,6 @@ class ConsumerOffline:
     action: str
 
 
-DeliveryResult = Union[Delivered, Enqueued, ConsumerOffline]
-
-
 # --- Delivery strategies (use cases) -------------------------------------------
 
 
@@ -221,7 +218,9 @@ def enqueue_webhook_event(
 # --- Presenter -----------------------------------------------------------------
 
 
-def _shape_response(result: DeliveryResult) -> HTTPResponse:
+def _shape_response(
+    result: Union[Delivered, Enqueued, ConsumerOffline],
+) -> HTTPResponse:
     """Map a delivery domain result to the Function URL ``HTTPResponse``.
 
     The sole producer of delivery HTTP status: ``Delivered`` -> 200 ``published``,
