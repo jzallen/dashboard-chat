@@ -3,7 +3,7 @@
 Holds a persistent AWS IoT **MQTT-over-WebSocket (SigV4)** connection authenticated
 by the devpod **instance role** (IAM credentials from the default AWS provider chain;
 **no X.509 device certificates**), subscribes to this consumer's own keyed topic
-``cyrus/v1/sessions/<creator-id>`` (no wildcards), and exposes received messages
+``cyrus/v1/sessions/<username>`` (no wildcards), and exposes received messages
 through the same ``receive()`` / ``acknowledge()`` port the SQS and canary feeds
 satisfy — so the adapter slots behind ``LinearWebhookFeedProtocol`` with NO changes
 to ``ProxyExecutionLoop``. Like the sibling adapters it carries no runtime dependency
@@ -79,7 +79,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Topic namespace each consumer subscribes under; the routing key is the creator id.
+# Topic namespace each consumer subscribes under; the routing key is the Linear
+# username (the trailing segment of the webhook's ``creator.url`` profile path),
+# chosen over the surrogate ``creator.id`` because it is the identity the dev
+# configuring the local consumer can read off their own Linear profile.
 TOPIC_PREFIX = "cyrus/v1/sessions/"
 
 # MQTT QoS 1 (at-least-once): the broker holds the publish un-acked until PUBACK, so a
@@ -169,7 +172,7 @@ class IoTPacket:
 def topic_filter_for(routing_key: str) -> str:
     """Return the exact (wildcard-free) topic filter for a consumer's routing key.
 
-    The consumer subscribes only to its own key — ``cyrus/v1/sessions/<creator-id>``
+    The consumer subscribes only to its own key — ``cyrus/v1/sessions/<username>``
     — never a wildcard, so it receives only the sessions addressed to it.
     """
     return f"{TOPIC_PREFIX}{routing_key}"
@@ -183,7 +186,7 @@ class IoTLinearWebhookFeed:
     tests pass a fake and never touch AWS; when omitted the first ``receive()`` tries to
     build the default instance-role SigV4 connection, which is the not-yet-wired
     live-AWS integration step (see :func:`build_default_iot_connection`). ``endpoint``,
-    ``routing_key`` (this consumer's ``creator.id``) and ``region`` configure that
+    ``routing_key`` (this consumer's Linear username) and ``region`` configure that
     connection and the keyed subscription.
 
     Arriving messages are buffered in an internal thread-safe queue by the
