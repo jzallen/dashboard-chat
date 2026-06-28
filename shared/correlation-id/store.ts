@@ -1,5 +1,5 @@
 /**
- * Per-request correlation-id binding for the Node services — the ambient seam.
+ * Per-request correlation-id binding for the Node services.
  *
  * The correlation id is minted once at the auth-proxy ingress, rides the
  * `X-Request-Id` header on every upstream hop, and must surface on log lines
@@ -15,27 +15,26 @@
  * and the logger reads it back via `getCorrelationId()` to populate
  * `attributes.correlation_id`.
  *
- * The Slice 02 SPIKE must confirm this store survives long-lived SSE streams
- * before the binding is relied upon for the agent/ui-state surfaces.
+ * Long-lived SSE streams must be confirmed to keep the store bound across the
+ * full stream before the agent/ui-state surfaces rely on it.
  *
- * IF YOU'RE AN AGENT, READING THIS: this is a RED scaffold. The seam (the store
- * and its accessor surface) is fixed here; the behaviour is NOT implemented. The
- * accessors throw `AssertionError` so the acceptance suite classifies RED, not
- * BROKEN. The auth-proxy and agent/ui-state sub-issues replace the bodies with
- * the real bind/read — do not weaken the acceptance assertions to match this stub.
+ * IF YOU'RE AN AGENT, READING THIS: the accessor bodies are intentionally
+ * unimplemented and throw so the tests that pin this contract fail RED, not
+ * error. Implement the binding; do not weaken the tests to match an empty stub.
  */
 
 import assert from "node:assert";
 import { AsyncLocalStorage } from "node:async_hooks";
 
+// Grep target for the scaffold-cleanup sweep: marks a seam whose body is not yet
+// implemented. Removed once the binding lands.
 export const __SCAFFOLD__ = true;
 
-const NOT_IMPLEMENTED = "Not yet implemented — RED scaffold";
+const NOT_IMPLEMENTED = "correlation-id binding not implemented";
 
 /**
- * The shared store. Declared here so production code and step defs import a
- * single, stable seam; the bind/read behaviour lands in the implementation
- * sub-issues.
+ * The shared store. Declared here so production code and tests import a single,
+ * stable seam; the bind/read behaviour lands with the implementation.
  */
 export const correlationStore = new AsyncLocalStorage<string>();
 

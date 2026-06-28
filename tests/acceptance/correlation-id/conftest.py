@@ -1,16 +1,14 @@
-"""Pytest configuration for the correlation-id (US-1) acceptance suite.
+"""Pytest configuration for the correlation-id acceptance suite.
 
-Walking-skeleton strategy (recorded for the K1 assertion): the cross-service
-scenarios drive the **real** local compose stack (auth-proxy → backend over the
-compose network) and read back each service's **real** emitted log lines; the
-only faked dependency is the costly LLM external (no chat turn is driven). These
-scenarios are tagged `@real_io` + `@needs_compose_stack` and skip cleanly when
-the stack is not reachable.
+Walking-skeleton strategy: the cross-service scenarios drive the **real** local
+compose stack (auth-proxy → backend over the compose network) and read back each
+service's **real** emitted log lines; the only faked dependency is the costly LLM
+external (no chat turn is driven). These scenarios are tagged `@real_io` +
+`@needs_compose_stack` and skip cleanly when the stack is not reachable.
 
-The `@scaffold` scenarios are stack-independent: they assert each ambient-context
-seam (the Python `correlation_id` `ContextVar`, the Node `AsyncLocalStorage`
-store) exists and is RED until its implementation sub-issue lands. They keep the
-suite classifying RED — never BROKEN — in any environment, including one with no
+The ambient bind/read contract is exercised stack-independently (the Python
+`correlation_id` `ContextVar` round-trip in `test_ambient_binding.py`), so the
+suite fails RED — never BROKEN — in any environment, including one with no
 compose stack up.
 """
 
@@ -27,7 +25,7 @@ from urllib.parse import urlparse
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
-from driver import CorrelationDriver  # noqa: E402
+from driver import CorrelationDriver
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 

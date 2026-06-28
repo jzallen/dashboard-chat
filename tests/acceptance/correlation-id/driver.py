@@ -1,6 +1,6 @@
-"""Driver helpers for the correlation-id (US-1) acceptance suite.
+"""Driver helpers for the correlation-id acceptance suite.
 
-The driver owns the I/O the K1 cross-service assertion reaches for:
+The driver owns the I/O the cross-service assertion reaches for:
 
   - HTTP probes against `auth-proxy` (the ingress that mints the id) so a single
     request traverses ≥2 services (auth-proxy → backend).
@@ -10,7 +10,7 @@ The driver owns the I/O the K1 cross-service assertion reaches for:
 
 It is intentionally thin: it composes `httpx`, `subprocess`, and `json` without
 inventing new abstractions. Tests own the scenario logic; the driver owns the
-I/O. Implementation sub-issues may extend it without restructuring.
+I/O.
 """
 
 from __future__ import annotations
@@ -88,8 +88,7 @@ class CorrelationDriver:
             response = client.post(url, json={"code": "dev-auth-code"})
         if response.status_code != 200:
             raise RuntimeError(
-                f"mint_dev_jwt: auth-proxy returned {response.status_code} from "
-                f"POST {url}: {response.text[:300]}"
+                f"mint_dev_jwt: auth-proxy returned {response.status_code} from POST {url}: {response.text[:300]}"
             )
         token = response.json().get("token")
         if not isinstance(token, str) or not token:
@@ -108,8 +107,14 @@ class CorrelationDriver:
         """
         proc = subprocess.run(
             [
-                "docker", "compose", "logs", "--no-color", "--no-log-prefix",
-                "--since", since, service,
+                "docker",
+                "compose",
+                "logs",
+                "--no-color",
+                "--no-log-prefix",
+                "--since",
+                since,
+                service,
             ],
             cwd=self.repo_root,
             capture_output=True,

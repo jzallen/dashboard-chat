@@ -1,7 +1,7 @@
 [project]
 name = "dashboard-chat-acceptance-correlation-id"
 version = "0.0.1"
-description = "Acceptance tests for US-1 — trace one request end-to-end (correlation id)."
+description = "Acceptance tests for trace one request end-to-end (correlation id)."
 requires-python = ">=3.11"
 dependencies = []
 
@@ -18,12 +18,9 @@ python_files = ["test_*.py"]
 asyncio_mode = "auto"
 markers = [
     "real_io: scenario uses real adapters (the local compose stack + real HTTP + real backend), costly externals (LLM) faked",
-    "walking_skeleton: the single cross-service scenario gating the K1 correlation-id assertion GREEN",
-    "happy_path: nominal flow — no failure injection",
+    "walking_skeleton: the cross-service scenario that proves the end-to-end correlation path",
     "error_path: explicit failure / rejection scenario (the correlation id must ride the error response)",
-    "scaffold: stack-independent check that an ambient-context seam exists and is RED until implemented",
     "needs_compose_stack: scenario requires the local compose topology to be reachable on host ports",
-    "slow: scenario expected to take >10s wall-clock",
 ]
 addopts = [
     "-ra",

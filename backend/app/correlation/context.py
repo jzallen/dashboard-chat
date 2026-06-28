@@ -1,4 +1,4 @@
-"""Per-request correlation-id binding for the backend — the Python ambient seam.
+"""Per-request correlation-id binding for the backend.
 
 The correlation id is minted once at the auth-proxy ingress, rides the
 ``X-Request-Id`` header on every upstream hop, and must surface on log lines
@@ -10,24 +10,24 @@ It mirrors ``app.auth.context`` (``_auth_user``) deliberately. The binding is a
 ``contextvars.ContextVar`` — the async-safe primitive: under ``asyncio`` each
 task runs in its own copied ``Context``, so a value ``set()`` while handling one
 request is never visible to a concurrently-awaiting request. (``threading.local``
-would leak across awaited coroutines sharing a thread and must not be used here.)
-The request middleware ``set()``s the id at the top of the FastAPI stack and the
-JSON log formatter reads it back via ``get_correlation_id`` to populate
+would leak across awaited coroutines sharing a thread, so it must not be used
+here.) The request middleware ``set()``s the id at the top of the FastAPI stack
+and the JSON log formatter reads it back via ``get_correlation_id`` to populate
 ``attributes.correlation_id``.
 
 IF YOU'RE AN AGENT, READ THIS:
-This is a RED scaffold. The seam (the ``ContextVar`` and the accessor surface)
-is fixed here; the behaviour is NOT implemented. The accessors raise
-``AssertionError`` so the acceptance suite classifies RED, not BROKEN. The
-backend correlation sub-issue replaces the bodies with the real bind/read —
-do not weaken the acceptance assertions to match this stub.
+The accessor bodies are intentionally unimplemented and raise ``AssertionError``
+so the tests that pin this contract fail RED, not error. Implement the binding;
+do not weaken the tests to match an empty stub.
 """
 
 from contextvars import ContextVar
 
+# Grep target for the scaffold-cleanup sweep: marks a seam whose body is not yet
+# implemented. Removed once the binding lands.
 __SCAFFOLD__ = True
 
-_NOT_IMPLEMENTED = "Not yet implemented — RED scaffold"
+_NOT_IMPLEMENTED = "correlation-id binding not implemented"
 
 _correlation_id: ContextVar[str | None] = ContextVar("correlation_id", default=None)
 
