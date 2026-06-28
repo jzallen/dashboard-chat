@@ -63,11 +63,11 @@ const AUTH_GATE: AuthGate = { authGate: true };
  *  maps the outcome, posts the past-tense report, and logs the audit entry. */
 export interface OnboardingDriver {
   /** Phase-B org probe (GET /api/orgs/me), definitive-answers-only. */
-  probeAndReportOrg(): Promise<AuthGate | void>;
+  probeOrg(): Promise<AuthGate | void>;
   /** Map an org-create POST result → org_created / org_create_failed. */
   reportOrgCreateResult(orgName: string): Promise<AuthGate | void>;
   /** Phase-D automatic default project (POST /api/projects "My First Project"). */
-  createDefaultProjectAndReport(): Promise<AuthGate | void>;
+  createDefaultProject(): Promise<AuthGate | void>;
   /** Probe-first convergence retry (lost-201 dedup) for the default project. */
   retryProject(): Promise<AuthGate | void>;
   /** Initial-scope resolution (ported resolveInitialScopeFn). */
@@ -121,7 +121,7 @@ export function createOnboardingDriver(
   /** Post the outcome event, then log the audit entry: the posted event, the
    *  region it settles, AND the RESULTING region state read off the document
    *  report() returns (ratification amendment 3). */
-  const postAndLog = async (event: ChatAppWireEvent): Promise<void> => {
+  const postOutcome = async (event: ChatAppWireEvent): Promise<void> => {
     const doc = await report(event);
     const region = regionFor(event.type);
     log.info(`onboarding-driver.${event.type}.reported`, {
@@ -135,17 +135,17 @@ export function createOnboardingDriver(
   const isAuthGate = (err: unknown): boolean =>
     err instanceof ApiError && err.status === 401;
 
-  const probeAndReportOrg = async (): Promise<AuthGate | void> => {
+  const probeOrg = async (): Promise<AuthGate | void> => {
     try {
       const body = await client.get(ORG_ME_PATH);
-      await postAndLog({ type: "org_found", payload: { org: toSnapshot(body) } });
+      await postOutcome({ type: "org_found", payload: { org: toSnapshot(body) } });
       return;
     } catch (err) {
       if (isAuthGate(err)) return AUTH_GATE;
       // Definitive 404 → org_not_found; any other status / network → NO report
       // (transport class: the document stays awaiting; the surface re-probes).
       if (err instanceof ApiError && err.status === 404) {
-        await postAndLog({ type: "org_not_found", payload: {} });
+        await postOutcome({ type: "org_not_found", payload: {} });
         return;
       }
       return;
@@ -157,31 +157,31 @@ export function createOnboardingDriver(
   ): Promise<AuthGate | void> => {
     try {
       const body = await client.post(ORGS_PATH, { name: orgName });
-      await postAndLog({
+      await postOutcome({
         type: "org_created",
         payload: { org: toSnapshot(body) },
       });
       return;
     } catch (err) {
       if (isAuthGate(err)) return AUTH_GATE;
-      await postAndLog(orgCreateFailure(err, orgName));
+      await postOutcome(orgCreateFailure(err, orgName));
       return;
     }
   };
 
-  const createDefaultProjectAndReport = async (): Promise<AuthGate | void> => {
+  const createDefaultProject = async (): Promise<AuthGate | void> => {
     try {
       const body = await client.post(PROJECTS_PATH, {
         name: DEFAULT_PROJECT_NAME,
       });
-      await postAndLog({
+      await postOutcome({
         type: "project_created",
         payload: { project: toSnapshot(body) },
       });
       return;
     } catch (err) {
       if (isAuthGate(err)) return AUTH_GATE;
-      await postAndLog({
+      await postOutcome({
         type: "project_create_failed",
         payload: { cause: "project_create_failed" },
       });
@@ -202,10 +202,10 @@ export function createOnboardingDriver(
     }
     const project = firstProject(existing);
     if (project) {
-      await postAndLog({ type: "scope_resolved", payload: { project } });
+      await postOutcome({ type: "scope_resolved", payload: { project } });
       return;
     }
-    return createDefaultProjectAndReport();
+    return createDefaultProject();
   };
 
   const resolveInitialScope = async (): Promise<AuthGate | void> => {
@@ -218,17 +218,17 @@ export function createOnboardingDriver(
     }
     const project = firstProject(body);
     if (project) {
-      await postAndLog({ type: "scope_resolved", payload: { project } });
+      await postOutcome({ type: "scope_resolved", payload: { project } });
       return;
     }
-    await postAndLog({ type: "no_projects_found", payload: {} });
+    await postOutcome({ type: "no_projects_found", payload: {} });
     return;
   };
 
   return {
-    probeAndReportOrg,
+    probeOrg,
     reportOrgCreateResult,
-    createDefaultProjectAndReport,
+    createDefaultProject,
     retryProject,
     resolveInitialScope,
   };

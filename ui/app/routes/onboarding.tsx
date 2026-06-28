@@ -7,7 +7,7 @@
    posts the past-tense outcome report via proxy.postEvent. The in-flight UI is
    the surface's LOCAL concern (DR-1: the document NEVER shows an in-flight org
    state). Phase D (the default project) is AUTOMATIC — on entering the project
-   phase the surface triggers the driver's createDefaultProjectAndReport ONCE.
+   phase the surface triggers the driver's createDefaultProject ONCE.
 
    BINDING DISPLAY RULE (ratification amendment 2): the UI NEVER renders a raw
    cause tag. Re-edit causes (org_name_taken / org_name_invalid) → friendly inline
@@ -42,11 +42,11 @@ import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router";
 
 import { hasSession } from "../auth/tokenStorage";
-import { apiGet, apiPost } from "../catalog/dataSources/backendClient";
 import { useTheme } from "../components/AppShell";
 import { LoadingSurface } from "../components/LoadingSurface/LoadingSurface";
 import { refreshOrgGlobal } from "../components/useCatalog";
 import { createLogger } from "../lib/log";
+import { onboardingClient } from "../lib/onboarding-client";
 import {
   createOnboardingDriver,
   type OnboardingClient,
@@ -61,12 +61,10 @@ const log = createLogger("onboarding");
  *  org_validation_error field). */
 type ValidationError = ReducedContext["org_validation_error"];
 
-/** The default backend client adapter — the real HTTP port the driver consumes
- *  (mirrors the catalog backendClient contract: ApiError on non-2xx). */
-const defaultClient: OnboardingClient = {
-  get: (path) => apiGet(path),
-  post: (path, body) => apiPost(path, body),
-};
+/** The default HTTP port the driver consumes — the gateway adapter that routes
+ *  the driver's backend-shaped legs through the same-origin `/ui-server/*`
+ *  brokers (preserving the backendClient contract: ApiError on non-2xx). */
+const defaultClient: OnboardingClient = onboardingClient;
 
 export default function OnboardingRoute({
   client = defaultClient,
@@ -110,7 +108,7 @@ export default function OnboardingRoute({
     if (authenticated && projectAwaiting && !projectAutoStarted.current) {
       projectAutoStarted.current = true;
       log.info("onboarding.project.auto_create.start", {});
-      void driver.createDefaultProjectAndReport();
+      void driver.createDefaultProject();
     }
   }, [authenticated, projectAwaiting, driver]);
 
@@ -163,7 +161,7 @@ export default function OnboardingRoute({
           <OrgNameForm driver={driver} context={onboarding.context} />
         );
       case "error_recoverable":
-        return <RetrySurface onRetry={() => driver.probeAndReportOrg()} />;
+        return <RetrySurface onRetry={() => driver.probeOrg()} />;
       default:
         // verifying / awaiting_org_report (and any transient) — wait honestly.
         return <LoadingSurface message="Checking your session…" />;

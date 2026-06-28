@@ -184,7 +184,7 @@ function Chrome() {
                                       anonymous pre-first-frame zero state — never
                                       a redirect). On this state the gate fires
                                       the driver's Phase-B org probe
-                                      (probeAndReportOrg) — the client-driven
+                                      (probeOrg) — the client-driven
                                       convergence that resolves the report.
      phase onboarding + needs_org /
        error_recoverable            → /onboarding (the client-driven flow)
@@ -231,7 +231,7 @@ function OnboardingGate({ client }: { client: OnboardingClient }) {
   // persists awaiting — the driver only POSTs on a definitive HTTP answer.
   const awaitingOrgReport = onboardingState === "awaiting_org_report";
   useEffect(() => {
-    if (awaitingOrgReport) void driver.probeAndReportOrg();
+    if (awaitingOrgReport) void driver.probeOrg();
   }, [awaitingOrgReport, driver]);
 
   if (onboardingState === "verifying" || awaitingOrgReport) {
