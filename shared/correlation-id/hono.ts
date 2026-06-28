@@ -23,5 +23,25 @@ export function correlationMiddleware(): MiddlewareHandler {
     await runWithCorrelationId(id, async () => {
       await next();
     });
+    echoCorrelationId(c, id);
   };
+}
+
+/**
+ * Echo the bound correlation id on the response as `X-Request-Id`, sourced from
+ * the ambient binding (never re-minted), so an operator can copy it straight
+ * from an error response. Clones the response when its headers are immutable
+ * (e.g. a proxied/streamed `fetch` Response), preserving the body stream.
+ */
+export function echoCorrelationId(
+  c: { res: Response },
+  id: string,
+): void {
+  try {
+    c.res.headers.set("X-Request-Id", id);
+  } catch {
+    const cloned = new Response(c.res.body, c.res);
+    cloned.headers.set("X-Request-Id", id);
+    c.res = cloned;
+  }
 }

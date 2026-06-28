@@ -13,6 +13,7 @@
 import { randomUUID } from "node:crypto";
 
 import { runWithCorrelationId } from "@dashboard-chat/correlation-id";
+import { echoCorrelationId } from "@dashboard-chat/correlation-id/hono";
 import type { Context, Next } from "hono";
 
 import { createLogger } from "./log.ts";
@@ -53,4 +54,7 @@ export async function correlationMiddleware(c: Context, next: Next): Promise<voi
       });
     }
   });
+  // Echo the id on every response (incl. error responses) so the operator can
+  // copy it straight from the failure (AC1.3).
+  echoCorrelationId(c, id);
 }

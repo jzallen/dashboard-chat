@@ -8,7 +8,13 @@
 
 services:
   auth-proxy:
-    build: ./auth-proxy
+    # Repo-root build context so the Dockerfile can vendor the first-party
+    # workspace packages auth-proxy imports (`@dashboard-chat/shared-logging`,
+    # `@dashboard-chat/correlation-id`) — a `./auth-proxy` context cannot reach
+    # `../shared`, so the prior `build: ./auth-proxy` could not resolve them.
+    build:
+      context: .
+      dockerfile: auth-proxy/Dockerfile.dev
     image: dashboard-chat/auth-proxy:ui-state-dev
     pull_policy: build
     # Local dev uses the frictionless dev login (the ui/ one-button "Sign in

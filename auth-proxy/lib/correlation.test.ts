@@ -41,6 +41,20 @@ describe("correlationMiddleware — binds the id for the request", () => {
     });
 
     expect(await res.json()).toEqual({ bound: "req-from-client" });
+    expect(res.headers.get("X-Request-Id")).toBe("req-from-client");
+  });
+
+  it("echoes the bound id on an error response (AC1.3)", async () => {
+    const app = new Hono();
+    app.use("*", correlationMiddleware);
+    app.get("/boom", (c) => c.json({ error: "nope" }, 404));
+
+    const res = await app.request("/boom", {
+      headers: { "X-Request-Id": "err-corr-1" },
+    });
+
+    expect(res.status).toBe(404);
+    expect(res.headers.get("X-Request-Id")).toBe("err-corr-1");
   });
 
   it("binds a freshly-minted id when the request carries none", async () => {

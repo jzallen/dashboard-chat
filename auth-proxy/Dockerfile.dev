@@ -1,0 +1,38 @@
+# Local-dev image for auth-proxy built from a REPO-ROOT context so the
+# first-party workspace packages it imports (`@dashboard-chat/shared-logging`,
+# `@dashboard-chat/correlation-id`) can be copied in explicitly — the workspace
+# symlink at the repo root provides them in local dev, but an isolated image
+# build needs them vendored. Mirrors `ui-state/Dockerfile`. The canonical image
+# is Bazel (esbuild-bundled); this is the dev-override stopgap.
+
+FROM node:20-slim
+
+WORKDIR /app
+
+# Registry deps only — installed by name so npm never tries to resolve the
+# `@dashboard-chat/*` workspace deps (version "*") from the registry.
+RUN npm install --no-save \
+    @asteasolutions/zod-to-openapi@^7.3.0 \
+    @hono/node-server@^1.14.0 \
+    hono@^4.7.0 \
+    jose@^6.1.3 \
+    pino@^9.5.0 \
+    zod@^3.24.2 \
+    tsx
+
+# Vendor the pure-TS workspace packages into node_modules.
+COPY shared/logging/ ./node_modules/@dashboard-chat/shared-logging/
+COPY shared/correlation-id/ ./node_modules/@dashboard-chat/correlation-id/
+
+# auth-proxy source.
+COPY auth-proxy/ ./auth-proxy/
+
+RUN useradd -m appuser \
+    && chown -R appuser:appuser /app \
+    && mkdir -p /var/lib/auth-proxy \
+    && chown appuser:appuser /var/lib/auth-proxy
+USER appuser
+
+EXPOSE 3000
+
+CMD ["npx", "tsx", "auth-proxy/index.ts"]

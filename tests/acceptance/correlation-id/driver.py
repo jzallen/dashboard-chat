@@ -90,9 +90,12 @@ class CorrelationDriver:
             raise RuntimeError(
                 f"mint_dev_jwt: auth-proxy returned {response.status_code} from POST {url}: {response.text[:300]}"
             )
-        token = response.json().get("token")
+        payload = response.json()
+        # The callback returns the user JWT under `access_token` (the body field
+        # the FE Bearer path reads; the cookie carries the same value).
+        token = payload.get("access_token") or payload.get("token")
         if not isinstance(token, str) or not token:
-            raise RuntimeError(f"mint_dev_jwt: no token field: {response.text[:300]}")
+            raise RuntimeError(f"mint_dev_jwt: no access_token field: {response.text[:300]}")
         return token
 
     # ─────────────────────────── Log-line capture ───────────────────────────
