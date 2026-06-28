@@ -10,9 +10,12 @@
     "test:run": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
+    "@dashboard-chat/correlation-id": "*",
+    "@dashboard-chat/shared-logging": "*",
     "@hono/node-server": "^1.14.0",
     "hono": "^4.7.0",
     "ioredis": "^5.4.0",
+    "pino": "^9.5.0",
     "xstate": "^5.18.0",
     "zod": "^3.24.2"
   },
