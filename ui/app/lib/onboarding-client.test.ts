@@ -94,28 +94,34 @@ describe("onboardingClient — OnboardingClient contract preserved", () => {
   });
 
   it("throws ApiError(status, body) on a non-2xx GET (the driver maps the definitive answer)", async () => {
+    const errorBody = {
+      errors: [{ status: "404", title: "Organization not found" }],
+    };
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => errJson(404, { error: "no org" })),
+      vi.fn(async () => errJson(404, errorBody)),
     );
     const err = await onboardingClient
       .get("/api/orgs/me")
       .catch((e) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).status).toBe(404);
-    expect((err as ApiError).body).toEqual({ error: "no org" });
+    expect((err as ApiError).body).toEqual(errorBody);
   });
 
   it("throws ApiError(status, body) on a non-2xx POST (the driver maps the definitive answer)", async () => {
+    const errorBody = {
+      errors: [{ status: "409", title: "Organization name already taken" }],
+    };
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => errJson(409, { error: "taken" })),
+      vi.fn(async () => errJson(409, errorBody)),
     );
     const err = await onboardingClient
       .post("/api/orgs", { name: "Acme" })
       .catch((e) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).status).toBe(409);
-    expect((err as ApiError).body).toEqual({ error: "taken" });
+    expect((err as ApiError).body).toEqual(errorBody);
   });
 });
