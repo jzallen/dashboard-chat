@@ -11,13 +11,13 @@
  * contract the driver depends on — the catalog backendClient semantics: a 2xx
  * returns the unwrapped JSON:API payload; a non-2xx throws
  * {@link ApiError}(status, body); a network/timeout throws a plain Error. That is
- * why it delegates to {@link apiGet} on the rewritten path rather than
- * re-implementing the unwrap + error mapping.
+ * why it delegates to {@link apiGet} / {@link apiPost} on the rewritten path
+ * rather than re-implementing the error mapping.
  *
  * This is the gateway replacement for the `/api`-direct `defaultClient` in
  * routes/onboarding.tsx.
  */
-import { apiGet } from "../catalog/dataSources/backendClient";
+import { apiGet, apiPost } from "../catalog/dataSources/backendClient";
 import type { OnboardingClient } from "./onboarding-driver";
 
 /** The auth-proxy `/api` prefix the driver hands us, swapped for the same-origin
@@ -31,11 +31,36 @@ function toUiServerPath(apiPath: string): string {
     : apiPath;
 }
 
+/** Flatten a JSON:API resource `{ type, id, attributes }` into `{ id, ...attributes }`. */
+function unwrapResource(item: unknown): unknown {
+  if (
+    item &&
+    typeof item === "object" &&
+    "attributes" in (item as Record<string, unknown>)
+  ) {
+    const record = item as Record<string, unknown>;
+    return { id: record.id, ...(record.attributes as object) };
+  }
+  return item;
+}
+
+/**
+ * Flatten a JSON:API envelope (`{ data: … }`) to the unwrapped payload — a single
+ * `{ id, ...attributes }`, or a list mapped the same way. {@link apiGet} already
+ * does this for the read legs; {@link apiPost} returns the raw body, so the write
+ * legs flatten here too — the driver reads a flat `{ id, name }` snapshot off a
+ * 2xx create.
+ */
+function unwrapEnvelope(json: unknown): unknown {
+  if (json && typeof json === "object" && "data" in (json as object)) {
+    const data = (json as { data: unknown }).data;
+    return Array.isArray(data) ? data.map(unwrapResource) : unwrapResource(data);
+  }
+  return json;
+}
+
 export const onboardingClient: OnboardingClient = {
   get: (path) => apiGet(toUiServerPath(path)),
-  post: (path, body) => {
-    throw new Error(
-      `onboardingClient.post(${path}, ${JSON.stringify(body)}) not implemented`,
-    );
-  },
+  post: async (path, body) =>
+    unwrapEnvelope(await apiPost(toUiServerPath(path), body)),
 };
