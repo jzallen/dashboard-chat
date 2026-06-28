@@ -44,6 +44,8 @@ All scenarios enter through the **controller** `process()` (or `handler()` for t
 
 These encode the clean-architecture ACs. They live in `cyrus/infra/tests/test_clean_architecture_refactor.py`, authored RED and `@pytest.mark.skip`-gated (each test imports its target symbol *inside the body* so collection stays green while the symbol does not yet exist). The DELIVER crafter **enables one at a time** and finalises the names (the issue grants naming discretion — the suggested names below are not load-bearing).
 
+**These structural specs are throwaway drivers — the file is deleted in the final DELIVER step (roadmap step 6).** They assert implementation *shape*, not behaviour; once the shape exists they are brittle structure-coupling. Behaviour is validated by the 62 existing tests (the whole point of a move-things-around refactor); the clean-architecture *shape* is confirmed by a refactor/architecture **review of the diff**, not by a standing test. Net test delta of the refactor is zero.
+
 | # | Acceptance criterion | Scenario (Given–When–Then) | Proposed test |
 |---|---|---|---|
 | S1 | **Identity is a pure VO** | Given a signed body · When consumer identity is derived · Then the identity holds the routing key + `is_routed` only, performs no I/O, is immutable and equality-comparable, and **stores no body bytes** | `test_consumer_identity__holds_key_and_is_routed_only_no_body` |

@@ -69,12 +69,23 @@
       "enable_tests": [],
       "verify": "cd cyrus/infra && uv run --extra dev pytest && uv run --extra dev ruff check .",
       "guardrail": "No new dependency in pyproject.toml; no new module beyond the existing flat set; full suite (62 guardrails + S1-S6) green."
+    },
+    {
+      "id": 6,
+      "title": "Delete the structural scaffolding tests",
+      "ac": "Behaviour validated by the existing suite; structural quality verified by review, not a permanent test",
+      "intent": "Remove cyrus/infra/tests/test_clean_architecture_refactor.py. The S1-S6 specs are throwaway DRIVERS for the refactor, not kept behavioural tests — they assert implementation SHAPE (a VO holds no body, a function has no statusCode literal, presence is a Protocol), which is brittle structure-coupling once the shape exists. The 62 existing tests are the behavioural contract and already prove behaviour is unchanged (the whole point of a move-things-around refactor); the clean-architecture SHAPE is confirmed by a refactor/architecture review of the diff, not by a standing test. After this step zero structural-spec files remain and the suite is exactly the original 62 (any genuinely new BEHAVIOUR a step introduced would instead live as a normal behavioural test, but this refactor introduces none).",
+      "files": ["cyrus/infra/tests/test_clean_architecture_refactor.py"],
+      "enable_tests": [],
+      "verify": "cd cyrus/infra && uv run --extra dev pytest  (62 passed, 0 skipped)",
+      "guardrail": "Net test delta is zero (no behaviour added); the structural file is gone."
     }
   ],
   "final_gate": [
-    "cd cyrus/infra && uv run --extra dev pytest  (62 guardrails + S1-S6 all green, no skips remaining, no weakened assertions)",
+    "cd cyrus/infra && uv run --extra dev pytest  (the original 62 behavioural tests green; structural scaffolding deleted; 0 skips)",
     "cd cyrus/infra && uv run --extra dev ruff check .",
     "Confirm ingress/ still zips as a flat boto3+stdlib asset (no new files/deps); diff is rename/restructure only",
+    "Clean-architecture SHAPE confirmed by review of the diff (e.g. nw-solution-architect-reviewer / nw-software-crafter-reviewer), not by a standing structural test",
     "PR targets cyrus-iot-feed/release-1 (NOT main); call out any process() signature change explicitly"
   ]
 }

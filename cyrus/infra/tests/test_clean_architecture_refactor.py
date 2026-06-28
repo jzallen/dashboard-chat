@@ -1,8 +1,15 @@
 """Structural specification for the clean-architecture reframing of the ingress.
 
-These tests pin the *shape* the ingress Lambda is being refactored toward — the
-behaviour is already pinned (and must stay green) by the rest of the suite. Each
-layer of the framing gets one or two assertions:
+THROWAWAY SCAFFOLDING — DELETE THIS FILE AT THE END OF THE REFACTOR. These tests
+assert implementation *shape*, not behaviour; once the shape exists they are
+brittle structure-coupling with no behavioural value. Behaviour is pinned (and
+must stay green) by the rest of the suite — for a move-things-around refactor the
+existing tests are the contract. The clean-architecture shape is confirmed by a
+review of the diff, not by keeping this file. Net test delta of the refactor is
+zero (see the distill roadmap's final step).
+
+While it exists it pins the *shape* the ingress Lambda is being refactored
+toward. Each layer of the framing gets one or two assertions:
 
 * identity is a pure value object (routing key + ``is_routed`` only, no body),
 * presence is a ``Protocol`` (boolean read, fail-closed owned by the adapter),
