@@ -1,0 +1,80 @@
+{
+  "feature": "reframe-ingress-clean-architecture",
+  "slice": "single-pass-refactor",
+  "wave": "DELIVER",
+  "type": "behaviour-preserving-refactor",
+  "target_tree": "cyrus/infra/ingress/",
+  "outside_in": false,
+  "walking_skeleton_scenario": null,
+  "walking_skeleton_note": "N/A — refactor, not feature. The end-to-end path already exists and is green (62 ingress tests).",
+  "guardrail_suite": "cyrus/infra/tests/ (62 tests — behaviour-preservation, Iron Rule: no weakened/deleted assertions)",
+  "structural_suite": "cyrus/infra/tests/test_clean_architecture_refactor.py (S1-S6, skip-gated, enable one at a time)",
+  "acceptance_gate": "cd cyrus/infra && uv run --extra dev pytest",
+  "decisions_ref": "docs/feature/reframe-ingress-clean-architecture/distill/wave-decisions.md",
+  "spec_ref": "docs/feature/reframe-ingress-clean-architecture/distill/acceptance-spec.md",
+  "constraints": [
+    "One file / minimal sprawl: stay in handler.py (folding consumers.py / presence.py back in is allowed); NO new files or packages; boto3 + stdlib only; the ingress/ folder must still zip as-is.",
+    "Behaviour preserved exactly: the 62 guardrail tests stay green with no weakened or deleted assertions.",
+    "process()'s public signature is depended on by tests — any change is deliberate, called out in the PR, and the tests updated in lockstep (not loosened).",
+    "Suggested names are not load-bearing — final names at implementer discretion; the buffer use case's name must not hide its optimistic IoT probe.",
+    "In-file order after refactor: controller -> use cases -> presenter -> helpers -> composition root, named via docstrings (not inline narration); code prose is timeless (no ticket IDs)."
+  ],
+  "steps": [
+    {
+      "id": 1,
+      "title": "Extract consumer identity as a pure value object",
+      "ac": "S1, S2 — Identity is a pure VO",
+      "intent": "Lift the routing-key derivation out of _LinearConsumer.__init__ into an immutable, no-I/O value object holding the routing key (str) + is_routed (bool) ONLY — never the parsed/re-serialised body and never the raw body bytes. Identity becomes a thing the use cases USE, not something they ARE. Opaqueness is load-bearing: the signed bytes must never round-trip through the VO; the VO is derived from a COPY of the body via routing.extract_routing_key. Equality-based, hashable/frozen.",
+      "files": ["cyrus/infra/ingress/consumers.py", "cyrus/infra/tests/test_clean_architecture_refactor.py"],
+      "enable_tests": ["test_consumer_identity__holds_key_and_is_routed_only_no_body", "test_consumer_identity__unrouted_key__is_not_routed"],
+      "verify": "cd cyrus/infra && uv run --extra dev pytest",
+      "guardrail": "All 62 baseline tests stay green; is_routed semantics unchanged (routed key vs _unrouted sentinel)."
+    },
+    {
+      "id": 2,
+      "title": "Model presence as a Protocol with adapter-owned fail-closed documented",
+      "ac": "S3 — Presence is a Protocol",
+      "intent": "Define a typing.Protocol (suggested ConsumerPresenceRepository) with is_offline(username: str) -> bool. The DynamoDB-backed make_offline_check adapter satisfies it structurally (no inheritance needed). Document, in the Protocol/adapter docstring, that the adapter owns the fail-closed policy (read error -> offline) and why (iot-only has no SQS safety net, so a presence-cache blip must yield an honest 503 Linear retries, not a crash). Type the addressed-consumer use case's presence dependency as the Protocol.",
+      "files": ["cyrus/infra/ingress/presence.py", "cyrus/infra/ingress/consumers.py", "cyrus/infra/tests/test_clean_architecture_refactor.py"],
+      "enable_tests": ["test_presence__is_modeled_as_a_protocol"],
+      "verify": "cd cyrus/infra && uv run --extra dev pytest",
+      "guardrail": "Fail-closed->503 and presence row semantics unchanged (test_presence.py + iot_only_wiring stay green, no weakened assertions)."
+    },
+    {
+      "id": 3,
+      "title": "Separate the presenter from delivery; use cases return domain results",
+      "ac": "S4 — Presenter separated",
+      "intent": "Introduce domain result types returned by the delivery logic instead of HTTP dicts: addressed-consumer -> Delivered | ConsumerOffline(username, creator_id, action); buffer -> Enqueued | PublishedUnrouted (or equivalents). Add a single presenter (suggested _shape_response(result) -> HTTPResponse) that maps results to {statusCode, body}: 200 'published'/'queued', and the honest 503 body exactly {reason: 'consumer-offline', consumer_id, action}. After this step NO statusCode/HTTP literal is produced inside any use-case function — the presenter is the sole producer. No domain type leaks into the body.",
+      "files": ["cyrus/infra/ingress/consumers.py", "cyrus/infra/ingress/handler.py", "cyrus/infra/tests/test_clean_architecture_refactor.py"],
+      "enable_tests": ["test_presenter__is_the_sole_producer_of_http_status"],
+      "verify": "cd cyrus/infra && uv run --extra dev pytest",
+      "guardrail": "Exact response bodies preserved (200 'published'/'queued'/'queued', 401 strings, 503 body shape) — honest-503 + opaqueness + observability guardrails stay green."
+    },
+    {
+      "id": 4,
+      "title": "Reframe the two strategies as named use-case functions; drop the ABC",
+      "ac": "S5, S6 — Named strategy use cases; delivery_mode only at the composition root",
+      "intent": "Replace IoTLinearConsumer.deliver / SQSLinearConsumer.deliver (and the _LinearConsumer ABC) with two use-case functions named for their single responsibility: addressed-consumer (suggested relay_webhook_event_to_consumer) — identity routing + presence check, mandatory IoT publish, honest 503 when the routed consumer is offline; buffer (suggested enqueue_webhook_event) — enqueue to the durable buffer PLUS the optimistic IoT relay probe (the name must not hide the probe). Each takes the identity VO + its ports; neither branches on delivery_mode. process() (the composition root) reads delivery_mode once, wires the chosen use case + ports, calls it, and hands the domain result to the presenter. process()'s public signature is unchanged.",
+      "files": ["cyrus/infra/ingress/consumers.py", "cyrus/infra/ingress/handler.py", "cyrus/infra/tests/test_clean_architecture_refactor.py"],
+      "enable_tests": ["test_strategies__exist_as_named_use_case_functions", "test_use_cases__do_not_branch_on_delivery_mode"],
+      "verify": "cd cyrus/infra && uv run --extra dev pytest",
+      "guardrail": "Every delivery-mode / dual-write / iot-only / offline guardrail stays green; _unrouted skips presence (no presence call, no 503); iot-only publish failure still propagates and never falls back to SQS."
+    },
+    {
+      "id": 5,
+      "title": "Reconcile in-file ordering, docstrings, and minimal-sprawl",
+      "ac": "Single file / no new ceremony; code-organization discipline",
+      "intent": "Order the surviving code controller -> use cases -> presenter -> helpers -> composition root, each layer NAMED by a docstring (no inline narration; timeless prose, no ticket IDs). Decide whether to fold consumers.py/presence.py back into handler.py or keep them as the existing small sibling modules — minimal-sprawl allows either, the constraint is no NEW files/packages. Confirm boto3 + stdlib only and that ingress/ still zips as-is. Remove any now-dead symbols (e.g. the old ABC).",
+      "files": ["cyrus/infra/ingress/handler.py", "cyrus/infra/ingress/consumers.py", "cyrus/infra/ingress/presence.py"],
+      "enable_tests": [],
+      "verify": "cd cyrus/infra && uv run --extra dev pytest && uv run --extra dev ruff check .",
+      "guardrail": "No new dependency in pyproject.toml; no new module beyond the existing flat set; full suite (62 guardrails + S1-S6) green."
+    }
+  ],
+  "final_gate": [
+    "cd cyrus/infra && uv run --extra dev pytest  (62 guardrails + S1-S6 all green, no skips remaining, no weakened assertions)",
+    "cd cyrus/infra && uv run --extra dev ruff check .",
+    "Confirm ingress/ still zips as a flat boto3+stdlib asset (no new files/deps); diff is rename/restructure only",
+    "PR targets cyrus-iot-feed/release-1 (NOT main); call out any process() signature change explicitly"
+  ]
+}
