@@ -42,11 +42,11 @@ import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router";
 
 import { hasSession } from "../auth/tokenStorage";
-import { apiGet, apiPost } from "../catalog/dataSources/backendClient";
 import { useTheme } from "../components/AppShell";
 import { LoadingSurface } from "../components/LoadingSurface/LoadingSurface";
 import { refreshOrgGlobal } from "../components/useCatalog";
 import { createLogger } from "../lib/log";
+import { onboardingClient } from "../lib/onboarding-client";
 import {
   createOnboardingDriver,
   type OnboardingClient,
@@ -61,12 +61,10 @@ const log = createLogger("onboarding");
  *  org_validation_error field). */
 type ValidationError = ReducedContext["org_validation_error"];
 
-/** The default backend client adapter — the real HTTP port the driver consumes
- *  (mirrors the catalog backendClient contract: ApiError on non-2xx). */
-const defaultClient: OnboardingClient = {
-  get: (path) => apiGet(path),
-  post: (path, body) => apiPost(path, body),
-};
+/** The default HTTP port the driver consumes — the gateway adapter that routes
+ *  the driver's backend-shaped legs through the same-origin `/ui-server/*`
+ *  brokers (preserving the backendClient contract: ApiError on non-2xx). */
+const defaultClient: OnboardingClient = onboardingClient;
 
 export default function OnboardingRoute({
   client = defaultClient,

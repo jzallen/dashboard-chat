@@ -29,10 +29,23 @@ import { apiFetch } from "./api-client";
  * body-less 2xx is defaulted to `{}` so a caller reading JSON still parses.
  */
 export async function brokerGet(
-  _request: Request,
-  _backendPath: string,
+  request: Request,
+  backendPath: string,
 ): Promise<Response> {
-  throw new Error("not implemented");
+  const upstream = await apiFetch(request, backendPath, { method: "GET" });
+
+  const headers = new Headers();
+  headers.set(
+    "content-type",
+    upstream.headers.get("content-type") ?? "application/json",
+  );
+  // Default a body-less 2xx to an empty JSON object so a caller reading the
+  // response as JSON still parses (mirrors brokerPost / brokerPatch).
+  const body = await upstream.text();
+  return new Response(body === "" ? "{}" : body, {
+    status: upstream.status,
+    headers,
+  });
 }
 
 /**
