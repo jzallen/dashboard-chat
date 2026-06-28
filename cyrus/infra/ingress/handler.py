@@ -27,20 +27,24 @@ NOT enqueue anything.
 
 from __future__ import annotations
 
+import functools
 import logging
 import os
+from dataclasses import dataclass
 from typing import Any, Callable, Literal, Mapping, Optional, Protocol
 
 import boto3
 
-import presence
 from consumers import (
     ConsumerIdentity,
+    ConsumerPresenceRepository,
     HTTPResponse,
     LinearWebhookEvent,
     enqueue_webhook_event,
+    probe_consumer_over_iot,
     relay_webhook_event_to_consumer,
 )
+from presence import AlwaysOnlinePresence, DynamoDBConsumerPresence
 
 _log = logging.getLogger(__name__)
 
@@ -68,57 +72,85 @@ _dynamodb_client_singleton: Any = None
 _secret_cache: Optional[str] = None
 
 
+@dataclass(frozen=True)
+class Env:
+    """The validated environment a Lambda invocation runs under.
+
+    Read once and validated on construction so a misconfiguration fails fast at the
+    edge rather than per-request: ``iot-only`` requires ``IOT_ENDPOINT`` (it has no
+    SQS safety net, so every webhook must have a Data-plane client to publish
+    through). An unknown/unset ``DELIVERY_MODE`` falls back to ``dual-write`` so a
+    typo never silently drops the SQS safety net.
+    """
+
+    delivery_mode: Literal["dual-write", "iot-only"]
+    linear_secret: str
+    queue_url: str
+    presence_table: Optional[str]
+    iot_endpoint: Optional[str]
+
+    @classmethod
+    def from_environ(cls) -> "Env":
+        """Read and validate the ingress configuration from ``os.environ``."""
+        delivery_mode = os.environ.get("DELIVERY_MODE", "dual-write")
+        if delivery_mode not in _DELIVERY_MODES:
+            delivery_mode = "dual-write"
+        iot_endpoint = os.environ.get("IOT_ENDPOINT")
+        if delivery_mode == "iot-only" and not iot_endpoint:
+            raise RuntimeError(
+                "DELIVERY_MODE=iot-only requires IOT_ENDPOINT to be configured "
+                "(no IoT Data-plane client could be built)"
+            )
+        return cls(
+            delivery_mode=delivery_mode,
+            linear_secret=_load_secret(),
+            queue_url=os.environ["QUEUE_URL"],
+            presence_table=os.environ.get("PRESENCE_TABLE"),
+            iot_endpoint=iot_endpoint,
+        )
+
+
 def process(
     event: Mapping[str, Any],
+    env: Env,
     *,
-    queue_url: str,
-    secret: str,
-    sqs_client: Any,
-    iot_data_client: Any = None,
-    delivery_mode: Literal["dual-write", "iot-only"] = "dual-write",
-    is_offline: Optional[Callable[[str], bool]] = None,
+    sqs_client: Callable[[], Any],
+    iot_client: Callable[[], Any],
+    presence: Callable[[], ConsumerPresenceRepository],
 ) -> HTTPResponse:
-    """Verify a Function URL event, then wire and run the chosen delivery strategy.
+    """Verify a Function URL event, then run the chosen delivery strategy.
 
-    This is the composition root: it rejects an unsigned/invalid request via the
-    webhook event's own error message, derives the consumer identity, reads
-    ``delivery_mode`` once to select the delivery use case, wires it with its ports,
-    and returns the result's own ``message``. Returns ``{"statusCode": 401}`` and
-    writes nothing when the ``Linear-Signature`` is missing or does not validate
-    against ``secret``. On a valid signature the per-deploy ``delivery_mode``
-    selects the strategy:
+    The composition root: it rejects an unsigned/invalid request via the webhook
+    event's own error message, derives the consumer identity, and — reading
+    ``env.delivery_mode`` once — selects the strategy, constructing only the clients
+    that strategy needs from the supplied factories:
 
-    * ``dual-write`` (default) — :func:`~consumers.enqueue_webhook_event`: enqueue
-      to SQS and, when ``iot_data_client`` is wired, also publish byte-identically.
-    * ``iot-only`` — :func:`~consumers.relay_webhook_event_to_consumer`: publish
-      over IoT, or surface the offline consumer when the routed consumer
-      ``is_offline``.
+    * ``iot-only`` — :func:`~consumers.relay_webhook_event_to_consumer`: publish over
+      IoT (the sole channel), or surface the offline consumer; SQS is never touched.
+    * ``dual-write`` (default) — a best-effort
+      :func:`~consumers.probe_consumer_over_iot` beside the durable
+      :func:`~consumers.enqueue_webhook_event` to SQS (the system of record).
     """
-    webhook_event = LinearWebhookEvent(event, secret)
+    webhook_event = LinearWebhookEvent(event, env.linear_secret)
     if not webhook_event.is_valid():
         return webhook_event.error_message
 
     identity = ConsumerIdentity.from_webhook_event(webhook_event)
-    result: DeliveryResult
-    if delivery_mode == "iot-only":
-        result = relay_webhook_event_to_consumer(
-            identity,
-            webhook_event,
-            iot_data_client=iot_data_client,
-            is_offline=is_offline,
+
+    if env.delivery_mode == "iot-only":
+        relayed: DeliveryResult = relay_webhook_event_to_consumer(
+            identity, webhook_event, iot_client=iot_client(), presence=presence()
         )
-    else:
-        result = enqueue_webhook_event(
-            identity,
-            webhook_event,
-            sqs_client=sqs_client,
-            queue_url=queue_url,
-            iot_data_client=iot_data_client,
-        )
-    return result.message
+        return relayed.message
+
+    probe_consumer_over_iot(identity, webhook_event, iot_client=iot_client())
+    enqueued = enqueue_webhook_event(
+        webhook_event, sqs_client=sqs_client(), queue_url=env.queue_url
+    )
+    return enqueued.message
 
 
-def _sqs_client() -> Any:
+def _sqs_client(env: Env) -> Any:
     """Return a process-wide SQS client (reused across warm Lambda invocations)."""
     global _sqs_client_singleton
     if _sqs_client_singleton is None:
@@ -126,17 +158,22 @@ def _sqs_client() -> Any:
     return _sqs_client_singleton
 
 
-def _iot_data_client() -> Any:
-    """Return a process-wide IoT Data-plane client targeting ``IOT_ENDPOINT``.
+def _iot_data_client(env: Env) -> Any:
+    """Return a process-wide IoT Data-plane client, or ``None`` when unconfigured.
 
     The Data-plane HTTPS Publish API is account/region specific, so the client is
-    pinned to the ``IOT_ENDPOINT`` host (no MQTT client in the Lambda).
+    pinned to ``env.iot_endpoint`` (no MQTT client in the Lambda). Without an
+    endpoint there is no IoT leg, so this returns ``None`` and the dual-write probe
+    is skipped (``iot-only`` validates the endpoint up front in
+    :meth:`Env.from_environ`).
     """
+    if env.iot_endpoint is None:
+        return None
     global _iot_data_client_singleton
     if _iot_data_client_singleton is None:
         _iot_data_client_singleton = boto3.client(
             "iot-data",
-            endpoint_url=f"https://{os.environ['IOT_ENDPOINT']}",
+            endpoint_url=f"https://{env.iot_endpoint}",
         )
     return _iot_data_client_singleton
 
@@ -149,10 +186,16 @@ def _dynamodb_client() -> Any:
     return _dynamodb_client_singleton
 
 
-def _delivery_mode() -> str:
-    """Read ``DELIVERY_MODE`` from env, falling back to ``dual-write`` if unknown."""
-    mode = os.environ.get("DELIVERY_MODE", "dual-write")
-    return mode if mode in _DELIVERY_MODES else "dual-write"
+def _presence(env: Env) -> ConsumerPresenceRepository:
+    """Build the presence boundary: the DynamoDB cache, or the always-online null.
+
+    With a ``PRESENCE_TABLE`` the offline decision reads the DynamoDB presence
+    cache; without one there is no cache wired, so the addressed-consumer use case
+    treats every consumer as online.
+    """
+    if env.presence_table is None:
+        return AlwaysOnlinePresence()
+    return DynamoDBConsumerPresence(_dynamodb_client(), env.presence_table)
 
 
 def _load_secret() -> str:
@@ -166,38 +209,18 @@ def _load_secret() -> str:
 
 
 def handler(event: Mapping[str, Any], context: Any) -> HTTPResponse:
-    """Lambda entry point: wire env/secret/clients, then delegate to ``process``.
+    """Lambda entry point: read+validate env, then run ``process`` with client factories.
 
-    The IoT leg is enabled only when ``IOT_ENDPOINT`` is configured; without it the
-    handler runs the legacy SQS-only path so the dual-write can roll out behind env.
-    ``DELIVERY_MODE`` selects the per-deploy mode; in ``iot-only`` the offline
-    boundary is backed by a real presence-cache read of the ``PRESENCE_TABLE``.
+    :meth:`Env.from_environ` reads and validates the configuration (failing fast on
+    a misconfigured ``iot-only`` without ``IOT_ENDPOINT``). The clients are passed
+    as factories so ``process`` constructs only the ones the selected delivery mode
+    needs.
     """
-    iot_data_client = _iot_data_client() if os.environ.get("IOT_ENDPOINT") else None
-    delivery_mode = _delivery_mode()
-
-    if delivery_mode == "iot-only" and iot_data_client is None:
-        # iot-only has no SQS safety net, so every webhook is published over IoT.
-        # Without IOT_ENDPOINT there is no Data-plane client and the publish would
-        # AttributeError on every message — fail fast on the misconfiguration
-        # instead of 500-ing each request.
-        raise RuntimeError(
-            "DELIVERY_MODE=iot-only requires IOT_ENDPOINT to be configured "
-            "(no IoT Data-plane client could be built)"
-        )
-
-    is_offline = None
-    if delivery_mode == "iot-only":
-        table_name = os.environ.get("PRESENCE_TABLE")
-        if table_name:
-            is_offline = presence.make_offline_check(_dynamodb_client(), table_name)
-
+    env = Env.from_environ()
     return process(
         event,
-        queue_url=os.environ["QUEUE_URL"],
-        secret=_load_secret(),
-        sqs_client=_sqs_client(),
-        iot_data_client=iot_data_client,
-        delivery_mode=delivery_mode,
-        is_offline=is_offline,
+        env,
+        sqs_client=functools.partial(_sqs_client, env),
+        iot_client=functools.partial(_iot_data_client, env),
+        presence=functools.partial(_presence, env),
     )

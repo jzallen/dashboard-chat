@@ -29,11 +29,11 @@ from unittest.mock import MagicMock
 import pytest
 
 from conftest import (
-    QUEUE_URL,
-    SECRET,
     TOPIC_PREFIX,
     USERNAME,
+    StubPresence,
     headers_for,
+    make_env,
     make_function_url_event,
 )
 
@@ -70,12 +70,10 @@ def test_process__iot_only_routed_and_offline__returns_503_naming_consumer_and_a
 
     result = process(
         event,
-        queue_url=QUEUE_URL,
-        secret=SECRET,
-        sqs_client=MagicMock(),
-        iot_data_client=MagicMock(),
-        delivery_mode="iot-only",
-        is_offline=lambda username: True,
+        make_env(delivery_mode="iot-only"),
+        sqs_client=lambda: MagicMock(),
+        iot_client=lambda: MagicMock(),
+        presence=lambda: StubPresence(lambda username: True),
     )
 
     assert {"statusCode": result["statusCode"], "body": json.loads(result["body"])} == {
@@ -98,12 +96,10 @@ def test_process__iot_only_routed_and_offline__neither_publishes_nor_enqueues(
     event = make_function_url_event(routable_body, headers_for(routable_body))
     process(
         event,
-        queue_url=QUEUE_URL,
-        secret=SECRET,
-        sqs_client=sqs,
-        iot_data_client=iot,
-        delivery_mode="iot-only",
-        is_offline=lambda username: True,
+        make_env(delivery_mode="iot-only"),
+        sqs_client=lambda: sqs,
+        iot_client=lambda: iot,
+        presence=lambda: StubPresence(lambda username: True),
     )
 
     assert (iot.publish.called, sqs.send_message.called) == (False, False)
@@ -119,12 +115,10 @@ def test_process__iot_only_routed_consumer__keys_offline_check_by_username(
 
     result = process(
         event,
-        queue_url=QUEUE_URL,
-        secret=SECRET,
-        sqs_client=MagicMock(),
-        iot_data_client=MagicMock(),
-        delivery_mode="iot-only",
-        is_offline=lambda key: key == USERNAME,
+        make_env(delivery_mode="iot-only"),
+        sqs_client=lambda: MagicMock(),
+        iot_client=lambda: MagicMock(),
+        presence=lambda: StubPresence(lambda key: key == USERNAME),
     )
 
     assert result["statusCode"] == 503
@@ -141,12 +135,10 @@ def test_process__iot_only_routed_and_online__publishes_and_returns_200_without_
     event = make_function_url_event(routable_body, headers)
     result = process(
         event,
-        queue_url=QUEUE_URL,
-        secret=SECRET,
-        sqs_client=sqs,
-        iot_data_client=iot,
-        delivery_mode="iot-only",
-        is_offline=lambda username: False,
+        make_env(delivery_mode="iot-only"),
+        sqs_client=lambda: sqs,
+        iot_client=lambda: iot,
+        presence=lambda: StubPresence(lambda username: False),
     )
 
     iot.publish.assert_called_once_with(
@@ -173,12 +165,10 @@ def test_process__iot_only_unrouted__publishes_catch_all_and_never_503(
     event = make_function_url_event(webhook_body, headers)
     result = process(
         event,
-        queue_url=QUEUE_URL,
-        secret=SECRET,
-        sqs_client=sqs,
-        iot_data_client=iot,
-        delivery_mode="iot-only",
-        is_offline=lambda username: True,
+        make_env(delivery_mode="iot-only"),
+        sqs_client=lambda: sqs,
+        iot_client=lambda: iot,
+        presence=lambda: StubPresence(lambda username: True),
     )
 
     iot.publish.assert_called_once_with(
@@ -203,12 +193,10 @@ def test_process__iot_only_publish_fails__propagates_and_never_falls_back_to_sqs
     with pytest.raises(RuntimeError):
         process(
             event,
-            queue_url=QUEUE_URL,
-            secret=SECRET,
-            sqs_client=sqs,
-            iot_data_client=iot,
-            delivery_mode="iot-only",
-            is_offline=lambda username: False,
+            make_env(delivery_mode="iot-only"),
+            sqs_client=lambda: sqs,
+            iot_client=lambda: iot,
+            presence=lambda: StubPresence(lambda username: False),
         )
 
     sqs.send_message.assert_not_called()
@@ -223,10 +211,10 @@ def test_process__delivery_mode_omitted__defaults_to_dual_write(routable_body):
     event = make_function_url_event(routable_body, headers)
     result = process(
         event,
-        queue_url=QUEUE_URL,
-        secret=SECRET,
-        sqs_client=sqs,
-        iot_data_client=iot,
+        make_env(),
+        sqs_client=lambda: sqs,
+        iot_client=lambda: iot,
+        presence=lambda: StubPresence(),
     )
 
     iot.publish.assert_called_once()

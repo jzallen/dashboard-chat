@@ -33,7 +33,6 @@ import logging
 from dataclasses import dataclass
 from typing import (
     Any,
-    Callable,
     Mapping,
     Optional,
     Protocol,
@@ -217,10 +216,10 @@ class ConsumerPresenceRepository(Protocol):
     ``is_offline(username) -> bool``. The **adapter** owns the fail-closed policy:
     a read error (throttle, network, missing IAM grant) resolves to offline,
     because ``iot-only`` has no SQS safety net — a presence-cache blip must yield an
-    honest retryable response Linear retries, not a crash. The DynamoDB-backed
-    :func:`presence.make_offline_check` is the structural realisation of this
-    boundary (a callable of the same shape); see its docstring for the fail-closed
-    rationale.
+    honest retryable response Linear retries, not a crash. :class:`presence.
+    DynamoDBConsumerPresence` is the production implementation (with
+    :class:`presence.AlwaysOnlinePresence` the null object when no cache is wired);
+    see their docstrings for the fail-closed rationale.
     """
 
     def is_offline(self, username: str) -> bool: ...
@@ -282,19 +281,19 @@ def relay_webhook_event_to_consumer(
     identity: ConsumerIdentity,
     event: LinearWebhookEvent,
     *,
-    iot_data_client: Any,
-    is_offline: Optional[Callable[[str], bool]] = None,
+    iot_client: Any,
+    presence: ConsumerPresenceRepository,
 ) -> Union[Delivered, ConsumerOffline]:
-    """Relay a verified webhook to its addressed consumer over IoT.
+    """Relay a verified webhook to its addressed consumer over IoT (``iot-only``).
 
     There is no SQS safety net on this path. A routed consumer the presence
     boundary reports offline yields :class:`ConsumerOffline` (whose ``message`` is
     the honest retryable response); ``_unrouted`` has no consumer to be offline and
-    skips the presence check entirely. An online or ``_unrouted`` consumer is
+    short-circuits the presence check. An online or ``_unrouted`` consumer is
     published to its identity topic, and a publish failure propagates so Linear
     retries rather than falling back to SQS.
     """
-    if identity.is_routed and is_offline is not None and is_offline(identity.key):
+    if identity.is_routed and presence.is_offline(identity.key):
         offline = ConsumerOffline(
             consumer_id=identity.key,
             creator_id=routing.extract_creator_id(event.body),
@@ -304,7 +303,7 @@ def relay_webhook_event_to_consumer(
         return offline
 
     iot_publisher.publish(
-        iot_data_client,
+        iot_client,
         topic=identity.topic,
         body=event.body,
         headers=event.forwarded_headers(),
@@ -312,35 +311,41 @@ def relay_webhook_event_to_consumer(
     return Delivered()
 
 
-def enqueue_webhook_event(
+def probe_consumer_over_iot(
     identity: ConsumerIdentity,
+    event: LinearWebhookEvent,
+    *,
+    iot_client: Any,
+) -> None:
+    """Best-effort IoT relay beside the SQS safety net (``dual-write``).
+
+    When an IoT client is wired, publish the body byte-identically to the identity
+    topic as an optimistic probe; any failure is caught and logged so it can never
+    take down the SQS enqueue. A no-op when no IoT client is configured.
+    """
+    if iot_client is None:
+        return
+    try:
+        iot_publisher.publish(
+            iot_client,
+            topic=identity.topic,
+            body=event.body,
+            headers=event.forwarded_headers(),
+        )
+    except Exception:
+        _log.exception(
+            "IoT dual-write publish to %s failed; SQS enqueue is the safety net",
+            identity.topic,
+        )
+
+
+def enqueue_webhook_event(
     event: LinearWebhookEvent,
     *,
     sqs_client: Any,
     queue_url: str,
-    iot_data_client: Any = None,
 ) -> Enqueued:
-    """Buffer a verified webhook to SQS, with an optimistic IoT relay probe.
-
-    SQS is the system of record and durable safety net. When an IoT client is
-    wired, the body is ALSO published byte-identically to the identity topic as a
-    best-effort probe — any probe failure is caught and logged so it can never take
-    down the enqueue.
-    """
-    if iot_data_client is not None:
-        try:
-            iot_publisher.publish(
-                iot_data_client,
-                topic=identity.topic,
-                body=event.body,
-                headers=event.forwarded_headers(),
-            )
-        except Exception:
-            _log.exception(
-                "IoT dual-write publish to %s failed; SQS enqueue is the safety net",
-                identity.topic,
-            )
-
+    """Buffer a verified webhook to the durable SQS queue (the system of record)."""
     sqs_client.send_message(
         QueueUrl=queue_url,
         MessageBody=event.body.decode("utf-8"),

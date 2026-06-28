@@ -24,10 +24,11 @@ from unittest.mock import MagicMock
 
 from conftest import (
     QUEUE_URL,
-    SECRET,
     TOPIC_PREFIX,
     USERNAME,
+    StubPresence,
     headers_for,
+    make_env,
     make_function_url_event,
 )
 
@@ -82,7 +83,11 @@ def test_process__dual_write_valid_webhook__publishes_byte_identical_to_keyed_to
 
     event = make_function_url_event(routable_body, headers)
     result = process(
-        event, queue_url=QUEUE_URL, secret=SECRET, sqs_client=sqs, iot_data_client=iot
+        event,
+        make_env(),
+        sqs_client=lambda: sqs,
+        iot_client=lambda: iot,
+        presence=lambda: StubPresence(),
     )
 
     iot.publish.assert_called_once_with(
@@ -108,7 +113,11 @@ def test_process__dual_write_valid_webhook__published_and_enqueued_bytes_match_r
 
     event = make_function_url_event(routable_body, headers)
     process(
-        event, queue_url=QUEUE_URL, secret=SECRET, sqs_client=sqs, iot_data_client=iot
+        event,
+        make_env(),
+        sqs_client=lambda: sqs,
+        iot_client=lambda: iot,
+        presence=lambda: StubPresence(),
     )
 
     published_payload = iot.publish.call_args.kwargs["payload"]
@@ -130,7 +139,11 @@ def test_process__invalid_signature__returns_401_and_neither_publishes_nor_enque
     tampered = {**headers_for(routable_body), "linear-signature": "00" * 32}
     event = make_function_url_event(routable_body, tampered)
     result = process(
-        event, queue_url=QUEUE_URL, secret=SECRET, sqs_client=sqs, iot_data_client=iot
+        event,
+        make_env(),
+        sqs_client=lambda: sqs,
+        iot_client=lambda: iot,
+        presence=lambda: StubPresence(),
     )
 
     iot.publish.assert_not_called()
@@ -164,7 +177,11 @@ def test_process__dual_write_unrouted_body__publishes_to_unrouted_and_enqueues(
 
     event = make_function_url_event(webhook_body, headers)
     result = process(
-        event, queue_url=QUEUE_URL, secret=SECRET, sqs_client=sqs, iot_data_client=iot
+        event,
+        make_env(),
+        sqs_client=lambda: sqs,
+        iot_client=lambda: iot,
+        presence=lambda: StubPresence(),
     )
 
     iot_stub.assert_no_pending_responses()
@@ -191,7 +208,11 @@ def test_process__dual_write_transient_iot_failure__still_enqueues_and_returns_2
 
     event = make_function_url_event(routable_body, headers)
     result = process(
-        event, queue_url=QUEUE_URL, secret=SECRET, sqs_client=sqs, iot_data_client=iot
+        event,
+        make_env(),
+        sqs_client=lambda: sqs,
+        iot_client=lambda: iot,
+        presence=lambda: StubPresence(),
     )
 
     # The dual-write safety net: a failed IoT leg must not lose the SQS write.
