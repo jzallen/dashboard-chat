@@ -15,37 +15,25 @@
  * and the logger reads it back via `getCorrelationId()` to populate
  * `attributes.correlation_id`.
  *
- * Long-lived SSE streams must be confirmed to keep the store bound across the
- * full stream before the agent/ui-state surfaces rely on it.
- *
- * IF YOU'RE AN AGENT, READING THIS: the accessor bodies are intentionally
- * unimplemented and throw so the tests that pin this contract fail RED, not
- * error. Implement the binding; do not weaken the tests to match an empty stub.
+ * The store survives long-lived SSE streams and pub/sub continuations as long as
+ * the handler and the stream it spawns run inside the single opened scope (open
+ * `run(id, fn)` once in the request middleware — never per-chunk).
  */
 
-import assert from "node:assert";
 import { AsyncLocalStorage } from "node:async_hooks";
 
-// Grep target for the scaffold-cleanup sweep: marks a seam whose body is not yet
-// implemented. Removed once the binding lands.
-export const __SCAFFOLD__ = true;
-
-const NOT_IMPLEMENTED = "correlation-id binding not implemented";
-
 /**
- * The shared store. Declared here so production code and tests import a single,
- * stable seam; the bind/read behaviour lands with the implementation.
+ * The shared store. Production code and tests import this single, stable seam so
+ * the bound id read at emit time is the one the request middleware established.
  */
 export const correlationStore = new AsyncLocalStorage<string>();
 
 /** Run `fn` with `correlationId` bound for the duration of its async tree. */
 export function runWithCorrelationId<T>(correlationId: string, fn: () => T): T {
-  void correlationId;
-  void fn;
-  assert.fail(NOT_IMPLEMENTED);
+  return correlationStore.run(correlationId, fn);
 }
 
 /** Return the correlation id bound to the current async context, if any. */
 export function getCorrelationId(): string | undefined {
-  assert.fail(NOT_IMPLEMENTED);
+  return correlationStore.getStore();
 }
