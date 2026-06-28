@@ -1,9 +1,13 @@
 """Delivery domain for the ingress: how a verified webhook reaches its consumer.
 
-A consumer is addressed by its **natural key** — the Linear username parsed from
-the signed body, or the ``_unrouted`` catch-all sentinel. Two delivery strategies
-own the per-deploy contract; the controller (``handler.process``) selects one,
-calls it, and returns the result's own ``message`` (an :class:`HTTPResponse`):
+The inbound request is modelled as a :class:`LinearWebhookEvent` — it owns the
+request boundary (decode the raw body, read the headers, verify the
+``Linear-Signature``) and stores the signed bytes once so they are never
+reconstructed. A consumer is addressed by its **natural key** — the Linear
+username parsed from the body, or the ``_unrouted`` catch-all sentinel. Two
+delivery strategies own the per-deploy contract; the controller
+(``handler.process``) selects one, calls it, and returns the result's own
+``message`` (an :class:`HTTPResponse`):
 
 * :func:`relay_webhook_event_to_consumer` (``iot-only``) — IoT is the only
   channel, with no SQS safety net. A *routed* consumer the presence boundary
@@ -15,14 +19,15 @@ calls it, and returns the result's own ``message`` (an :class:`HTTPResponse`):
   probe whose failure is logged and swallowed so it can never take down the
   enqueue.
 
-OPAQUENESS CONTRACT: the ``body`` delivered here is the original raw request
-bytes, byte-identical to what was HMAC-verified. Identity is derived from a COPY
-of the body (see :mod:`routing`) and never carries the signed bytes; nothing here
-mutates them.
+OPAQUENESS CONTRACT: the body published/enqueued is the original raw request
+bytes, byte-identical to what was HMAC-verified — the event stores them once and
+hands the same object out. Identity is derived from a COPY of those bytes (see
+:mod:`routing`) and never carries them; nothing here mutates them.
 """
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 from dataclasses import dataclass
@@ -39,6 +44,7 @@ from typing import (
 
 import iot_publisher
 import routing
+from linear_signature import verify
 
 _log = logging.getLogger(__name__)
 
@@ -60,6 +66,78 @@ TOPIC_PREFIX = "cyrus/v1/sessions/"
 # Machine-readable reason emitted on the offline path.
 _OFFLINE_REASON = "consumer-offline"
 
+_SIGNATURE_HEADER = "linear-signature"
+
+# Inbound (lowercased, per Lambda Function URL) header name -> canonical name
+# forwarded to the consumer. A Function URL delivers headers lowercased and
+# carries many the consumer does not need; this both selects the headers Cyrus
+# uses to verify and route the webhook and restores the canonical casing Linear
+# sent, so the SQS pump (MessageAttributes) and the IoT relay (MQTT5 user
+# properties) forward the identical set under identical names.
+_FORWARDED_HEADERS: dict[str, str] = {
+    "content-type": "Content-Type",
+    "linear-event": "Linear-Event",
+    "linear-delivery": "Linear-Delivery",
+    "linear-signature": "Linear-Signature",
+    "user-agent": "User-Agent",
+}
+
+
+# --- Inbound webhook event -----------------------------------------------------
+
+
+class LinearWebhookEvent:
+    """A Linear webhook as delivered to the Lambda Function URL.
+
+    Owns the request boundary: it decodes the raw body bytes (base64 transport
+    when present), lowercases the headers, and verifies the ``Linear-Signature``
+    HMAC against the shared secret. The raw body is stored once, byte-identical to
+    what was signed, and handed out unchanged — it is never re-serialised, which is
+    the opaqueness invariant the downstream publish/enqueue depend on.
+    """
+
+    def __init__(self, event: Mapping[str, Any], secret: str) -> None:
+        self._headers = {
+            name.lower(): value for name, value in event.get("headers", {}).items()
+        }
+        self._body = self._decode_body(event)
+        self._signature = self._headers.get(_SIGNATURE_HEADER)
+        self._secret = secret
+
+    @staticmethod
+    def _decode_body(event: Mapping[str, Any]) -> bytes:
+        """Return the request body bytes, decoding base64 transport when present."""
+        body = event.get("body") or ""
+        if event.get("isBase64Encoded"):
+            return base64.b64decode(body)
+        return body.encode("utf-8")
+
+    @property
+    def body(self) -> bytes:
+        """The raw request bytes, byte-identical to what was signature-verified."""
+        return self._body
+
+    def is_valid(self) -> bool:
+        """Whether the request carries a ``Linear-Signature`` that verifies the body."""
+        return self._signature is not None and verify(
+            self._body, self._secret, self._signature
+        )
+
+    @property
+    def error_message(self) -> HTTPResponse:
+        """The 401 for an unsigned or tampered request (read only when invalid)."""
+        if self._signature is None:
+            return {"statusCode": 401, "body": "missing signature"}
+        return {"statusCode": 401, "body": "invalid signature"}
+
+    def forwarded_headers(self) -> dict[str, str]:
+        """The headers Cyrus needs, selected and restored to their canonical names."""
+        return {
+            canonical: self._headers[lowercased]
+            for lowercased, canonical in _FORWARDED_HEADERS.items()
+            if lowercased in self._headers
+        }
+
 
 # --- Consumer identity (pure value object) -------------------------------------
 
@@ -78,9 +156,9 @@ class ConsumerIdentity:
     key: str
 
     @classmethod
-    def from_body(cls, body: bytes) -> "ConsumerIdentity":
-        """Derive identity from a COPY of the signed body (never stores the bytes)."""
-        return cls(key=routing.extract_routing_key(body))
+    def from_webhook_event(cls, event: LinearWebhookEvent) -> "ConsumerIdentity":
+        """Derive identity from a COPY of the event's body (never stores the bytes)."""
+        return cls(key=routing.extract_routing_key(event.body))
 
     @property
     def is_routed(self) -> bool:
@@ -166,8 +244,7 @@ class ConsumerOffline:
 
 def relay_webhook_event_to_consumer(
     identity: ConsumerIdentity,
-    body: bytes,
-    headers: Mapping[str, str],
+    event: LinearWebhookEvent,
     *,
     iot_data_client: Any,
     is_offline: Optional[Callable[[str], bool]] = None,
@@ -177,14 +254,14 @@ def relay_webhook_event_to_consumer(
     There is no SQS safety net on this path. A routed consumer the presence
     boundary reports offline yields :class:`ConsumerOffline` (whose ``message`` is
     the honest retryable response); ``_unrouted`` has no consumer to be offline and
-    skips the presence check entirely. An online or ``_unrouted``
-    consumer is published to its identity topic, and a publish failure propagates
-    so Linear retries rather than falling back to SQS.
+    skips the presence check entirely. An online or ``_unrouted`` consumer is
+    published to its identity topic, and a publish failure propagates so Linear
+    retries rather than falling back to SQS.
     """
     if identity.is_routed and is_offline is not None and is_offline(identity.key):
         offline = ConsumerOffline(
             consumer_id=identity.key,
-            creator_id=routing.extract_creator_id(body),
+            creator_id=routing.extract_creator_id(event.body),
             action=f"start local cyrus consumer with consumer id {identity.key}",
         )
         _log_offline(offline)
@@ -193,16 +270,15 @@ def relay_webhook_event_to_consumer(
     iot_publisher.publish(
         iot_data_client,
         topic=identity.topic,
-        body=body,
-        headers=_build_forwarded_headers(headers),
+        body=event.body,
+        headers=event.forwarded_headers(),
     )
     return Delivered()
 
 
 def enqueue_webhook_event(
     identity: ConsumerIdentity,
-    body: bytes,
-    headers: Mapping[str, str],
+    event: LinearWebhookEvent,
     *,
     sqs_client: Any,
     queue_url: str,
@@ -220,8 +296,8 @@ def enqueue_webhook_event(
             iot_publisher.publish(
                 iot_data_client,
                 topic=identity.topic,
-                body=body,
-                headers=_build_forwarded_headers(headers),
+                body=event.body,
+                headers=event.forwarded_headers(),
             )
         except Exception:
             _log.exception(
@@ -231,8 +307,8 @@ def enqueue_webhook_event(
 
     sqs_client.send_message(
         QueueUrl=queue_url,
-        MessageBody=body.decode("utf-8"),
-        MessageAttributes=_build_message_attributes(headers),
+        MessageBody=event.body.decode("utf-8"),
+        MessageAttributes=_build_message_attributes(event.forwarded_headers()),
     )
     return Enqueued()
 
@@ -240,34 +316,11 @@ def enqueue_webhook_event(
 # --- Helpers -------------------------------------------------------------------
 
 
-# Inbound (lowercased, per Lambda Function URL) header name -> canonical name
-# forwarded to the consumer. The SQS pump turns these back into the HTTP headers
-# it replays to Cyrus, so only the headers Cyrus needs to verify and route the
-# webhook are carried.
-_FORWARDED_HEADERS: dict[str, str] = {
-    "content-type": "Content-Type",
-    "linear-event": "Linear-Event",
-    "linear-delivery": "Linear-Delivery",
-    "linear-signature": "Linear-Signature",
-    "user-agent": "User-Agent",
-}
-
-
-def _build_forwarded_headers(headers: Mapping[str, str]) -> dict[str, str]:
-    """Return the forwarded Linear headers under their canonical names."""
-    return {
-        canonical: headers[lowercased]
-        for lowercased, canonical in _FORWARDED_HEADERS.items()
-        if lowercased in headers
-    }
-
-
-def _build_message_attributes(headers: Mapping[str, str]) -> dict[str, Any]:
+def _build_message_attributes(forwarded: Mapping[str, str]) -> dict[str, Any]:
     """Render the forwarded Linear headers as SQS String MessageAttributes."""
     return {
-        canonical: {"DataType": "String", "StringValue": headers[lowercased]}
-        for lowercased, canonical in _FORWARDED_HEADERS.items()
-        if lowercased in headers
+        name: {"DataType": "String", "StringValue": value}
+        for name, value in forwarded.items()
     }
 
 

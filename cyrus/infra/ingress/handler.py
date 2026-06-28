@@ -27,7 +27,6 @@ NOT enqueue anything.
 
 from __future__ import annotations
 
-import base64
 import logging
 import os
 from typing import Any, Callable, Literal, Mapping, Optional, Protocol
@@ -38,10 +37,10 @@ import presence
 from consumers import (
     ConsumerIdentity,
     HTTPResponse,
+    LinearWebhookEvent,
     enqueue_webhook_event,
     relay_webhook_event_to_consumer,
 )
-from linear_signature import verify
 
 _log = logging.getLogger(__name__)
 
@@ -63,20 +62,10 @@ class DeliveryResult(Protocol):
 # the SQS safety net.
 _DELIVERY_MODES = ("dual-write", "iot-only")
 
-_SIGNATURE_HEADER = "linear-signature"
-
 _sqs_client_singleton: Any = None
 _iot_data_client_singleton: Any = None
 _dynamodb_client_singleton: Any = None
 _secret_cache: Optional[str] = None
-
-
-def _raw_body(event: Mapping[str, Any]) -> bytes:
-    """Return the request body bytes, decoding base64 transport when present."""
-    body = event.get("body") or ""
-    if event.get("isBase64Encoded"):
-        return base64.b64decode(body)
-    return body.encode("utf-8")
 
 
 def process(
@@ -91,12 +80,13 @@ def process(
 ) -> HTTPResponse:
     """Verify a Function URL event, then wire and run the chosen delivery strategy.
 
-    This is the composition root: it rejects an unsigned/invalid request at the
-    boundary, derives the consumer identity, reads ``delivery_mode`` once to select
-    the delivery use case, wires it with its ports, and returns the result's own
-    ``message``. Returns ``{"statusCode": 401}`` and writes nothing when the
-    ``Linear-Signature`` is missing or does not validate against ``secret``. On a
-    valid signature the per-deploy ``delivery_mode`` selects the strategy:
+    This is the composition root: it rejects an unsigned/invalid request via the
+    webhook event's own error message, derives the consumer identity, reads
+    ``delivery_mode`` once to select the delivery use case, wires it with its ports,
+    and returns the result's own ``message``. Returns ``{"statusCode": 401}`` and
+    writes nothing when the ``Linear-Signature`` is missing or does not validate
+    against ``secret``. On a valid signature the per-deploy ``delivery_mode``
+    selects the strategy:
 
     * ``dual-write`` (default) — :func:`~consumers.enqueue_webhook_event`: enqueue
       to SQS and, when ``iot_data_client`` is wired, also publish byte-identically.
@@ -104,30 +94,23 @@ def process(
       over IoT, or surface the offline consumer when the routed consumer
       ``is_offline``.
     """
-    headers = {name.lower(): value for name, value in event.get("headers", {}).items()}
-    signature = headers.get(_SIGNATURE_HEADER)
-    if signature is None:
-        return {"statusCode": 401, "body": "missing signature"}
+    webhook_event = LinearWebhookEvent(event, secret)
+    if not webhook_event.is_valid():
+        return webhook_event.error_message
 
-    body = _raw_body(event)
-    if not verify(body, secret, signature):
-        return {"statusCode": 401, "body": "invalid signature"}
-
-    identity = ConsumerIdentity.from_body(body)
+    identity = ConsumerIdentity.from_webhook_event(webhook_event)
     result: DeliveryResult
     if delivery_mode == "iot-only":
         result = relay_webhook_event_to_consumer(
             identity,
-            body,
-            headers,
+            webhook_event,
             iot_data_client=iot_data_client,
             is_offline=is_offline,
         )
     else:
         result = enqueue_webhook_event(
             identity,
-            body,
-            headers,
+            webhook_event,
             sqs_client=sqs_client,
             queue_url=queue_url,
             iot_data_client=iot_data_client,
