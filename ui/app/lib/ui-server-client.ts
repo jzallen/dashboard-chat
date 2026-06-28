@@ -5,9 +5,35 @@
  * on) and {@link agentFetch} (the `/worker` hop): the route-action plumbing lives
  * here once rather than copied across each resource route. {@link brokerPatch}
  * (PATCH) serves the catalog renames; {@link brokerPost} (POST) serves the
- * upload / source-creation saga writes.
+ * upload / source-creation saga writes; {@link brokerGet} (GET) serves the
+ * onboarding driver's read legs (org probe, project list / scope resolution).
  */
 import { apiFetch } from "./api-client";
+
+/**
+ * Forward a `/ui-server/*` GET resource-route loader to the backend `/api`
+ * endpoint at `backendPath` — the read broker for the onboarding driver's probe
+ * legs (`GET /orgs/me`, `GET /projects`). Sibling of {@link brokerPost} /
+ * {@link brokerPatch}; the legs differ only in their backend path.
+ *
+ * The browser fetches same-origin (riding its session cookie); this forwards the
+ * inbound GET method + user credential to the backend through auth-proxy via
+ * {@link apiFetch}, which re-verifies the session and injects the identity
+ * headers downstream.
+ *
+ * The upstream status + body pass straight through with the body BYTE-INTACT — a
+ * non-2xx (e.g. a 404 `org_not_found`, or a 401) is NOT turned into a `/login`
+ * redirect: these are fetch targets, not navigations, and the onboarding driver
+ * relies on the status + body to reconstruct `ApiError(status, body)` and map a
+ * DEFINITIVE answer to a closed-union outcome cause. Only the empty body of a
+ * body-less 2xx is defaulted to `{}` so a caller reading JSON still parses.
+ */
+export async function brokerGet(
+  _request: Request,
+  _backendPath: string,
+): Promise<Response> {
+  throw new Error("not implemented");
+}
 
 /**
  * Forward a `/ui-server/*` PATCH resource-route action to the backend `/api`
