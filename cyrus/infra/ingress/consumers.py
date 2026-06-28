@@ -87,9 +87,10 @@ class ConsumerIdentity:
         """Whether a natural key was derivable (vs the ``_unrouted`` catch-all)."""
         return self.key != routing.UNROUTED
 
-    def topic(self, topic_prefix: str = TOPIC_PREFIX) -> str:
+    @property
+    def topic(self) -> str:
         """The per-identity IoT topic this key publishes to."""
-        return f"{topic_prefix}{self.key}"
+        return f"{TOPIC_PREFIX}{self.key}"
 
 
 # --- Presence boundary ---------------------------------------------------------
@@ -150,7 +151,6 @@ def relay_webhook_event_to_consumer(
     headers: Mapping[str, str],
     *,
     iot_data_client: Any,
-    topic_prefix: str = TOPIC_PREFIX,
     is_offline: Optional[Callable[[str], bool]] = None,
 ) -> Union[Delivered, ConsumerOffline]:
     """Relay a verified webhook to its addressed consumer over IoT.
@@ -173,7 +173,7 @@ def relay_webhook_event_to_consumer(
 
     iot_publisher.publish(
         iot_data_client,
-        topic=identity.topic(topic_prefix),
+        topic=identity.topic,
         body=body,
         headers=_build_forwarded_headers(headers),
     )
@@ -188,7 +188,6 @@ def enqueue_webhook_event(
     sqs_client: Any,
     queue_url: str,
     iot_data_client: Any = None,
-    topic_prefix: str = TOPIC_PREFIX,
 ) -> Enqueued:
     """Buffer a verified webhook to SQS, with an optimistic IoT relay probe.
 
@@ -201,14 +200,14 @@ def enqueue_webhook_event(
         try:
             iot_publisher.publish(
                 iot_data_client,
-                topic=identity.topic(topic_prefix),
+                topic=identity.topic,
                 body=body,
                 headers=_build_forwarded_headers(headers),
             )
         except Exception:
             _log.exception(
                 "IoT dual-write publish to %s failed; SQS enqueue is the safety net",
-                identity.topic(topic_prefix),
+                identity.topic,
             )
 
     sqs_client.send_message(

@@ -36,7 +36,6 @@ import boto3
 
 import presence
 from consumers import (
-    TOPIC_PREFIX,
     ConsumerIdentity,
     HTTPResponse,
     _shape_response,
@@ -75,7 +74,6 @@ def process(
     secret: str,
     sqs_client: Any,
     iot_data_client: Any = None,
-    topic_prefix: str = TOPIC_PREFIX,
     delivery_mode: Literal["dual-write", "iot-only"] = "dual-write",
     is_offline: Optional[Callable[[str], bool]] = None,
 ) -> HTTPResponse:
@@ -110,7 +108,6 @@ def process(
             body,
             headers,
             iot_data_client=iot_data_client,
-            topic_prefix=topic_prefix,
             is_offline=is_offline,
         )
     else:
@@ -121,7 +118,6 @@ def process(
             sqs_client=sqs_client,
             queue_url=queue_url,
             iot_data_client=iot_data_client,
-            topic_prefix=topic_prefix,
         )
     return _shape_response(result)
 
