@@ -25,10 +25,13 @@ import type { OnboardingClient } from "./onboarding-driver";
 const API_PREFIX = "/api";
 const UI_SERVER_PREFIX = "/ui-server";
 
+/** Swap the driver's backend `/api/*` path for the same-origin `/ui-server/*`
+ *  broker. The driver only ever passes its `/api`-prefixed route constants
+ *  (`/api/orgs/me`, `/api/orgs`, `/api/projects`), so the prefix is replaced
+ *  unconditionally — a non-`/api` path is a contract violation, not a supported
+ *  input. */
 function toUiServerPath(apiPath: string): string {
-  return apiPath.startsWith(API_PREFIX)
-    ? `${UI_SERVER_PREFIX}${apiPath.slice(API_PREFIX.length)}`
-    : apiPath;
+  return `${UI_SERVER_PREFIX}${apiPath.slice(API_PREFIX.length)}`;
 }
 
 /** Flatten a JSON:API resource `{ type, id, attributes }` into `{ id, ...attributes }`. */
