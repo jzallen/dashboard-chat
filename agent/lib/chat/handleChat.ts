@@ -1,4 +1,5 @@
 import { createGroq } from "@ai-sdk/groq";
+import { getCorrelationId, runWithCorrelationId } from "@dashboard-chat/correlation-id";
 import {
   createUIMessageStream,
   createUIMessageStreamResponse,
@@ -7,6 +8,7 @@ import {
   type ToolSet,
 } from "ai";
 
+import { createLogger } from "../log";
 import { backendClient } from "./backend-client";
 import { fetchTableSchema } from "./datasetSchema";
 import { type DispatchContext, dispatcherRegistry } from "./dispatchers";
@@ -65,6 +67,8 @@ interface Env {
 }
 
 const DEFAULT_GROQ_TEMPERATURE = 0.3;
+
+const log = createLogger("agent.chat");
 
 function extractJwt(request: Request): string {
   const header = request.headers.get("Authorization") ?? request.headers.get("authorization") ?? "";
@@ -217,15 +221,26 @@ export async function handleChat(request: Request, env: Env): Promise<Response> 
 
   const persister = env.threadPersister ?? noopThreadPersister;
 
+  // Capture the id bound by the ingress middleware NOW, while its scope is
+  // active. The stream's `execute` runs later, when the server drains the body
+  // — outside the middleware scope — so re-establish the binding around it (the
+  // Spike PROMOTE finding) to keep streamed-path log lines carrying the id.
+  const correlationId = getCorrelationId();
+
   const stream = createUIMessageStream({
     execute: async ({ writer }) => {
-      await pipeChatStream({
-        upstream: result.toUIMessageStream(),
-        writer,
-        eventBuffer,
-        channelId,
-        persister,
-      });
+      const drive = async () => {
+        log.info("chat.stream.start", { channel_id: channelId });
+        await pipeChatStream({
+          upstream: result.toUIMessageStream(),
+          writer,
+          eventBuffer,
+          channelId,
+          persister,
+        });
+        log.info("chat.stream.completed", { channel_id: channelId });
+      };
+      await (correlationId ? runWithCorrelationId(correlationId, drive) : drive());
     },
   });
 

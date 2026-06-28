@@ -1,6 +1,7 @@
 // Chat Agent — Hono server for chat streaming via Groq (Vercel AI SDK)
 // Session management is handled by Stream.io (frontend-side)
 
+import { correlationMiddleware } from "@dashboard-chat/correlation-id/hono";
 import { probe } from "@dashboard-chat/shared-failure-simulation";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
@@ -106,6 +107,11 @@ app.use(
     allowHeaders: ["Content-Type", "Authorization"],
   }),
 );
+
+// Bind the inbound correlation id (X-Request-Id, minted at the auth-proxy
+// ingress) for the whole request so every log line carries it. Registered
+// before auth so an auth-rejected request is still traceable.
+app.use("*", correlationMiddleware());
 
 app.use("*", authMiddleware);
 

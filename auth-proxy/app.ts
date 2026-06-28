@@ -1,5 +1,9 @@
 import { randomBytes, randomUUID } from "node:crypto";
 
+import {
+  getCorrelationId,
+  runWithCorrelationId,
+} from "@dashboard-chat/correlation-id";
 import { Hono } from "hono";
 
 import { IDENTITY_HEADERS, isPublicPath, verifyToken } from "./lib/auth.ts";
@@ -9,6 +13,7 @@ import {
   COOKIE_SESSION_FLAG,
   parseCookieHeader,
 } from "./lib/cookies.ts";
+import { correlationMiddleware } from "./lib/correlation.ts";
 import { createLogger } from "./lib/log.ts";
 import {
   authenticateClient,
@@ -101,6 +106,11 @@ let lastSeenAuthorization: string | null = null;
 const log = createLogger("auth");
 
 const app = new Hono();
+
+// Ingress correlation binding: mint-once the request id and bind it for the
+// whole request so every log line carries it and every upstream forward
+// propagates it on X-Request-Id. Registered first so it wraps every route.
+app.use("*", correlationMiddleware);
 
 // Health endpoint — handled locally, not proxied
 app.get("/health", (c) => c.json({ status: "ok" }));
@@ -988,8 +998,10 @@ async function interceptWorkosOrgCreate(
     name = "";
   }
 
+  // Reuse the id already bound at ingress (mint-once); fall back only for a
+  // direct call made outside the ingress middleware.
   const correlationId =
-    c.req.raw.headers.get("x-request-id") || randomUUID();
+    getCorrelationId() || c.req.raw.headers.get("x-request-id") || randomUUID();
   const provisioner = createWorkosProvisioner();
   const url = new URL(c.req.url);
 
@@ -1152,12 +1164,27 @@ async function readTokenRequest(
   }
 }
 
+/**
+ * Stamp the request's bound correlation id onto an upstream forward as
+ * `X-Request-Id`, so the same id rides every hop and surfaces on each service's
+ * log lines. No-op when no id is bound (e.g. a direct call outside the ingress
+ * middleware) — the downstream service then mints its own.
+ */
+function forwardCorrelationId(headers: Headers): void {
+  const id = getCorrelationId();
+  if (id) headers.set("X-Request-Id", id);
+}
+
 async function proxyRequest(c: { req: { raw: Request; url: string } }, headers: Headers) {
   const url = new URL(c.req.url);
   const targetUrl = `${BACKEND_URL}${url.pathname}${url.search}`;
 
   // Remove host header so the backend sees its own host
   headers.delete("host");
+
+  // Propagate the bound correlation id on every upstream hop (mint-once: the
+  // ingress middleware already resolved it; downstream never re-mints).
+  forwardCorrelationId(headers);
 
   const response = await fetch(targetUrl, {
     method: c.req.raw.method,
@@ -1187,6 +1214,7 @@ async function proxyToUpstream(
   const targetUrl = `${upstreamBaseUrl}${upstreamPath}${url.search}`;
 
   headers.delete("host");
+  forwardCorrelationId(headers);
 
   const response = await fetch(targetUrl, {
     method: c.req.raw.method,

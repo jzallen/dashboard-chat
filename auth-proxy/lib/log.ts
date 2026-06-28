@@ -10,6 +10,7 @@
  * auth decision can be audited without the credential ever reaching a log line.
  */
 
+import { getCorrelationId } from "@dashboard-chat/correlation-id";
 import {
   type Logger,
   type LogLevel,
@@ -69,6 +70,12 @@ export function redactionSerializer(
  * each method takes a dotted `action` (`event.action`) and an optional
  * structured `attributes` bag, emitting one `LogRecord` JSON line through the
  * redacting pino backend.
+ *
+ * The correlation id bound to the current request (via `runWithCorrelationId`
+ * in the ingress middleware) is read at emit time and injected as
+ * `attributes.correlation_id` on every line — no signature threading. The wire
+ * header is `X-Request-Id`; the log attribute is `correlation_id` (the
+ * header↔attribute name split is intentional).
  */
 export function createLogger(channel: string): Logger {
   const emit = (
@@ -76,10 +83,15 @@ export function createLogger(channel: string): Logger {
     action: string,
     attributes?: Record<string, unknown>,
   ): void => {
+    const correlationId = getCorrelationId();
+    const merged =
+      correlationId !== undefined
+        ? { ...(attributes ?? {}), correlation_id: correlationId }
+        : attributes;
     base[level]({
       "event.module": channel,
       "event.action": action,
-      ...(attributes !== undefined ? { attributes } : {}),
+      ...(merged !== undefined ? { attributes: merged } : {}),
     });
   };
   return {

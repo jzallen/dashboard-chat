@@ -29,6 +29,15 @@ RUN npm install --no-package-lock --omit=dev --ignore-scripts \
 # `ui-state` subdirectory.
 COPY shared/failure-simulation/ ./node_modules/@dashboard-chat/shared-failure-simulation/
 
+# `@dashboard-chat/correlation-id` (ambient AsyncLocalStorage binding) and
+# `@dashboard-chat/shared-logging` (structured-log envelope + redaction) are
+# workspace packages imported by lib/log.ts and the request-id middleware. Like
+# the package above they are resolved by the repo-root workspace symlink in
+# local dev and must be copied in explicitly for the isolated image build. Both
+# are pure TS (no runtime npm deps beyond `hono`, already installed).
+COPY shared/correlation-id/ ./node_modules/@dashboard-chat/correlation-id/
+COPY shared/logging/ ./node_modules/@dashboard-chat/shared-logging/
+
 # Copy source after deps so source-only changes don't bust the deps layer.
 COPY ui-state/index.ts ui-state/config.ts ./
 COPY ui-state/lib/ ./lib/

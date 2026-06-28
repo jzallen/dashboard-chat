@@ -1,0 +1,20 @@
+{
+  "name": "@dashboard-chat/correlation-id",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./store": "./store.ts",
+    "./hono": "./hono.ts"
+  },
+  "scripts": {
+    "test": "vitest --config vitest.config.ts",
+    "test:run": "vitest run --config vitest.config.ts"
+  },
+  "peerDependencies": {
+    "hono": "^4.7.0"
+  }
+}

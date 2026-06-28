@@ -10,6 +10,7 @@
     "auth-proxy",
     "shared/chat",
     "shared/logging",
+    "shared/correlation-id",
     "shared/failure-simulation",
     "shared/ui-state-wire"
   ],
