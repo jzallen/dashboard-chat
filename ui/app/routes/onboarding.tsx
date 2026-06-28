@@ -7,7 +7,7 @@
    posts the past-tense outcome report via proxy.postEvent. The in-flight UI is
    the surface's LOCAL concern (DR-1: the document NEVER shows an in-flight org
    state). Phase D (the default project) is AUTOMATIC — on entering the project
-   phase the surface triggers the driver's createDefaultProjectAndReport ONCE.
+   phase the surface triggers the driver's createDefaultProject ONCE.
 
    BINDING DISPLAY RULE (ratification amendment 2): the UI NEVER renders a raw
    cause tag. Re-edit causes (org_name_taken / org_name_invalid) → friendly inline
@@ -110,7 +110,7 @@ export default function OnboardingRoute({
     if (authenticated && projectAwaiting && !projectAutoStarted.current) {
       projectAutoStarted.current = true;
       log.info("onboarding.project.auto_create.start", {});
-      void driver.createDefaultProjectAndReport();
+      void driver.createDefaultProject();
     }
   }, [authenticated, projectAwaiting, driver]);
 

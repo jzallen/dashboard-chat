@@ -267,7 +267,7 @@ describe("probeOrg — definitive-answers-only", () => {
 
 // ───────────────────────────── default project (Phase D) ─────────────────────────────
 
-describe("createDefaultProjectAndReport — automatic 'My First Project'", () => {
+describe("createDefaultProject — automatic 'My First Project'", () => {
   it("201 → project_created {project:{id,name}} (no user input)", async () => {
     const { report, events } = makeReport();
     const log = makeLog();
@@ -276,7 +276,7 @@ describe("createDefaultProjectAndReport — automatic 'My First Project'", () =>
     });
     const driver = createOnboardingDriver({ client, report, log });
 
-    await driver.createDefaultProjectAndReport();
+    await driver.createDefaultProject();
 
     expect(client.post).toHaveBeenCalledWith("/api/projects", {
       name: "My First Project",
@@ -300,7 +300,7 @@ describe("createDefaultProjectAndReport — automatic 'My First Project'", () =>
     });
     const driver = createOnboardingDriver({ client, report, log });
 
-    const outcome = await driver.createDefaultProjectAndReport();
+    const outcome = await driver.createDefaultProject();
 
     expect(events).toEqual([]);
     expect(outcome).toEqual({ authGate: true });
@@ -316,7 +316,7 @@ describe("createDefaultProjectAndReport — automatic 'My First Project'", () =>
     });
     const driver = createOnboardingDriver({ client, report, log });
 
-    await driver.createDefaultProjectAndReport();
+    await driver.createDefaultProject();
 
     expect(events).toEqual([
       { type: "project_create_failed", payload: { cause: "project_create_failed" } },
@@ -447,7 +447,7 @@ describe("console-log audit trail — one log entry per posted event", () => {
     });
     const driver = createOnboardingDriver({ client, report, log });
 
-    await driver.createDefaultProjectAndReport();
+    await driver.createDefaultProject();
 
     const [action, attributes] = log.info.mock.calls[0];
     expect(action).toContain("project_created");

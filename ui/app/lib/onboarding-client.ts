@@ -1,5 +1,5 @@
 /**
- * onboarding-ui-server-client — the same-origin HTTP adapter that fulfils the
+ * onboarding-client — the same-origin HTTP adapter that fulfils the
  * {@link OnboardingClient} port by routing the driver's read/write legs through
  * the `/ui-server/*` resource routes instead of calling the backend `/api/*`
  * browser-direct.
@@ -19,11 +19,13 @@
  */
 import type { OnboardingClient } from "./onboarding-driver";
 
-export const onboardingUiServerClient: OnboardingClient = {
-  get: (_path) => {
-    throw new Error("not implemented");
+export const onboardingClient: OnboardingClient = {
+  get: (path) => {
+    throw new Error(`onboardingClient.get(${path}) not implemented`);
   },
-  post: (_path, _body) => {
-    throw new Error("not implemented");
+  post: (path, body) => {
+    throw new Error(
+      `onboardingClient.post(${path}, ${JSON.stringify(body)}) not implemented`,
+    );
   },
 };
