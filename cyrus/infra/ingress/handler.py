@@ -30,7 +30,7 @@ from __future__ import annotations
 import base64
 import logging
 import os
-from typing import Any, Callable, Literal, Mapping, Optional
+from typing import Any, Callable, Literal, Mapping, Optional, Protocol
 
 import boto3
 
@@ -38,13 +38,25 @@ import presence
 from consumers import (
     ConsumerIdentity,
     HTTPResponse,
-    _shape_response,
     enqueue_webhook_event,
     relay_webhook_event_to_consumer,
 )
 from linear_signature import verify
 
 _log = logging.getLogger(__name__)
+
+
+class DeliveryResult(Protocol):
+    """A delivery outcome that carries its own Function URL ``message``.
+
+    The two delivery strategies return concrete results (``Delivered``,
+    ``Enqueued``, ``ConsumerOffline``); each knows how to render itself as the
+    wire response, so the controller stays free of any response-shaping branch.
+    """
+
+    @property
+    def message(self) -> HTTPResponse: ...
+
 
 # Per-deploy delivery modes (mutually exclusive). ``dual-write`` is the safe
 # default for any unknown/unset value so a misconfiguration never silently drops
@@ -81,8 +93,8 @@ def process(
 
     This is the composition root: it rejects an unsigned/invalid request at the
     boundary, derives the consumer identity, reads ``delivery_mode`` once to select
-    the delivery use case, wires it with its ports, and hands the domain result to
-    the presenter. Returns ``{"statusCode": 401}`` and writes nothing when the
+    the delivery use case, wires it with its ports, and returns the result's own
+    ``message``. Returns ``{"statusCode": 401}`` and writes nothing when the
     ``Linear-Signature`` is missing or does not validate against ``secret``. On a
     valid signature the per-deploy ``delivery_mode`` selects the strategy:
 
@@ -102,6 +114,7 @@ def process(
         return {"statusCode": 401, "body": "invalid signature"}
 
     identity = ConsumerIdentity.from_body(body)
+    result: DeliveryResult
     if delivery_mode == "iot-only":
         result = relay_webhook_event_to_consumer(
             identity,
@@ -119,7 +132,7 @@ def process(
             queue_url=queue_url,
             iot_data_client=iot_data_client,
         )
-    return _shape_response(result)
+    return result.message
 
 
 def _sqs_client() -> Any:

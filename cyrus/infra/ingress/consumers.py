@@ -3,11 +3,11 @@
 A consumer is addressed by its **natural key** — the Linear username parsed from
 the signed body, or the ``_unrouted`` catch-all sentinel. Two delivery strategies
 own the per-deploy contract; the controller (``handler.process``) selects one,
-calls it, and hands the domain result to the presenter:
+calls it, and returns the result's own ``message`` (an :class:`HTTPResponse`):
 
 * :func:`relay_webhook_event_to_consumer` (``iot-only``) — IoT is the only
   channel, with no SQS safety net. A *routed* consumer the presence boundary
-  reports offline yields :class:`ConsumerOffline` (the presenter shapes the honest
+  reports offline yields :class:`ConsumerOffline` (whose ``message`` is the honest
   retryable response); an online or ``_unrouted`` consumer is published to its
   identity topic, and a publish failure propagates so Linear retries.
 * :func:`enqueue_webhook_event` (``dual-write``) — the SQS enqueue is the system
@@ -119,10 +119,20 @@ class ConsumerPresenceRepository(Protocol):
 class Delivered:
     """The webhook reached its consumer over IoT (online, or ``_unrouted``)."""
 
+    @property
+    def message(self) -> HTTPResponse:
+        """The Function URL response for a successful IoT delivery."""
+        return {"statusCode": 200, "body": "published"}
+
 
 @dataclass(frozen=True)
 class Enqueued:
     """The webhook was buffered to the durable SQS queue."""
+
+    @property
+    def message(self) -> HTTPResponse:
+        """The Function URL response for a successful SQS enqueue."""
+        return {"statusCode": 200, "body": "queued"}
 
 
 @dataclass(frozen=True)
@@ -137,6 +147,18 @@ class ConsumerOffline:
     consumer_id: str
     creator_id: Optional[str]
     action: str
+
+    @property
+    def message(self) -> HTTPResponse:
+        """The honest, machine-readable response naming the offline consumer."""
+        body = json.dumps(
+            {
+                "reason": _OFFLINE_REASON,
+                "consumer_id": self.consumer_id,
+                "action": self.action,
+            }
+        )
+        return {"statusCode": 503, "body": body}
 
 
 # --- Delivery strategies (use cases) -------------------------------------------
@@ -153,9 +175,9 @@ def relay_webhook_event_to_consumer(
     """Relay a verified webhook to its addressed consumer over IoT.
 
     There is no SQS safety net on this path. A routed consumer the presence
-    boundary reports offline yields :class:`ConsumerOffline` (the presenter turns
-    it into the honest retryable response); ``_unrouted`` has no consumer to be
-    offline and skips the presence check entirely. An online or ``_unrouted``
+    boundary reports offline yields :class:`ConsumerOffline` (whose ``message`` is
+    the honest retryable response); ``_unrouted`` has no consumer to be offline and
+    skips the presence check entirely. An online or ``_unrouted``
     consumer is published to its identity topic, and a publish failure propagates
     so Linear retries rather than falling back to SQS.
     """
@@ -213,33 +235,6 @@ def enqueue_webhook_event(
         MessageAttributes=_build_message_attributes(headers),
     )
     return Enqueued()
-
-
-# --- Presenter -----------------------------------------------------------------
-
-
-def _shape_response(
-    result: Union[Delivered, Enqueued, ConsumerOffline],
-) -> HTTPResponse:
-    """Map a delivery domain result to the Function URL ``HTTPResponse``.
-
-    The sole producer of delivery HTTP status: ``Delivered`` -> 200 ``published``,
-    ``Enqueued`` -> 200 ``queued``, ``ConsumerOffline`` -> 503 with a
-    machine-readable body that names the offline consumer and the operator action.
-    No domain type leaks into the body.
-    """
-    if isinstance(result, ConsumerOffline):
-        body = json.dumps(
-            {
-                "reason": _OFFLINE_REASON,
-                "consumer_id": result.consumer_id,
-                "action": result.action,
-            }
-        )
-        return {"statusCode": 503, "body": body}
-    if isinstance(result, Enqueued):
-        return {"statusCode": 200, "body": "queued"}
-    return {"statusCode": 200, "body": "published"}
 
 
 # --- Helpers -------------------------------------------------------------------
