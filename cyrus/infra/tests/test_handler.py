@@ -22,17 +22,21 @@ from conftest import QUEUE_URL, SECRET, make_function_url_event
 from handler import handler, process
 
 
-def _attrs(content_type: str, event: str, delivery: str, signature: str, agent: str) -> dict:
+def _attrs(
+    content_type: str, event: str, delivery: str, signature: str, agent: str
+) -> dict:
     return {
-        "Content-Type": {"DataType": "String", "StringValue": content_type},
-        "Linear-Event": {"DataType": "String", "StringValue": event},
-        "Linear-Delivery": {"DataType": "String", "StringValue": delivery},
-        "Linear-Signature": {"DataType": "String", "StringValue": signature},
-        "User-Agent": {"DataType": "String", "StringValue": agent},
+        "content-type": {"DataType": "String", "StringValue": content_type},
+        "linear-event": {"DataType": "String", "StringValue": event},
+        "linear-delivery": {"DataType": "String", "StringValue": delivery},
+        "linear-signature": {"DataType": "String", "StringValue": signature},
+        "user-agent": {"DataType": "String", "StringValue": agent},
     }
 
 
-def test_process_enqueues_a_validly_signed_webhook(webhook_body, linear_headers, stubbed_sqs):
+def test_process_enqueues_a_validly_signed_webhook(
+    webhook_body, linear_headers, stubbed_sqs
+):
     client, stubber = stubbed_sqs
     expected_params = {
         "QueueUrl": QUEUE_URL,
@@ -45,7 +49,9 @@ def test_process_enqueues_a_validly_signed_webhook(webhook_body, linear_headers,
             "Linear-Webhook",
         ),
     }
-    stubber.add_response("send_message", {"MD5OfMessageBody": "x", "MessageId": "m-1"}, expected_params)
+    stubber.add_response(
+        "send_message", {"MD5OfMessageBody": "x", "MessageId": "m-1"}, expected_params
+    )
     stubber.activate()
 
     event = make_function_url_event(webhook_body, linear_headers)
@@ -55,7 +61,9 @@ def test_process_enqueues_a_validly_signed_webhook(webhook_body, linear_headers,
     assert result == {"statusCode": 200, "body": "queued"}
 
 
-def test_process_rejects_a_webhook_with_an_invalid_signature(webhook_body, linear_headers):
+def test_process_rejects_a_webhook_with_an_invalid_signature(
+    webhook_body, linear_headers
+):
     client = MagicMock()
 
     tampered = {**linear_headers, "linear-signature": "00" * 32}
@@ -92,7 +100,9 @@ def test_process_decodes_a_base64_encoded_body_before_verifying_and_enqueuing(
             "Linear-Webhook",
         ),
     }
-    stubber.add_response("send_message", {"MD5OfMessageBody": "x", "MessageId": "m-1"}, expected_params)
+    stubber.add_response(
+        "send_message", {"MD5OfMessageBody": "x", "MessageId": "m-1"}, expected_params
+    )
     stubber.activate()
 
     encoded = base64.b64encode(webhook_body.encode("utf-8")).decode("ascii")
@@ -118,7 +128,9 @@ def test_handler_wires_env_secret_and_client_then_delegates(
             "Linear-Webhook",
         ),
     }
-    stubber.add_response("send_message", {"MD5OfMessageBody": "x", "MessageId": "m-1"}, expected_params)
+    stubber.add_response(
+        "send_message", {"MD5OfMessageBody": "x", "MessageId": "m-1"}, expected_params
+    )
     stubber.activate()
 
     import handler as handler_mod

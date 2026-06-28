@@ -68,19 +68,20 @@ _OFFLINE_REASON = "consumer-offline"
 
 _SIGNATURE_HEADER = "linear-signature"
 
-# Inbound (lowercased, per Lambda Function URL) header name -> canonical name
-# forwarded to the consumer. A Function URL delivers headers lowercased and
-# carries many the consumer does not need; this both selects the headers Cyrus
-# uses to verify and route the webhook and restores the canonical casing Linear
-# sent, so the SQS pump (MessageAttributes) and the IoT relay (MQTT5 user
-# properties) forward the identical set under identical names.
-_FORWARDED_HEADERS: dict[str, str] = {
-    "content-type": "Content-Type",
-    "linear-event": "Linear-Event",
-    "linear-delivery": "Linear-Delivery",
-    "linear-signature": "Linear-Signature",
-    "user-agent": "User-Agent",
-}
+# Lowercased names of the Linear headers Cyrus needs to verify and route the
+# webhook — a case-insensitive allow-list. A Function URL carries many headers the
+# consumer does not need; only those whose lowercased name is in this set are
+# forwarded, and they pass through with their original name and value. Cyrus reads
+# webhook headers case-insensitively, so the ingress never rewrites their casing.
+_FORWARDED_HEADERS: frozenset[str] = frozenset(
+    {
+        "content-type",
+        "linear-event",
+        "linear-delivery",
+        "linear-signature",
+        "user-agent",
+    }
+)
 
 
 # --- Inbound webhook event -----------------------------------------------------
@@ -108,20 +109,18 @@ class LinearWebhookEvent:
     """A Linear webhook as delivered to the Lambda Function URL.
 
     Owns the request boundary: it decodes the raw body bytes (base64 transport
-    when present), lowercases the headers, and verifies the ``Linear-Signature``
-    HMAC against the shared secret on construction. The raw body is stored once,
+    when present), reads the headers, and verifies the ``Linear-Signature`` HMAC
+    against the shared secret on construction. The raw body is stored once,
     byte-identical to what was signed, and handed out unchanged — it is never
     re-serialised, which is the opaqueness invariant the downstream
     publish/enqueue depend on.
     """
 
     def __init__(self, event: Mapping[str, Any], secret: str) -> None:
-        self._headers = {
-            name.lower(): value for name, value in event.get("headers", {}).items()
-        }
+        self._headers = dict(event.get("headers", {}))
         self._body = self._decode_body(event)
-        self._signature = self._headers.get(_SIGNATURE_HEADER)
         self._secret = secret
+        self._signature = self._header(_SIGNATURE_HEADER)
         self._error = self._validate()
 
     @staticmethod
@@ -131,6 +130,14 @@ class LinearWebhookEvent:
         if event.get("isBase64Encoded"):
             return base64.b64decode(body)
         return body.encode("utf-8")
+
+    def _header(self, name: str) -> Optional[str]:
+        """Case-insensitively read a single inbound header value, or ``None``."""
+        target = name.lower()
+        return next(
+            (value for key, value in self._headers.items() if key.lower() == target),
+            None,
+        )
 
     def _validate(self) -> Optional[SignatureError]:
         """Why the signature check failed, or ``None`` when the request is valid."""
@@ -155,11 +162,16 @@ class LinearWebhookEvent:
         return {"statusCode": 401, "body": self._error.message}
 
     def forwarded_headers(self) -> dict[str, str]:
-        """The headers Cyrus needs, selected and restored to their canonical names."""
+        """The allow-listed Linear headers, passed through unmodified.
+
+        A header is forwarded with its original name and value when its lowercased
+        name is in the allow-list. Cyrus reads these case-insensitively, so the
+        ingress never rewrites their casing.
+        """
         return {
-            canonical: self._headers[lowercased]
-            for lowercased, canonical in _FORWARDED_HEADERS.items()
-            if lowercased in self._headers
+            name: value
+            for name, value in self._headers.items()
+            if name.lower() in _FORWARDED_HEADERS
         }
 
 

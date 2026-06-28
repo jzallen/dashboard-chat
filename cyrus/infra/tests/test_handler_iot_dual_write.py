@@ -33,24 +33,21 @@ from conftest import (
 
 from handler import process
 
-# Lowercased Function URL header -> canonical name the handler forwards, in the order
-# it forwards them; the IoT user properties JSON is built from this same set/order.
-_FORWARDED = {
-    "content-type": "Content-Type",
-    "linear-event": "Linear-Event",
-    "linear-delivery": "Linear-Delivery",
-    "linear-signature": "Linear-Signature",
-    "user-agent": "User-Agent",
-}
+# The Linear headers the handler forwards, in the order it forwards them (the
+# inbound Function URL order); the IoT user properties JSON is built from this same
+# set/order. Headers pass through unmodified — no canonical renaming.
+_FORWARDED = (
+    "content-type",
+    "linear-event",
+    "linear-delivery",
+    "linear-signature",
+    "user-agent",
+)
 
 
 def _iot_publish_params(body: str, headers: dict) -> dict:
     """The expected ``iot-data`` publish call: QoS 1, raw body, headers as user props."""
-    user_properties = [
-        {canonical: headers[lowercased]}
-        for lowercased, canonical in _FORWARDED.items()
-        if lowercased in headers
-    ]
+    user_properties = [{name: headers[name]} for name in _FORWARDED if name in headers]
     return {
         "qos": 1,
         "payload": body.encode("utf-8"),
@@ -63,23 +60,9 @@ def _sqs_params(body: str, headers: dict) -> dict:
         "QueueUrl": QUEUE_URL,
         "MessageBody": body,
         "MessageAttributes": {
-            "Content-Type": {
-                "DataType": "String",
-                "StringValue": headers["content-type"],
-            },
-            "Linear-Event": {
-                "DataType": "String",
-                "StringValue": headers["linear-event"],
-            },
-            "Linear-Delivery": {
-                "DataType": "String",
-                "StringValue": headers["linear-delivery"],
-            },
-            "Linear-Signature": {
-                "DataType": "String",
-                "StringValue": headers["linear-signature"],
-            },
-            "User-Agent": {"DataType": "String", "StringValue": headers["user-agent"]},
+            name: {"DataType": "String", "StringValue": headers[name]}
+            for name in _FORWARDED
+            if name in headers
         },
     }
 
@@ -137,7 +120,9 @@ def test_process__dual_write_valid_webhook__published_and_enqueued_bytes_match_r
     )
 
 
-def test_process__invalid_signature__returns_401_and_neither_publishes_nor_enqueues(routable_body):
+def test_process__invalid_signature__returns_401_and_neither_publishes_nor_enqueues(
+    routable_body,
+):
     """Bad sig → 401, and neither client is called."""
     iot = MagicMock()
     sqs = MagicMock()
