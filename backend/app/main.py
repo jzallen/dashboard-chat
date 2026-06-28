@@ -13,6 +13,8 @@ from .auth.exceptions import AuthorizationError
 from .auth.middleware import AuthMiddleware
 from .config import get_settings
 from .controllers.response_wrapper import wrap_jsonapi_error
+from .correlation.logging_config import configure_logging
+from .correlation.middleware import CorrelationMiddleware
 from .database import async_session, close_db, init_db
 from .plugins import create_plugin_registry
 from .routers import (
@@ -39,6 +41,9 @@ from .use_cases.sql_access._infra import (
     set_app_query_engine_provisioner,
 )
 from .version import log_image_identity
+
+# Install the JSON log envelope + correlation-id injection before anything logs.
+configure_logging()
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +133,11 @@ app.add_middleware(
 
 # Configure auth middleware (added after CORS — Starlette LIFO means CORS runs first)
 app.add_middleware(AuthMiddleware)
+
+# Correlation binding added last so it is the OUTERMOST middleware: the id is
+# bound before auth runs, so even an auth-rejected (401) request — and the
+# request line emitted on the way out — carries the correlation id.
+app.add_middleware(CorrelationMiddleware)
 
 
 # Global exception handler for authorization errors (returns 403 instead of 500)
