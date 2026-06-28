@@ -30,7 +30,7 @@ Environment variables (read by ``from_env`` / ``config_from_env``):
   seconds (default 20)
 - ``CYRUS_PROXY_IOT_ENDPOINT``            — AWS IoT data-plane endpoint host the
   consumer opens its MQTT-over-WebSocket connection to (required for ``iot``)
-- ``CYRUS_PROXY_IOT_ROUTING_KEY``         — this consumer's ``creator.id``; the feed
+- ``CYRUS_PROXY_IOT_ROUTING_KEY``         — this consumer's Linear username; the feed
   subscribes only to ``cyrus/v1/sessions/<routing-key>`` (required for ``iot``)
 - ``CYRUS_PROXY_IOT_REGION``              — AWS region for SigV4 signing of the IoT
   WebSocket connection (optional; falls back to the default AWS provider chain)
@@ -136,7 +136,7 @@ class CanaryConfig(_ConfigDecorator):
 class IoTConfig(_ConfigDecorator):
     """Core config extended with AWS IoT feed settings.
 
-    ``iot_routing_key`` is this consumer's ``creator.id`` — the feed subscribes only
+    ``iot_routing_key`` is this consumer's Linear username — the feed subscribes only
     to ``cyrus/v1/sessions/<iot_routing_key>``. ``iot_endpoint`` is the IoT data-plane
     host the MQTT-over-WebSocket connection targets, and ``iot_region`` selects the
     region used for SigV4 signing (``None`` defers to the default AWS provider chain).

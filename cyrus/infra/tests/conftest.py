@@ -62,6 +62,44 @@ def make_function_url_event(
     }
 
 
+def make_env(
+    *,
+    delivery_mode: str = "dual-write",
+    linear_secret: str = SECRET,
+    queue_url: str = QUEUE_URL,
+    presence_table: str | None = None,
+    iot_endpoint: str | None = None,
+) -> Any:
+    """Build a ``handler.Env`` for ``process`` tests without reading ``os.environ``.
+
+    ``process`` is the injected composition root, so tests drive it with an explicit
+    ``Env`` and client factories rather than monkeypatching the environment.
+    """
+    from handler import Env
+
+    return Env(
+        delivery_mode=delivery_mode,
+        linear_secret=linear_secret,
+        queue_url=queue_url,
+        presence_table=presence_table,
+        iot_endpoint=iot_endpoint,
+    )
+
+
+class StubPresence:
+    """A ``ConsumerPresenceRepository`` stand-in driven by a username predicate.
+
+    Defaults to always-online; pass a predicate to model offline consumers (e.g.
+    ``StubPresence(lambda username: True)`` for an offline boundary).
+    """
+
+    def __init__(self, is_offline: Any = lambda username: False) -> None:
+        self._is_offline = is_offline
+
+    def is_offline(self, username: str) -> bool:
+        return self._is_offline(username)
+
+
 @pytest.fixture
 def webhook_body() -> str:
     """The raw webhook body string exactly as Linear would POST it."""

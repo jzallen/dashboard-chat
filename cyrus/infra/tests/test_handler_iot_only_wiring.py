@@ -33,8 +33,8 @@ def _wire(monkeypatch, *, iot, sqs, dynamodb=None):
 
     monkeypatch.setenv("QUEUE_URL", QUEUE_URL)
     monkeypatch.setattr(handler_mod, "_load_secret", lambda: SECRET)
-    monkeypatch.setattr(handler_mod, "_sqs_client", lambda: sqs)
-    monkeypatch.setattr(handler_mod, "_iot_data_client", lambda: iot)
+    monkeypatch.setattr(handler_mod, "_sqs_client", lambda env: sqs)
+    monkeypatch.setattr(handler_mod, "_iot_data_client", lambda env: iot)
     monkeypatch.setattr(
         handler_mod, "_dynamodb_client", lambda: dynamodb or MagicMock()
     )
@@ -105,7 +105,9 @@ def test_handler__iot_only_without_iot_endpoint__fails_fast(monkeypatch, routabl
     iot.publish.assert_not_called()
 
 
-def test_handler__unknown_delivery_mode__falls_back_to_dual_write(monkeypatch, routable_body):
+def test_handler__unknown_delivery_mode__falls_back_to_dual_write(
+    monkeypatch, routable_body
+):
     """A bogus DELIVERY_MODE must not drop the SQS safety net — dual-write wins."""
     iot, sqs = MagicMock(), MagicMock()
 

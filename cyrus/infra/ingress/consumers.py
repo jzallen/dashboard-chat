@@ -1,237 +1,385 @@
-"""Delivery-target domain objects for the ingress: how a verified webhook reaches
-its Linear consumer.
+"""Delivery domain for the ingress: how a verified webhook reaches its consumer.
 
-A consumer is identified by its **natural key** (the Linear username parsed from
-the signed body, or the ``_unrouted`` sentinel) and the per-identity IoT topic
-``cyrus/v1/sessions/{key}`` that key publishes to. The two concrete consumers
-encapsulate the per-deploy delivery contract so the handler stays orchestration:
+The inbound request is modelled as a :class:`LinearWebhookEvent` — it owns the
+request boundary (decode the raw body, read the headers, verify the
+``Linear-Signature``) and stores the signed bytes once so they are never
+reconstructed. A consumer is addressed by its **natural key** — the Linear
+username parsed from the body, or the ``_unrouted`` catch-all sentinel. Two
+delivery strategies own the per-deploy contract; the controller
+(``handler.process``) selects one, calls it, and returns the result's own
+``message`` (an :class:`HTTPResponse`):
 
-* :class:`IoTLinearConsumer` (``iot-only`` mode) — IoT is the only channel, with
-  no SQS safety net. A *routed* consumer the presence boundary reports offline
-  yields an honest 503 naming it; an online or ``_unrouted`` consumer is published
-  to the topic. A publish failure propagates (Linear retries) rather than falling
-  back to SQS.
-* :class:`SQSLinearConsumer` (``dual-write`` mode) — the SQS enqueue is the system
-  of record and the durable safety net; the IoT publish is a best-effort probe
-  whose failure is logged and swallowed so it can never take down the enqueue.
+* :func:`relay_webhook_event_to_consumer` (``iot-only``) — IoT is the only
+  channel, with no SQS safety net. A *routed* consumer the presence boundary
+  reports offline yields :class:`ConsumerOffline` (whose ``message`` is the honest
+  retryable response); an online or ``_unrouted`` consumer is published to its
+  identity topic, and a publish failure propagates so Linear retries.
+* :func:`enqueue_webhook_event` (``dual-write``) — the SQS enqueue is the system
+  of record and durable safety net; the IoT relay is an optimistic best-effort
+  probe whose failure is logged and swallowed so it can never take down the
+  enqueue.
 
-OPAQUENESS CONTRACT: the ``body`` delivered here is the original raw request
-bytes, byte-identical to what was HMAC-verified. Routing reads a COPY of the body
-(see :mod:`routing`); nothing here mutates the signed bytes.
+OPAQUENESS CONTRACT: the body published/enqueued is the original raw request
+bytes, byte-identical to what was HMAC-verified — the event stores them once and
+hands the same object out. Identity is derived from a COPY of those bytes (see
+:mod:`routing`) and never carries them; nothing here mutates them.
 """
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
-from abc import ABC, abstractmethod
-from typing import Any, Callable, Mapping, Optional, TypedDict
+from dataclasses import dataclass
+from typing import (
+    Any,
+    Mapping,
+    Optional,
+    Protocol,
+    TypedDict,
+    Union,
+    runtime_checkable,
+)
 
 import iot_publisher
 import routing
+from linear_signature import verify
 
 _log = logging.getLogger(__name__)
 
 
+# --- Controller boundary types -------------------------------------------------
+
+
 class HTTPResponse(TypedDict):
-    """The Lambda Function URL result shape every consumer returns."""
+    """The Lambda Function URL result shape the controller returns."""
 
     statusCode: int
     body: str
+
 
 # IoT Data-plane topic prefix for identity-routed publishes; the routing key (the
 # Linear username or the ``_unrouted`` sentinel) is appended.
 TOPIC_PREFIX = "cyrus/v1/sessions/"
 
-# Machine-readable reason emitted on the offline 503 path.
+# Machine-readable reason emitted on the offline path.
 _OFFLINE_REASON = "consumer-offline"
 
-# Inbound (lowercased, per Lambda Function URL) header name -> canonical name
-# forwarded to the consumer. The SQS pump turns these back into the HTTP headers
-# it replays to Cyrus, so only the headers Cyrus needs to verify and route the
-# webhook are carried.
-_FORWARDED_HEADERS: dict[str, str] = {
-    "content-type": "Content-Type",
-    "linear-event": "Linear-Event",
-    "linear-delivery": "Linear-Delivery",
-    "linear-signature": "Linear-Signature",
-    "user-agent": "User-Agent",
-}
+_SIGNATURE_HEADER = "linear-signature"
 
-
-def _forwarded_headers(headers: Mapping[str, str]) -> dict[str, str]:
-    """Return the forwarded Linear headers under their canonical names."""
-    return {
-        canonical: headers[lowercased]
-        for lowercased, canonical in _FORWARDED_HEADERS.items()
-        if lowercased in headers
+# Lowercased names of the Linear headers Cyrus needs to verify and route the
+# webhook — a case-insensitive allow-list. A Function URL carries many headers the
+# consumer does not need; only those whose lowercased name is in this set are
+# forwarded, and they pass through with their original name and value. Cyrus reads
+# webhook headers case-insensitively, so the ingress never rewrites their casing.
+_FORWARDED_HEADERS: frozenset[str] = frozenset(
+    {
+        "content-type",
+        "linear-event",
+        "linear-delivery",
+        "linear-signature",
+        "user-agent",
     }
+)
 
 
-def _message_attributes(headers: Mapping[str, str]) -> dict[str, Any]:
-    """Render the forwarded Linear headers as SQS String MessageAttributes."""
-    return {
-        canonical: {"DataType": "String", "StringValue": headers[lowercased]}
-        for lowercased, canonical in _FORWARDED_HEADERS.items()
-        if lowercased in headers
-    }
+# --- Inbound webhook event -----------------------------------------------------
 
 
-def _offline_response(username: str) -> HTTPResponse:
-    """Build the honest 503 for an offline consumer: reason + id + operator action.
+class SignatureError:
+    """Why a webhook failed signature validation; carries the 401 body ``message``."""
 
-    The body is machine-readable so Linear (and an operator reading logs) gets a
-    truthful signal that names the offline consumer by its natural key and tells
-    the operator exactly how to fix it.
+    message: str
+
+
+class MissingSignatureError(SignatureError):
+    """The request carried no ``Linear-Signature`` header."""
+
+    message = "missing signature"
+
+
+class InvalidSignatureError(SignatureError):
+    """The ``Linear-Signature`` did not verify against the shared secret."""
+
+    message = "invalid signature"
+
+
+class LinearWebhookEvent:
+    """A Linear webhook as delivered to the Lambda Function URL.
+
+    Owns the request boundary: it decodes the raw body bytes (base64 transport
+    when present), reads the headers, and verifies the ``Linear-Signature`` HMAC
+    against the shared secret on construction. The raw body is stored once,
+    byte-identical to what was signed, and handed out unchanged — it is never
+    re-serialised, which is the opaqueness invariant the downstream
+    publish/enqueue depend on.
     """
-    body = json.dumps(
-        {
-            "reason": _OFFLINE_REASON,
-            "consumer_id": username,
-            "action": f"start local cyrus consumer with consumer id {username}",
+
+    def __init__(self, event: Mapping[str, Any], secret: str) -> None:
+        self._headers = dict(event.get("headers", {}))
+        self._body = self._decode_body(event)
+        self._secret = secret
+        self._signature = self._header(_SIGNATURE_HEADER)
+        self._error = self._validate()
+
+    @staticmethod
+    def _decode_body(event: Mapping[str, Any]) -> bytes:
+        """Return the request body bytes, decoding base64 transport when present."""
+        body = event.get("body") or ""
+        if event.get("isBase64Encoded"):
+            return base64.b64decode(body)
+        return body.encode("utf-8")
+
+    def _header(self, name: str) -> Optional[str]:
+        """Case-insensitively read a single inbound header value, or ``None``."""
+        target = name.lower()
+        return next(
+            (value for key, value in self._headers.items() if key.lower() == target),
+            None,
+        )
+
+    def _validate(self) -> Optional[SignatureError]:
+        """Why the signature check failed, or ``None`` when the request is valid."""
+        if self._signature is None:
+            return MissingSignatureError()
+        if not verify(self._body, self._secret, self._signature):
+            return InvalidSignatureError()
+        return None
+
+    @property
+    def body(self) -> bytes:
+        """The raw request bytes, byte-identical to what was signature-verified."""
+        return self._body
+
+    def is_valid(self) -> bool:
+        """Whether the request carries a ``Linear-Signature`` that verifies the body."""
+        return self._error is None
+
+    @property
+    def error_message(self) -> HTTPResponse:
+        """The 401 for an unsigned or tampered request (read only when invalid)."""
+        return {"statusCode": 401, "body": self._error.message}
+
+    def forwarded_headers(self) -> dict[str, str]:
+        """The allow-listed Linear headers, passed through unmodified.
+
+        A header is forwarded with its original name and value when its lowercased
+        name is in the allow-list. Cyrus reads these case-insensitively, so the
+        ingress never rewrites their casing.
+        """
+        return {
+            name: value
+            for name, value in self._headers.items()
+            if name.lower() in _FORWARDED_HEADERS
         }
-    )
-    return {"statusCode": 503, "body": body}
 
 
-class _LinearConsumer(ABC):
-    """A delivery target's identity: its natural key and per-identity IoT topic.
+# --- Consumer identity (pure value object) -------------------------------------
 
-    The routing key is parsed from a COPY of the signed body (the Linear username,
-    or the ``_unrouted`` catch-all sentinel); the topic is the address that key
-    publishes to. Subclasses implement :meth:`deliver` with the per-mode behavior.
 
-    FUTURE ME: if delivery grows beyond these two modes (e.g. delivery that
-    composes — retries, tee-ing, fan-out), drop this base-class hierarchy in favor
-    of a ``LinearConsumerProtocol`` (a ``typing.Protocol`` with ``deliver``) and
-    compose behavior with the decorator pattern (wrapping consumers) rather than
-    subclassing. Not worth it for two leaf modes today.
+@dataclass(frozen=True)
+class ConsumerIdentity:
+    """The natural key a verified webhook is addressed to.
+
+    An immutable, no-I/O value object the use cases *use* (they are not it). It
+    holds the routing key only — never the signed body bytes (opaqueness is
+    load-bearing: the signed bytes must never round-trip through identity). The key
+    is derived from a COPY of the body via :func:`routing.extract_routing_key`.
+    Equality- and hash-based.
     """
 
-    def __init__(self, body: bytes, *, topic_prefix: str = TOPIC_PREFIX) -> None:
-        self._body = body
-        self.key = routing.extract_routing_key(body)
-        self.topic = f"{topic_prefix}{self.key}"
+    key: str
+
+    @classmethod
+    def from_webhook_event(cls, event: LinearWebhookEvent) -> "ConsumerIdentity":
+        """Derive identity from a COPY of the event's body (never stores the bytes)."""
+        return cls(key=routing.extract_routing_key(event.body))
 
     @property
     def is_routed(self) -> bool:
         """Whether a natural key was derivable (vs the ``_unrouted`` catch-all)."""
         return self.key != routing.UNROUTED
 
-    @abstractmethod
-    def deliver(self, headers: Mapping[str, str]) -> HTTPResponse:
-        """Deliver the verified body for this mode and return the HTTP result."""
-        raise NotImplementedError
+    @property
+    def topic(self) -> str:
+        """The per-identity IoT topic this key publishes to."""
+        return f"{TOPIC_PREFIX}{self.key}"
 
 
-class IoTLinearConsumer(_LinearConsumer):
-    """A consumer reachable only over IoT (``iot-only`` delivery mode).
+# --- Presence boundary ---------------------------------------------------------
 
-    Owns the offline decision and the publish. There is no SQS fallback: an
-    offline routed consumer gets an honest 503; everyone else is published to the
-    identity topic and a publish failure propagates so Linear retries.
+
+@runtime_checkable
+class ConsumerPresenceRepository(Protocol):
+    """The boundary the addressed-consumer use case checks to decide offline.
+
+    ``is_offline(username) -> bool``. The **adapter** owns the fail-closed policy:
+    a read error (throttle, network, missing IAM grant) resolves to offline,
+    because ``iot-only`` has no SQS safety net — a presence-cache blip must yield an
+    honest retryable response Linear retries, not a crash. :class:`presence.
+    DynamoDBConsumerPresence` is the production implementation (with
+    :class:`presence.AlwaysOnlinePresence` the null object when no cache is wired);
+    see their docstrings for the fail-closed rationale.
     """
 
-    def __init__(
-        self,
-        body: bytes,
-        *,
-        iot_data_client: Any,
-        topic_prefix: str = TOPIC_PREFIX,
-        is_offline: Optional[Callable[[str], bool]] = None,
-    ) -> None:
-        super().__init__(body, topic_prefix=topic_prefix)
-        self._iot_data_client = iot_data_client
-        self._presence_offline = is_offline
+    def is_offline(self, username: str) -> bool: ...
 
-    def is_offline(self) -> bool:
-        """Whether this consumer is a routed consumer the presence read calls offline.
 
-        ``_unrouted`` has no consumer to be offline, and with no presence boundary
-        wired we cannot assert offline — only a routed consumer with a presence
-        check that reports offline is "mapped but offline".
-        """
-        return (
-            self.is_routed
-            and self._presence_offline is not None
-            and self._presence_offline(self.key)
-        )
+# --- Domain results ------------------------------------------------------------
 
-    def deliver(self, headers: Mapping[str, str]) -> HTTPResponse:
-        """Deliver over IoT, or return the honest 503 when offline."""
-        if self.is_offline():
-            self._log_offline()
-            return _offline_response(self.key)
-        iot_publisher.publish(
-            self._iot_data_client,
-            topic=self.topic,
-            body=self._body,
-            headers=_forwarded_headers(headers),
-        )
+
+@dataclass(frozen=True)
+class Delivered:
+    """The webhook reached its consumer over IoT (online, or ``_unrouted``)."""
+
+    @property
+    def message(self) -> HTTPResponse:
+        """The Function URL response for a successful IoT delivery."""
         return {"statusCode": 200, "body": "published"}
 
-    def _log_offline(self) -> None:
-        """Emit the offline fact to logs so it is queryable in CloudWatch.
 
-        Structured fields (not a parsed message) carry the operator-facing
-        ``consumer_id`` (username) plus the stable ``creator.id`` correlation key.
-        The ``reason`` field distinguishes this from the ``_unrouted`` and
-        transient-publish-failure logs.
-        """
-        _log.warning(
-            "consumer offline: %s",
-            self.key,
-            extra={
-                "reason": "consumer_offline",
-                "consumer_id": self.key,
-                "creator_id": routing.extract_creator_id(self._body),
-                "delivery_mode": "iot-only",
-            },
-        )
+@dataclass(frozen=True)
+class Enqueued:
+    """The webhook was buffered to the durable SQS queue."""
+
+    @property
+    def message(self) -> HTTPResponse:
+        """The Function URL response for a successful SQS enqueue."""
+        return {"statusCode": 200, "body": "queued"}
 
 
-class SQSLinearConsumer(_LinearConsumer):
-    """A dual-write consumer: SQS is the system of record, IoT a best-effort probe.
+@dataclass(frozen=True)
+class ConsumerOffline:
+    """A routed consumer the presence boundary reported offline.
 
-    The raw body is enqueued to SQS (the durable safety net) and, when an IoT
-    client is wired, also published byte-identically to the identity topic. The
-    publish is a probe: any failure is caught and logged so it can never take down
-    the SQS enqueue.
+    Carries the operator-facing ``consumer_id`` (username), the stable
+    ``creator_id`` correlation key for observability, and the operator ``action``
+    that names how to bring the consumer back.
     """
 
-    def __init__(
-        self,
-        body: bytes,
-        *,
-        sqs_client: Any,
-        queue_url: str,
-        iot_data_client: Any = None,
-        topic_prefix: str = TOPIC_PREFIX,
-    ) -> None:
-        super().__init__(body, topic_prefix=topic_prefix)
-        self._sqs_client = sqs_client
-        self._queue_url = queue_url
-        self._iot_data_client = iot_data_client
+    consumer_id: str
+    creator_id: Optional[str]
+    action: str
 
-    def deliver(self, headers: Mapping[str, str]) -> HTTPResponse:
-        """Publish best-effort to IoT (when wired), then enqueue to SQS."""
-        if self._iot_data_client is not None:
-            try:
-                iot_publisher.publish(
-                    self._iot_data_client,
-                    topic=self.topic,
-                    body=self._body,
-                    headers=_forwarded_headers(headers),
-                )
-            except Exception:
-                _log.exception(
-                    "IoT dual-write publish to %s failed; SQS enqueue is the safety net",
-                    self.topic,
-                )
-
-        self._sqs_client.send_message(
-            QueueUrl=self._queue_url,
-            MessageBody=self._body.decode("utf-8"),
-            MessageAttributes=_message_attributes(headers),
+    @property
+    def message(self) -> HTTPResponse:
+        """The honest, machine-readable response naming the offline consumer."""
+        body = json.dumps(
+            {
+                "reason": _OFFLINE_REASON,
+                "consumer_id": self.consumer_id,
+                "action": self.action,
+            }
         )
-        return {"statusCode": 200, "body": "queued"}
+        return {"statusCode": 503, "body": body}
+
+
+# --- Delivery strategies (use cases) -------------------------------------------
+
+
+def relay_webhook_event_to_consumer(
+    identity: ConsumerIdentity,
+    event: LinearWebhookEvent,
+    *,
+    iot_client: Any,
+    presence: ConsumerPresenceRepository,
+) -> Union[Delivered, ConsumerOffline]:
+    """Relay a verified webhook to its addressed consumer over IoT (``iot-only``).
+
+    There is no SQS safety net on this path. A routed consumer the presence
+    boundary reports offline yields :class:`ConsumerOffline` (whose ``message`` is
+    the honest retryable response); ``_unrouted`` has no consumer to be offline and
+    short-circuits the presence check. An online or ``_unrouted`` consumer is
+    published to its identity topic, and a publish failure propagates so Linear
+    retries rather than falling back to SQS.
+    """
+    if identity.is_routed and presence.is_offline(identity.key):
+        offline = ConsumerOffline(
+            consumer_id=identity.key,
+            creator_id=routing.extract_creator_id(event.body),
+            action=f"start local cyrus consumer with consumer id {identity.key}",
+        )
+        _log_offline(offline)
+        return offline
+
+    iot_publisher.publish(
+        iot_client,
+        topic=identity.topic,
+        body=event.body,
+        headers=event.forwarded_headers(),
+    )
+    return Delivered()
+
+
+def probe_consumer_over_iot(
+    identity: ConsumerIdentity,
+    event: LinearWebhookEvent,
+    *,
+    iot_client: Any,
+) -> None:
+    """Best-effort IoT relay beside the SQS safety net (``dual-write``).
+
+    When an IoT client is wired, publish the body byte-identically to the identity
+    topic as an optimistic probe; any failure is caught and logged so it can never
+    take down the SQS enqueue. A no-op when no IoT client is configured.
+    """
+    if iot_client is None:
+        return
+    try:
+        iot_publisher.publish(
+            iot_client,
+            topic=identity.topic,
+            body=event.body,
+            headers=event.forwarded_headers(),
+        )
+    except Exception:
+        _log.exception(
+            "IoT dual-write publish to %s failed; SQS enqueue is the safety net",
+            identity.topic,
+        )
+
+
+def enqueue_webhook_event(
+    event: LinearWebhookEvent,
+    *,
+    sqs_client: Any,
+    queue_url: str,
+) -> Enqueued:
+    """Buffer a verified webhook to the durable SQS queue (the system of record)."""
+    sqs_client.send_message(
+        QueueUrl=queue_url,
+        MessageBody=event.body.decode("utf-8"),
+        MessageAttributes=_build_message_attributes(event.forwarded_headers()),
+    )
+    return Enqueued()
+
+
+# --- Helpers -------------------------------------------------------------------
+
+
+def _build_message_attributes(forwarded: Mapping[str, str]) -> dict[str, Any]:
+    """Render the forwarded Linear headers as SQS String MessageAttributes."""
+    return {
+        name: {"DataType": "String", "StringValue": value}
+        for name, value in forwarded.items()
+    }
+
+
+def _log_offline(offline: ConsumerOffline) -> None:
+    """Emit the offline fact to logs so it is queryable in CloudWatch.
+
+    Structured fields (not a parsed message) carry the operator-facing
+    ``consumer_id`` (username) plus the stable ``creator_id`` correlation key. The
+    ``reason`` field distinguishes this from the ``_unrouted`` and
+    transient-publish-failure logs.
+    """
+    _log.warning(
+        "consumer offline: %s",
+        offline.consumer_id,
+        extra={
+            "reason": "consumer_offline",
+            "consumer_id": offline.consumer_id,
+            "creator_id": offline.creator_id,
+            "delivery_mode": "iot-only",
+        },
+    )

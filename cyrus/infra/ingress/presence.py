@@ -51,28 +51,34 @@ def row_is_offline(item: Optional[Mapping[str, Any]], now: float) -> bool:
     return False
 
 
-def make_offline_check(
-    dynamodb_client: Any,
-    table_name: str,
-    *,
-    now: Callable[[], float] = time.time,
-) -> Callable[[str], bool]:
-    """Build the ``is_offline(username) -> bool`` boundary backed by DynamoDB.
+class DynamoDBConsumerPresence:
+    """``ConsumerPresenceRepository`` backed by the DynamoDB presence table.
 
-    Returns a callable that does a single ``GetItem`` on ``table_name`` keyed by
-    ``username`` and applies :func:`row_is_offline` against the current ``now()``.
-    Injectable ``now`` keeps the TTL-expiry branch unit-testable.
+    ``is_offline`` does a single ``GetItem`` on ``table_name`` keyed by ``username``
+    and applies :func:`row_is_offline` against the current ``now()``. Injectable
+    ``now`` keeps the TTL-expiry branch unit-testable.
 
-    The read **fails closed**: any DynamoDB error (throttle, network, missing
-    IAM grant) is treated as offline. In ``iot-only`` mode there is no SQS safety
-    net, so a presence-cache blip must yield an honest 503 (which Linear retries)
-    rather than crash the invocation and silently lose the webhook.
+    The read **fails closed**: any DynamoDB error (throttle, network, missing IAM
+    grant) is treated as offline. In ``iot-only`` mode there is no SQS safety net,
+    so a presence-cache blip must yield an honest 503 (which Linear retries) rather
+    than crash the invocation and silently lose the webhook.
     """
 
-    def is_offline(username: str) -> bool:
+    def __init__(
+        self,
+        dynamodb_client: Any,
+        table_name: str,
+        *,
+        now: Callable[[], float] = time.time,
+    ) -> None:
+        self._dynamodb_client = dynamodb_client
+        self._table_name = table_name
+        self._now = now
+
+    def is_offline(self, username: str) -> bool:
         try:
-            response = dynamodb_client.get_item(
-                TableName=table_name,
+            response = self._dynamodb_client.get_item(
+                TableName=self._table_name,
                 Key={"username": {"S": username}},
             )
         except Exception:
@@ -82,6 +88,16 @@ def make_offline_check(
                 exc_info=True,
             )
             return True
-        return row_is_offline(response.get("Item"), now())
+        return row_is_offline(response.get("Item"), self._now())
 
-    return is_offline
+
+class AlwaysOnlinePresence:
+    """Null ``ConsumerPresenceRepository``: no presence cache wired, never offline.
+
+    Used in ``dual-write`` (which has no offline gate) and in ``iot-only`` without a
+    ``PRESENCE_TABLE``, so the addressed-consumer use case can call ``is_offline``
+    unconditionally instead of guarding a missing presence boundary.
+    """
+
+    def is_offline(self, username: str) -> bool:
+        return False

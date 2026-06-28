@@ -16,7 +16,7 @@ import boto3
 import pytest
 from botocore.stub import Stubber
 
-from presence import make_offline_check, row_is_offline
+from presence import DynamoDBConsumerPresence, row_is_offline
 
 NOW = 1_700_000_000.0
 TABLE = "ConsumerPresenceTable"
@@ -67,7 +67,9 @@ def stubbed_dynamodb():
     stubber.deactivate()
 
 
-def test_make_offline_check__connected_username_row__reports_online(stubbed_dynamodb):
+def test_dynamodb_consumer_presence__connected_username_row__reports_online(
+    stubbed_dynamodb,
+):
     client, stubber = stubbed_dynamodb
     stubber.add_response(
         "get_item",
@@ -76,24 +78,26 @@ def test_make_offline_check__connected_username_row__reports_online(stubbed_dyna
     )
     stubber.activate()
 
-    is_offline = make_offline_check(client, TABLE, now=lambda: NOW)
-    assert is_offline("testuser") is False
+    presence = DynamoDBConsumerPresence(client, TABLE, now=lambda: NOW)
+    assert presence.is_offline("testuser") is False
     stubber.assert_no_pending_responses()
 
 
-def test_make_offline_check__missing_row__reports_offline(stubbed_dynamodb):
+def test_dynamodb_consumer_presence__missing_row__reports_offline(stubbed_dynamodb):
     client, stubber = stubbed_dynamodb
     stubber.add_response(
         "get_item", {}, {"TableName": TABLE, "Key": {"username": {"S": "ghost"}}}
     )
     stubber.activate()
 
-    is_offline = make_offline_check(client, TABLE, now=lambda: NOW)
-    assert is_offline("ghost") is True
+    presence = DynamoDBConsumerPresence(client, TABLE, now=lambda: NOW)
+    assert presence.is_offline("ghost") is True
     stubber.assert_no_pending_responses()
 
 
-def test_make_offline_check__read_errors__fails_closed_to_offline(stubbed_dynamodb):
+def test_dynamodb_consumer_presence__read_errors__fails_closed_to_offline(
+    stubbed_dynamodb,
+):
     """A DynamoDB error (throttle/network/IAM) reads offline, not a crash.
 
     iot-only has no SQS safety net, so a presence-cache blip must yield an honest
@@ -108,6 +112,6 @@ def test_make_offline_check__read_errors__fails_closed_to_offline(stubbed_dynamo
     )
     stubber.activate()
 
-    is_offline = make_offline_check(client, TABLE, now=lambda: NOW)
-    assert is_offline("testuser") is True
+    presence = DynamoDBConsumerPresence(client, TABLE, now=lambda: NOW)
+    assert presence.is_offline("testuser") is True
     stubber.assert_no_pending_responses()

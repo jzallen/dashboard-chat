@@ -19,10 +19,10 @@ from unittest.mock import MagicMock
 
 from conftest import (
     CREATOR_ID,
-    QUEUE_URL,
-    SECRET,
     USERNAME,
+    StubPresence,
     headers_for,
+    make_env,
     make_function_url_event,
 )
 
@@ -42,12 +42,10 @@ def test_process__iot_only_offline__emits_structured_log_with_username_and_creat
     with caplog.at_level(logging.WARNING):
         result = process(
             event,
-            queue_url=QUEUE_URL,
-            secret=SECRET,
-            sqs_client=MagicMock(),
-            iot_data_client=MagicMock(),
-            delivery_mode="iot-only",
-            is_offline=lambda username: True,
+            make_env(delivery_mode="iot-only"),
+            sqs_client=lambda: MagicMock(),
+            iot_client=lambda: MagicMock(),
+            presence=lambda: StubPresence(lambda username: True),
         )
 
     assert result["statusCode"] == 503
@@ -64,12 +62,10 @@ def test_process__iot_only_online__emits_no_offline_log(caplog, routable_body):
     with caplog.at_level(logging.WARNING):
         process(
             event,
-            queue_url=QUEUE_URL,
-            secret=SECRET,
-            sqs_client=MagicMock(),
-            iot_data_client=MagicMock(),
-            delivery_mode="iot-only",
-            is_offline=lambda username: False,
+            make_env(delivery_mode="iot-only"),
+            sqs_client=lambda: MagicMock(),
+            iot_client=lambda: MagicMock(),
+            presence=lambda: StubPresence(lambda username: False),
         )
 
     assert not [r for r in caplog.records if getattr(r, "reason", None)]
