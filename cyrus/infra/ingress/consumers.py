@@ -175,7 +175,7 @@ def relay_webhook_event_to_consumer(
         iot_data_client,
         topic=identity.topic(topic_prefix),
         body=body,
-        headers=_forwarded_headers(headers),
+        headers=_build_forwarded_headers(headers),
     )
     return Delivered()
 
@@ -203,7 +203,7 @@ def enqueue_webhook_event(
                 iot_data_client,
                 topic=identity.topic(topic_prefix),
                 body=body,
-                headers=_forwarded_headers(headers),
+                headers=_build_forwarded_headers(headers),
             )
         except Exception:
             _log.exception(
@@ -214,7 +214,7 @@ def enqueue_webhook_event(
     sqs_client.send_message(
         QueueUrl=queue_url,
         MessageBody=body.decode("utf-8"),
-        MessageAttributes=_message_attributes(headers),
+        MessageAttributes=_build_message_attributes(headers),
     )
     return Enqueued()
 
@@ -260,7 +260,7 @@ _FORWARDED_HEADERS: dict[str, str] = {
 }
 
 
-def _forwarded_headers(headers: Mapping[str, str]) -> dict[str, str]:
+def _build_forwarded_headers(headers: Mapping[str, str]) -> dict[str, str]:
     """Return the forwarded Linear headers under their canonical names."""
     return {
         canonical: headers[lowercased]
@@ -269,7 +269,7 @@ def _forwarded_headers(headers: Mapping[str, str]) -> dict[str, str]:
     }
 
 
-def _message_attributes(headers: Mapping[str, str]) -> dict[str, Any]:
+def _build_message_attributes(headers: Mapping[str, str]) -> dict[str, Any]:
     """Render the forwarded Linear headers as SQS String MessageAttributes."""
     return {
         canonical: {"DataType": "String", "StringValue": headers[lowercased]}
