@@ -35,7 +35,14 @@ from typing import Any, Callable, Literal, Mapping, Optional
 import boto3
 
 import presence
-from consumers import TOPIC_PREFIX, HTTPResponse, IoTLinearConsumer, SQSLinearConsumer
+from consumers import (
+    TOPIC_PREFIX,
+    ConsumerIdentity,
+    HTTPResponse,
+    _shape_response,
+    enqueue_webhook_event,
+    relay_webhook_event_to_consumer,
+)
 from linear_signature import verify
 
 _log = logging.getLogger(__name__)
@@ -72,17 +79,20 @@ def process(
     delivery_mode: Literal["dual-write", "iot-only"] = "dual-write",
     is_offline: Optional[Callable[[str], bool]] = None,
 ) -> HTTPResponse:
-    """Verify a Function URL event and delegate delivery to the consumer.
+    """Verify a Function URL event, then wire and run the chosen delivery strategy.
 
-    Returns ``{"statusCode": 401}`` and writes nothing when the
+    This is the composition root: it rejects an unsigned/invalid request at the
+    boundary, derives the consumer identity, reads ``delivery_mode`` once to select
+    the delivery use case, wires it with its ports, and hands the domain result to
+    the presenter. Returns ``{"statusCode": 401}`` and writes nothing when the
     ``Linear-Signature`` is missing or does not validate against ``secret``. On a
-    valid signature the per-deploy ``delivery_mode`` selects the consumer that
-    owns delivery (and, in ``iot-only``, the offline decision):
+    valid signature the per-deploy ``delivery_mode`` selects the strategy:
 
-    * ``dual-write`` (default) — :class:`~consumers.SQSLinearConsumer`: enqueue to
-      SQS and, when ``iot_data_client`` is wired, also publish byte-identically.
-    * ``iot-only`` — :class:`~consumers.IoTLinearConsumer`: publish over IoT, or
-      return the honest 503 when the routed consumer ``is_offline``.
+    * ``dual-write`` (default) — :func:`~consumers.enqueue_webhook_event`: enqueue
+      to SQS and, when ``iot_data_client`` is wired, also publish byte-identically.
+    * ``iot-only`` — :func:`~consumers.relay_webhook_event_to_consumer`: publish
+      over IoT, or surface the offline consumer when the routed consumer
+      ``is_offline``.
     """
     headers = {name.lower(): value for name, value in event.get("headers", {}).items()}
     signature = headers.get(_SIGNATURE_HEADER)
@@ -93,22 +103,27 @@ def process(
     if not verify(body, secret, signature):
         return {"statusCode": 401, "body": "invalid signature"}
 
+    identity = ConsumerIdentity.from_body(body)
     if delivery_mode == "iot-only":
-        consumer = IoTLinearConsumer(
+        result = relay_webhook_event_to_consumer(
+            identity,
             body,
+            headers,
             iot_data_client=iot_data_client,
             topic_prefix=topic_prefix,
             is_offline=is_offline,
         )
     else:
-        consumer = SQSLinearConsumer(
+        result = enqueue_webhook_event(
+            identity,
             body,
+            headers,
             sqs_client=sqs_client,
             queue_url=queue_url,
             iot_data_client=iot_data_client,
             topic_prefix=topic_prefix,
         )
-    return consumer.deliver(headers)
+    return _shape_response(result)
 
 
 def _sqs_client() -> Any:
