@@ -86,14 +86,33 @@ _FORWARDED_HEADERS: dict[str, str] = {
 # --- Inbound webhook event -----------------------------------------------------
 
 
+class SignatureError:
+    """Why a webhook failed signature validation; carries the 401 body ``message``."""
+
+    message: str
+
+
+class MissingSignatureError(SignatureError):
+    """The request carried no ``Linear-Signature`` header."""
+
+    message = "missing signature"
+
+
+class InvalidSignatureError(SignatureError):
+    """The ``Linear-Signature`` did not verify against the shared secret."""
+
+    message = "invalid signature"
+
+
 class LinearWebhookEvent:
     """A Linear webhook as delivered to the Lambda Function URL.
 
     Owns the request boundary: it decodes the raw body bytes (base64 transport
     when present), lowercases the headers, and verifies the ``Linear-Signature``
-    HMAC against the shared secret. The raw body is stored once, byte-identical to
-    what was signed, and handed out unchanged — it is never re-serialised, which is
-    the opaqueness invariant the downstream publish/enqueue depend on.
+    HMAC against the shared secret on construction. The raw body is stored once,
+    byte-identical to what was signed, and handed out unchanged — it is never
+    re-serialised, which is the opaqueness invariant the downstream
+    publish/enqueue depend on.
     """
 
     def __init__(self, event: Mapping[str, Any], secret: str) -> None:
@@ -103,6 +122,7 @@ class LinearWebhookEvent:
         self._body = self._decode_body(event)
         self._signature = self._headers.get(_SIGNATURE_HEADER)
         self._secret = secret
+        self._error = self._validate()
 
     @staticmethod
     def _decode_body(event: Mapping[str, Any]) -> bytes:
@@ -112,6 +132,14 @@ class LinearWebhookEvent:
             return base64.b64decode(body)
         return body.encode("utf-8")
 
+    def _validate(self) -> Optional[SignatureError]:
+        """Why the signature check failed, or ``None`` when the request is valid."""
+        if self._signature is None:
+            return MissingSignatureError()
+        if not verify(self._body, self._secret, self._signature):
+            return InvalidSignatureError()
+        return None
+
     @property
     def body(self) -> bytes:
         """The raw request bytes, byte-identical to what was signature-verified."""
@@ -119,16 +147,12 @@ class LinearWebhookEvent:
 
     def is_valid(self) -> bool:
         """Whether the request carries a ``Linear-Signature`` that verifies the body."""
-        return self._signature is not None and verify(
-            self._body, self._secret, self._signature
-        )
+        return self._error is None
 
     @property
     def error_message(self) -> HTTPResponse:
         """The 401 for an unsigned or tampered request (read only when invalid)."""
-        if self._signature is None:
-            return {"statusCode": 401, "body": "missing signature"}
-        return {"statusCode": 401, "body": "invalid signature"}
+        return {"statusCode": 401, "body": self._error.message}
 
     def forwarded_headers(self) -> dict[str, str]:
         """The headers Cyrus needs, selected and restored to their canonical names."""
