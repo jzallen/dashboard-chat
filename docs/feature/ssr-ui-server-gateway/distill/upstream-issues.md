@@ -27,4 +27,6 @@ and repoint the Linear "Catalog Behind BFF Gateway" project description bullet #
 amendment. Do **not** silently rewrite history — add a dated supersession note that links the
 amendment.
 
-**Status:** open → closed when DC-119 Task D lands.
+**Status:** closed — the three DISCUSS artifacts carry dated supersession notes
+pointing at ADR-034 §"Amendment (2026-06-25)"; the Linear "Catalog Behind BFF
+Gateway" project description bullet #1 is repointed at the amendment.

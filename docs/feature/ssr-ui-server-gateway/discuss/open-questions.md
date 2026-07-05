@@ -109,6 +109,12 @@ and a single point of failure on the new hot path.
 These are NOT open; the brainstorm settled them and DESIGN should treat them as
 inputs, not choices:
 
+> **Superseded (2026-06-25).** The first non-question below ("reactive reads stay
+> in the client `DataCatalog`") is superseded by
+> [ADR-034 §"Amendment (2026-06-25)"](../../../decisions/adr-034-frontend-coexistence-via-rrv7-framework-mode.md):
+> derivation stays server-side in the loader and SSE is a revalidation *trigger*,
+> with no client-side graph state. Preserved as captured; not rewritten.
+
 - **Reactive reads stay in the client `DataCatalog`; only cold/initial/
   static-after-load reads move to server loaders.** (The "does it change
   reactively after the route loads?" test.)
