@@ -11,6 +11,16 @@
 
 ## Recommendation
 
+> **⚠️ SUPERSEDED 2026-07-05 — see `buy-vs-build.md`.** The DECLINE below was a
+> compile-plane-biased read: it let ADR-026 (which governs *only* the SQL
+> compile/render plane) veto the entire proposal, and framed the exercise as
+> "does LakeKeeper fit our current internals" instead of the buy-vs-build
+> question the issue actually asks ("which load-bearing features are we
+> reinventing that Iceberg/LakeKeeper already carry"). The corrected finding
+> separates four planes and lands on a **scoped BUY** of the
+> catalog/management/audit plane while keeping Ibis on the compile plane. The
+> analysis below is retained for the record; `buy-vs-build.md` is authoritative.
+
 **DECLINE now** as the default, with a **conditional bounded SPIKE** that unlocks
 only if a concrete Iceberg-consuming client requirement is produced first.
 **Do not ADOPT** on current evidence.
