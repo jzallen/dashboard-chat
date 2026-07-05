@@ -109,6 +109,43 @@ Project entity. So the buy question is specifically "do the *project* CRUD route
 tenant's LakeKeeper Management API" — users and orgs are handled elsewhere (IdP and control
 plane respectively).
 
+### Delegation shape: LakeKeeper *as a repository* (the right seam)
+The cleanest integration is **not** to re-route controllers at all — it's to treat
+LakeKeeper as a **repository adapter behind the port the project use cases already
+depend on**. The backend is already hexagonal: use cases receive ports via
+`RepositoryContainer` (`.projects`, per-aggregate under ADR-020) and `@with_repositories`
+injects the adapters (`create_project.py` never names a concrete store). So a
+**`LakeKeeperProjectRepository`** implementing that same port slots in with **zero change
+to routing, controllers, or use-case logic** — the use case still calls
+`repositories.projects.create(...)`; only the adapter behind it talks to LakeKeeper's
+Management API and maps our domain `Project` ↔ LakeKeeper Project. This is exactly how the
+codebase already isolates storage (`repositories/lake/` hides Parquet-on-S3), so it's an
+idiomatic extension, not a new pattern.
+
+**What the port abstracts cleanly:** the interface, the entity mapping, and the ability to
+choose the adapter per environment (local Postgres repo vs. LakeKeeper repo) or even
+compose them.
+
+**What the port does *not* dissolve — two things DESIGN must decide:**
+1. **Unit-of-work / atomicity.** `@with_repositories` auto-commits a SQLAlchemy session;
+   LakeKeeper is an external HTTP service **outside that transaction**. A use case that
+   writes a local row *and* a LakeKeeper Project can't commit both atomically. So the
+   adapter choice is really an **authority choice**: (a) LakeKeeper is sole SoT (adapter
+   reads/writes only LakeKeeper; no local row) — cleanest, but see #2; (b) local row is
+   SoT with async projection to LakeKeeper (outbox/reconcile); (c) dual-write with
+   compensation. The port makes the choice swappable; it doesn't make it for you.
+2. **Referential integrity.** `datasets.project_id` / `views.project_id` FK to the local
+   `projects` row. If LakeKeeper becomes sole SoT, those FKs need either a thin local
+   **shadow row** (mirror of the LakeKeeper project id) or a schema rework. A repository
+   port hides *where project data lives*; it does not remove the DB-level FK constraint.
+
+**Bottom line:** "LakeKeeper as a repository" is the correct architectural seam and keeps
+the application layer untouched — the remaining decision is which **authority model** the
+adapter encodes (SoT vs. mirror vs. dual-write), which is the same fork noted above, now
+localized to one adapter instead of smeared across controllers. The same pattern
+generalizes to **datasets/sources → an Iceberg-table repository** and composes with the
+existing `lake` repository.
+
 ---
 
 ## Q3 — Will LakeKeeper auth integrate with WorkOS?
