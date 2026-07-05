@@ -29,15 +29,30 @@ status-quo bias the DISCOVER wave exists to catch.
 
 LakeKeeper organizes resources as **Server → Project → Warehouse → Namespace →
 Table/View** ([concepts](https://docs.lakekeeper.io/docs/0.12.x/concepts/)). Mapped onto
-our model (grounded in code):
+our model **under the per-org tenant-isolation posture** (see "Tenancy" below):
 
 | LakeKeeper entity | Our concept | Evidence | Fit |
 |---|---|---|---|
-| **Warehouse** (a storage location + storage-profile/credential) | Per-org/-project S3 prefix `datasets/{project_id}/{dataset_id}/` | `migrations/001_initial_schema.py:59`, `ingestion.py:236` | **Strong** — a Warehouse *is* a bucket+prefix+creds, which we already compute per dataset. |
-| **Namespace** (logical grouping of tables) | `projects` (a design workspace grouping datasets/sources/views) | `projects` table `001:46-55`; datasets FK `project_id` | **Strong** — Namespace ≈ Project. |
+| **Server** (a whole LakeKeeper deployment) | **Org / tenant** — each org runs its own stack incl. its own LakeKeeper | tenant-isolation posture (control-plane provisions per-org stacks) | **Strong** — org is the *deployment boundary*, not a catalog object. One LakeKeeper Server per org. |
+| **Project** | **`projects`** (a design workspace) | `projects` table `001:46-55`; datasets/views FK `project_id` | **Strong — direct, same level.** dc project → LakeKeeper Project. |
+| **Warehouse** (a storage location + storage-profile/credential) | The project's S3 storage `datasets/{project_id}/…` | `migrations/001_initial_schema.py:59`, `ingestion.py:236` | **Strong** — one default Warehouse per project; domain segregation (extra Warehouses) added later if needed. |
+| **Namespace** (logical grouping of tables) | *(intentionally unimplemented)* | — | **Deferred** — leave unimplemented; if the REST spec requires one, configure a single **default namespace** at build. Add later for domain segregation. |
 | **Table** | `sources` / `datasets` (schema in `schema_config` JSON) | `models/dataset.py:94-96`, `sources` table `019:36-61` | **Strong for physical tables** — Iceberg table schema replaces `schema_config` JSON-in-a-column with a real, evolvable catalog schema. |
 | **View** (Iceberg materialized/logical view) | `views` / `reports` (Ibis-compiled, re-derived) | `views` table `005`, `models/view.py` | **Sink-only** — `[A26]` forbids reading a stored view definition back at render. An Iceberg View can be an **export target** for BI, not the source of truth. |
 | **Role / User** | (none — we have no user/member table) | Area-1 finding: "app has NO user/member management API" | **N/A locally** — both we and LakeKeeper defer to the IdP (see Q3). |
+
+### Tenancy & control-plane assumptions (working model)
+
+- **Org = tenant = deployment boundary.** Most of the stack is deployed **per org** with
+  minimal shared services; each org therefore gets its **own LakeKeeper Server**. Org is
+  *above* the LakeKeeper hierarchy, not an entity inside a shared catalog.
+- **Control plane is not built yet.** Org-create, auth-proxy, and ui-state are candidates
+  to **become or feed** a future control-plane app that provisions and manages the per-org
+  stacks (including standing up each org's LakeKeeper). Org lifecycle lives there, not in
+  the per-org data plane.
+- **Consequence for the mapping:** because org resolves to a whole Server, the catalog
+  hierarchy inside a tenant starts at **Project = dc project**. This is why the earlier
+  "offset by one level" mapping was wrong — it tried to place org *inside* the catalog.
 
 **Where we're reinventing:** `schema_config` as JSON-in-a-column (`models/dataset.py:94`)
 plus `partition_fields` JSON (`:97`) is a hand-rolled, non-evolvable stand-in for exactly
@@ -73,19 +88,23 @@ table:
 - `PATCH /api/projects/{id}`, `DELETE /api/projects/{id}` → update/delete
   (`routers/projects.py:193-227`, `controllers/project_controller.py:59-93`)
 
-These could delegate to **LakeKeeper Namespaces** (create/list/delete via its Management
-API under `/management`). That is a genuine buy candidate. **But it moves authority**:
-today `datasets.project_id`, `views.project_id`, audit entries, and org-scoping all FK to
-our `projects` row. Making LakeKeeper authoritative for project existence means either
-(a) LakeKeeper Namespace is the source of truth and we keep a local mirror row for the
-FKs, or (b) we keep `projects` local and *also* create a Namespace per project (dual
-write). **(b) is the low-risk first slice**; **(a) is the "full buy" that a later
-decision could ratify.**
+These could delegate to **LakeKeeper Projects** (create/list/delete via its Management API
+under `/management`) — a **direct, same-level mapping** (dc project → LakeKeeper Project),
+each backed by a default **Warehouse** for its storage. That is a genuine buy candidate.
+**But it moves authority**: today `datasets.project_id`, `views.project_id`, audit
+entries, and org-scoping all FK to our `projects` row. Making LakeKeeper authoritative for
+project existence means either (a) LakeKeeper Project is the source of truth and we keep a
+local mirror row for the FKs, or (b) we keep `projects` local and *also* create a
+LakeKeeper Project per project (dual write). **(b) is the low-risk first slice**; **(a) is
+the "full buy" that a later decision could ratify.**
 
-**Honest caveat:** LakeKeeper's own **Project** entity is a container for *Warehouses*
-(storage), which is closer to our **org** than to our **project**. So the clean mapping is
-**our org → LakeKeeper Project/Warehouse**, **our project → LakeKeeper Namespace**. Don't
-let the shared word "project" imply a 1:1 swap — the levels are offset by one.
+**Whose route is it, though — data plane or control plane?** Under tenant isolation, org
+lifecycle belongs to the (future) **control plane** (org-create + auth-proxy + ui-state as
+its seed), which stands up each org's LakeKeeper Server. **Project** lifecycle is a
+*within-tenant* concern and is the clean candidate to delegate to that org's LakeKeeper
+Project entity. So the buy question is specifically "do the *project* CRUD routes call the
+tenant's LakeKeeper Management API" — users and orgs are handled elsewhere (IdP and control
+plane respectively).
 
 ---
 
@@ -162,19 +181,23 @@ Not "decline," not "adopt everything." A **plane-separated buy-vs-build**:
    Views are export **sinks**, never render-time sources.
 5. **The design-intent audit log** — uniquely ours; complements Iceberg snapshots.
 
-**Concrete first slice for the spike to prove (days, non-prod):**
-- Stand up LakeKeeper pointed at WorkOS (`OPENID_PROVIDER_URI` = AuthKit issuer); confirm
-  a WorkOS user token authenticates and auto-provisions (Q3).
-- Create one Warehouse (our S3 prefix) + one Namespace (a project) + register one existing
-  dataset as an Iceberg table; confirm DuckDB can read it (Iceberg scan) so Ibis→DuckDB
-  compilation is unaffected (protects `[A26]`).
+**Concrete first slice for the spike to prove (days, non-prod), single-tenant:**
+- Stand up **one org's** LakeKeeper Server pointed at WorkOS (`OPENID_PROVIDER_URI` =
+  AuthKit issuer); confirm a WorkOS user token authenticates and auto-provisions (Q3).
+- Create one **LakeKeeper Project** (= a dc project) with a default Warehouse (our S3
+  prefix); leave Namespace at the default. Register one existing dataset as an Iceberg
+  table; confirm DuckDB can read it (Iceberg scan) so Ibis→DuckDB compilation is unaffected
+  (protects `[A26]`).
 - Decide the authZ boundary: LakeKeeper-authoritative for catalog objects vs.
   trust-the-proxy. This is the real fork, and it's an authorization decision, not a
   storage one.
 
 **Open forks a DESIGN wave must own (not blockers to the spike):**
-- Authority for `projects`: dual-write mirror (low risk) vs. LakeKeeper Namespace as SoT
+- Authority for `projects`: dual-write mirror (low risk) vs. LakeKeeper Project as SoT
   (full buy) — Q2.
+- **Control-plane shape:** where org-create + auth-proxy + ui-state consolidate into a
+  control plane that provisions each org's LakeKeeper Server, and whether Namespaces stay
+  unimplemented or a default namespace is baked into the per-tenant build.
 - Parquet→Iceberg migration shape (expand/contract, coexistence) — was a stated non-goal;
   the spike can register-in-place without rewriting data to keep it cheap.
 - Reconciling with `[A52]` (View/Report normalization, PROPOSED) so the Iceberg-sink
