@@ -17,7 +17,7 @@ Iceberg/LakeKeeper (store), and it is *already half-built* (see Q-dbt):
 | Plane | Owner today | ADR-026 applies? | LakeKeeper/dbt candidate? |
 |---|---|---|---|
 | **SQL define / compile** | Ibis (`[A26]` ACCEPTED) | **Yes — hard invariant** | **No.** Keep Ibis. It stays the definition compiler; it now emits a dbt model instead of only render-time SQL. |
-| **Execution / materialization** | Ibis→SQL→pg_duckdb over Parquet, ephemeral per render (`_pg_duckdb_query.py`) | Boundary — see Q-dbt | **dbt.** Promote today's dbt *eject* (handoff zip) into the *runtime*: `dbt run` materializes Ibis-generated models into the warehouse. |
+| **Execution / materialization** | Ibis→SQL→pg_duckdb over Parquet, ephemeral per render (`_pg_duckdb_query.py`) | Boundary — see Q-dbt | **DuckDB** (the engine) writes Iceberg to LakeKeeper directly (`INSERT INTO … SELECT`, GA since v1.4). dbt = *optional* orchestration/handoff, **not** a required runtime. |
 | **Catalog / storage** | `datasets.storage_path` → Parquet on S3 (`ingestion.py:236`), no catalog protocol | No | **Yes.** Iceberg tables + REST catalog (LakeKeeper) as dbt's write target. |
 | **Management** (orgs, projects, roles) | `projects` table + hand-rolled CRUD (`routers/projects.py`), WorkOS for identity | No | **Partial.** LakeKeeper Project = dc project (see Q2). |
 | **Audit / handoff** | `assistant_audit_entries` (design intent) + dbt-zip export (`export_dbt_project.py`) | No | **Complementary** — the eject *becomes* the runtime, so handoff = real Iceberg tables, not a zip (Q-audit + Q-dbt). |
@@ -166,71 +166,87 @@ already live in Iceberg; it does not cannibalize (2).
 
 ---
 
-## Q-dbt — Where does dbt fit? (the execution/materialization plane)
+## Q-dbt — Where does dbt fit, and is it even required?
 
-**Target architecture (your framing):** Ibis *defines* the SQL (operations-as-data), the
-generated **dbt model** is what actually *runs* against the warehouse via a
-**dbt-duckdb + Iceberg REST (LakeKeeper)** target. dbt is the missing middle plane between
-compile and storage. This is coherent — and most of it already exists.
+**First, untangle three roles that the earlier draft blurred.** They are separable, and
+naming them answers the question:
 
-### What's already built (verified)
-- **Ibis → dbt is done and ADR-026-ratified.** All three tiers compile through Ibis and
-  render as dbt models with real `{{ ref() }}`/`{{ source() }}` macros
-  (`_dbt/model_sql.py:89-99`, `_dbt/ibis_dbt_source.py:63-110`,
-  `report_ibis_compiler.py:63-123`). ADR-026 explicitly calls this out: *"dbt eject
-  contract becomes a first-class compiler output"* (`adr-026…:269-271`, MR-2).
-- **It's the SAME Ibis expression** used at render — built once, rendered two ways
-  (compact DuckDB SQL for pg_duckdb; dbt SQL with macros). No parallel codepath.
-- **The dbt project is complete:** `dbt_project.yml`, `profiles.yml` (duckdb + postgres
-  targets), staging/intermediate/marts, `schema.yml` tests, `sources.yml` with S3 paths
-  (`_dbt/profiles_yml.py:4-40`, `_dbt/__init__.py`).
-- **`materialization` columns already exist** on views/reports and are emitted into
-  `{{ config(materialized=…) }}` (`_dbt/intermediate.py:40`) — but drive **no runtime
-  today**.
+| Role | What it does | Does it move/compute data? | Candidates |
+|---|---|---|---|
+| **Catalog** | Holds table metadata + snapshots; vends storage credentials | **No** | **LakeKeeper** |
+| **Compute / write engine** | Executes the transform SQL, writes data files to S3, commits a snapshot | **Yes** | **DuckDB**, PyIceberg, Trino/Spark |
+| **Orchestration** | Builds the model DAG in order, incremental strategies, tests, handoff artifact | **No** | **dbt** (optional) |
 
-### What's net-new (the actual work)
-1. **A `dbt run` runtime.** Today it's a **handoff zip only** — there is no dbt invocation
-   anywhere in the backend (no subprocess/dbt-core). This is the core addition.
-2. **An Iceberg/LakeKeeper target** in `profiles.yml` — a third target alongside
-   duckdb/postgres: `dbt-duckdb` attaching to the org's LakeKeeper warehouse via
-   `iceberg_rest`.
-3. **Materialization as a runtime signal** — promote the static `materialization` column
-   to a real ephemeral/view/table decision, with idempotence + rebuild-on-change.
+The insight in your question is correct: **LakeKeeper is a catalog, not an engine, and dbt
+is an orchestrator, not an engine.** Neither writes bytes. *Something* has to execute the
+transform and write — and that something has always been DuckDB in our stack. So:
 
-### The elegant consequence
-The **eject and the runtime unify**. Today "design handoff" = a dbt zip; under this model
-the *same* dbt project is what materializes tables — so the handoff is **real Iceberg
-tables in a standard catalog**, exactly what a data engineer wants, and it retires both the
-dbt-zip *and* (potentially) the per-org pg_duckdb provisioning for BI (`[C4]`).
+### Q-dbt.1 — "Does dbt write through LakeKeeper without DuckDB?"
+**No — dbt never writes anything itself.** dbt compiles SQL and hands it to an *adapter*
+that drives an engine. "dbt writes to LakeKeeper" always expands to "dbt tells DuckDB (or
+Spark/Trino) to run `INSERT/CREATE`, and that engine commits the snapshot to LakeKeeper."
+Drop the engine and dbt has nothing to delegate to.
 
-### ADR-026 boundary — this is compatible, with one rule
-Materializing to a table is **not** the thing ADR-026 forbids. ADR-026 forbids storing the
-*definition* (SQL) and reading it back as the source of truth. A materialized Iceberg table
-is **derived data** — a cache/build-output — provided:
-- the dbt model SQL is **always regenerated from operations via Ibis**, never hand-edited
-  and read back, and
-- the materialized table is **invalidated/rebuilt when operations change** (it is never the
-  authority for *what a transform is*).
+### Q-dbt.2 — "Do we still need DuckDB for writes?"
+**You need *a* compute engine; it doesn't have to be DuckDB — but DuckDB is the incumbent,
+lightest choice and it can now do the whole write itself.** Two facts (verified):
+- **DuckDB → LakeKeeper write is GA**, not a research risk. DuckDB v1.4 LTS (Sep 2025)
+  shipped Iceberg writes; `ATTACH` a LakeKeeper catalog (via `CREATE SECRET` + OAuth2) and
+  writes commit as new snapshots — `CREATE TABLE`/`INSERT` (1.4), `DELETE`/`UPDATE` (1.4.2),
+  `MERGE INTO` (1.5.3, May 2026)
+  ([DuckDB Iceberg writes](https://duckdb.org/2025/11/28/iceberg-writes-in-duckdb),
+  [REST catalogs](https://duckdb.org/docs/current/core_extensions/iceberg/iceberg_rest_catalogs)).
+  So the minimal write path is `INSERT INTO <iceberg_table> SELECT <ibis-compiled-sql>` —
+  DuckDB both *computes* and *commits*, no dbt.
+- **PyIceberg** can write to a LakeKeeper REST catalog from **pure Python** (PyArrow,
+  no JVM/Spark; append/overwrite, ACID)
+  ([PyIceberg writing](https://py.iceberg.apache.org/api/)). So the FastAPI backend could
+  commit a result set to Iceberg *without DuckDB at all* — **if** it already holds the data
+  as Arrow. But our transforms are SQL (Ibis), so realistically a SQL engine executes them;
+  DuckDB→Arrow→PyIceberg is a valid split, but keeping DuckDB as the one-step writer is
+  simpler. **Net: keep DuckDB as the compute engine; it isn't strictly mandatory, but
+  replacing it means bringing another SQL engine.**
 
-Under that rule, reads may hit the materialized Iceberg table instead of re-running the
-whole pipeline over raw Parquet — a performance and handoff win — without violating the
-determinism invariant. This is the standard dbt mental model (models are code, tables are
-build artifacts) and it fits `[A26]` cleanly. **Flag for DESIGN:** write this rule down as
-an explicit corollary to ADR-026 so materialization isn't mistaken for stored-SQL.
+### Q-dbt.3 — "On reads, dbt isn't necessary — right?"
+**Correct, entirely.** DuckDB (server-side **or** WASM) `ATTACH`es the LakeKeeper REST
+catalog and scans Iceberg tables directly; dbt has **zero** role in the read/query path
+(dbt is build-time only). This is also the concrete unlock for the original issue's
+**DuckDB-WASM client-side preview** hypothesis: the browser talks to LakeKeeper + S3
+directly. *(Worth a spike check: WASM DuckDB holding catalog OAuth creds + `httpfs` S3
+access in-browser — same engine, but the browser credential/CORS path is the unknown, not
+the SQL.)*
 
-### The one real technical risk to probe
-The `dbt-duckdb → Iceberg-write → LakeKeeper` seam is the **least mature** link. dbt's
-native `iceberg_rest` catalog materialization (which names **LakeKeeper** and Nessie
-explicitly) is GA on **Snowflake/Databricks/BigQuery**, *not* DuckDB
-([dbt catalogs](https://docs.getdbt.com/docs/mesh/iceberg/about-catalogs),
-[dbt: give Iceberg a REST](https://www.getdbt.com/blog/iceberg-give-it-a-rest)). DuckDB
-*can* attach to LakeKeeper and write Iceberg
-([DuckDB Iceberg REST catalogs](https://duckdb.org/docs/current/core_extensions/iceberg/iceberg_rest_catalogs)),
-but the **dbt-duckdb adapter's** Iceberg materialization is *still evolving*
-([dbt-duckdb](https://github.com/duckdb/dbt-duckdb)). So the spike's #1 technical question:
-**can dbt-duckdb materialize an Iceberg table into LakeKeeper today**, or do we need a
-custom materialization macro (wrapping DuckDB's `ATTACH`/`CREATE TABLE`) or a heavier
-engine (Trino/Spark) for the write path? Everything upstream of that seam is already built.
+### So what is dbt actually for here? (honest answer: optional)
+If DuckDB writes to LakeKeeper directly and reads bypass dbt, dbt's remaining value is
+**orchestration + portability**, not runtime necessity:
+- the **build DAG** (staging→intermediate→marts ordering, `ref()` resolution) — but we
+  *already* compute that ref graph for the eject (`_dbt/__init__.py`), so the backend could
+  drive DuckDB in dependency order itself;
+- **incremental strategies** — DuckDB now has `MERGE INTO` natively, so we could implement
+  these directly;
+- **tests / schema contracts** — useful, though our constraints already live in operations;
+- the **portable handoff artifact** — still genuinely valuable for a data engineer who
+  wants to run our project inside *their* dbt stack.
+
+**Revised recommendation on dbt:** the **minimal materialization runtime is
+backend → DuckDB (Ibis-compiled SQL) → `INSERT INTO` LakeKeeper Iceberg table** — no dbt
+runtime required. **Keep dbt as the eject/handoff format** (already built,
+ADR-026-ratified — `adr-026…:269-271`) and adopt dbt-as-orchestrator *later, only if* the
+model DAG grows complex enough to be worth `dbt run` in-process. This is cheaper than
+"dbt is the runtime," avoids a new heavy runtime dependency, and sidesteps the one immature
+seam (the **dbt-duckdb adapter's** Iceberg materialization is still evolving —
+[dbt-duckdb](https://github.com/duckdb/dbt-duckdb) — even though DuckDB-the-engine is GA).
+
+### ADR-026 boundary — compatible, with one rule (unchanged by the above)
+Materializing a *table* is **not** what ADR-026 forbids (that's storing the *definition*
+and reading it back). A materialized Iceberg table is **derived data** — a cache/build
+output — provided (a) the SQL is **always regenerated from operations via Ibis**, never
+hand-edited and read back, and (b) the table is **rebuilt when operations change** (never
+the authority for *what a transform is*). Under that rule, reads may hit the materialized
+Iceberg table instead of re-running the pipeline over raw Parquet — a real perf + handoff
+win — with the determinism invariant intact. **Flag for DESIGN:** write this down as an
+explicit corollary to ADR-026 so materialization isn't mistaken for stored-SQL. This holds
+whether the writer is DuckDB-direct or dbt-orchestrated.
 
 ---
 
@@ -239,33 +255,41 @@ engine (Trino/Spark) for the write path? Everything upstream of that seam is alr
 Not "decline," not "adopt everything." A **plane-separated buy-vs-build**:
 
 **Buy / build-on (the coherent target):**
-1. **dbt as the execution/materialization plane** — promote the already-built dbt eject
-   from a handoff zip into the runtime: Ibis defines → dbt model materializes into the
-   warehouse (Q-dbt). This is the linchpin that ties compile → storage.
-2. **Iceberg catalog for materialized/physical tables** — dbt's write target via LakeKeeper;
-   replaces `schema_config`-JSON + raw Parquet with evolvable Iceberg tables + snapshots.
+1. **LakeKeeper as the Iceberg catalog** — the metadata/credential plane; replaces
+   `schema_config`-JSON + raw Parquet with evolvable Iceberg tables + snapshots.
+2. **DuckDB as the compute/write engine, writing Iceberg to LakeKeeper directly** —
+   `INSERT INTO … SELECT <ibis-sql>` (GA since DuckDB v1.4). This is the materialization
+   runtime; **no dbt runtime required** (Q-dbt).
 3. **WorkOS-backed auth** — proven OIDC path (Q3); the only real unknown is the authZ model.
-4. **Iceberg tables as the external-BI / handoff surface** — a standard catalog for data
-   engineers, retiring per-org pg_duckdb provisioning (`[C4]`) *and* the dbt-zip at once.
+4. **Iceberg tables as the external-BI / handoff + client-side (DuckDB-WASM) surface** — a
+   standard catalog for data engineers *and* an in-browser preview path, retiring per-org
+   pg_duckdb provisioning (`[C4]`) and the dbt-zip.
 
 **Keep-build (do not touch):**
 5. **Ibis as the definition compiler** (`[A26]`) — operations stay the source of truth;
-   Ibis now emits dbt models. Views/reports stay derived; Iceberg Views are export sinks.
+   Ibis emits the SQL that DuckDB executes (and can still eject a dbt project).
+   Views/reports stay derived; Iceberg Views are export sinks.
 6. **The design-intent audit log** — uniquely ours; complements Iceberg snapshots.
+
+**Optional / later:** **dbt as orchestrator** — only if the model DAG grows complex enough
+to warrant `dbt run` in-process. Keep the dbt *eject* as the portable handoff format now.
 
 **Concrete first slice for the spike to prove (days, non-prod), single-tenant:**
 - Stand up **one org's** LakeKeeper Server pointed at WorkOS (`OPENID_PROVIDER_URI` =
   AuthKit issuer); confirm a WorkOS user token authenticates and auto-provisions (Q3).
 - Create one **LakeKeeper Project** (= a dc project) with a default Warehouse (our S3
   prefix); leave Namespace at the default.
-- **Prove the dbt-write seam (highest technical risk):** take an existing dataset's
-  Ibis-generated dbt model and `dbt run` it via a **dbt-duckdb + `iceberg_rest`** target
-  into the LakeKeeper warehouse. If dbt-duckdb can't materialize Iceberg yet, fall back to
-  a custom materialization macro over DuckDB `ATTACH`/`CREATE TABLE`, and record which
-  worked (Q-dbt).
-- Confirm a reader (DuckDB Iceberg scan) can query the materialized table, and that
-  re-deriving the model from operations reproduces it — proving materialization is a
-  derived cache, not stored SQL (protects `[A26]`).
+- **Prove the write path (no dbt):** take an existing dataset's Ibis-compiled SQL and run
+  `INSERT INTO <iceberg_table> SELECT …` from DuckDB `ATTACH`ed to the LakeKeeper warehouse
+  (`CREATE SECRET` + OAuth2); confirm a snapshot commits. This is GA on DuckDB v1.4+, so it
+  should be low-drama — the point is to confirm the LakeKeeper auth + credential-vending
+  handshake end-to-end.
+- Confirm a reader (DuckDB Iceberg scan, server-side) queries the materialized table, and
+  that re-deriving from operations reproduces it — proving materialization is a derived
+  cache, not stored SQL (protects `[A26]`).
+- **Stretch:** repeat the read from **DuckDB-WASM** in the browser to validate the
+  client-side preview path (catalog OAuth + `httpfs`/CORS from the browser is the real
+  unknown here, not the SQL).
 - Decide the authZ boundary: LakeKeeper-authoritative for catalog objects vs.
   trust-the-proxy. This is the real fork, and it's an authorization decision, not a
   storage one.
