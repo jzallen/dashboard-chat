@@ -401,43 +401,16 @@ export async function createDataCatalog(
 
     /* ─── mutation commands (each commits a graph reducer + notifies) ────── */
     /**
-     * Rename a node — optimistic write-through. Commit the renamed graph for
-     * instant feedback, then PATCH via `primary.renameModel` (routed by the
-     * node's kind, derived from its layer); on rejection, roll the label back.
-     * Source-layer nodes have no backend entity, so they stay local-only.
+     * Rename a source node's display label — local-only. Source-layer nodes back
+     * no backend entity, so the rename lives entirely in the working graph.
+     * DECOUPLED from model/dataset renames, which land through the framework: the
+     * model detail rename form submits a PATCH via `useFetcher` to the
+     * `/ui-server/datasets/:id` action, and the loader re-derives on success.
      */
-    renameSource: async (id: string, name: string): Promise<void> => {
+    renameSource: (id: string, name: string): void => {
       const node = snapshot.graph.getNode(id);
       if (!node || node.label === name) return; // missing or no-op
-      const prior = node.label;
       commit({ graph: snapshot.graph.rename(id, name) });
-
-      const kind = modelKindForLayer(node.layer);
-      if (!primary.renameModel || kind === undefined) return; // local-only
-      log.info("write.rename", { id, kind, name });
-      try {
-        await primary.renameModel(id, kind, name);
-        log.debug("write.rename.ok", { id });
-      } catch (err) {
-        log.warn("write.rename.rollback", { id, err: String(err) });
-        commit({ graph: snapshot.graph.rename(id, prior) });
-      }
-    },
-    /**
-     * Set a dataset's dbt machine name (`modelName`) — PESSIMISTIC, the inverse
-     * of {@link renameSource}'s optimism. Renaming the warehouse machine name is
-     * a destructive warehouse migration, so the UI gates it behind a blocking
-     * confirm and writes FIRST: await `primary.setModelName`, and only on success
-     * commit the new `modelName` + notify. On rejection nothing is applied, so
-     * there is no rollback — the error propagates to the caller to surface.
-     * DECOUPLED from `renameSource` (display label): never touches the label.
-     */
-    setModelName: async (id: string, modelName: string): Promise<void> => {
-      if (!primary.setModelName) return; // local-only source backs no machine name
-      log.info("write.setModelName", { id, modelName });
-      await primary.setModelName(id, modelName);
-      log.debug("write.setModelName.ok", { id });
-      commit({ graph: snapshot.graph.withModelName(id, modelName) });
     },
     /** Add a live source node (dedup by id). */
     addSource: (node: LineageNode) =>
@@ -451,8 +424,8 @@ export async function createDataCatalog(
      * (datasets only; other kinds no-op server-side); on rejection, restore it.
      * Source-layer nodes have no backend entity, so they stay local-only.
      *
-     * On success, revalidate the scoped project (mirrors {@link toggleAudit}) so
-     * the derived views (lineage/preview/staging SQL) refetch from server truth.
+     * On success, revalidate the scoped project so the derived views
+     * (lineage/preview/staging SQL) refetch from server truth.
      * The revalidation passes `preserveCold` so the fresh-graph rebuild does NOT
      * evict the just-archived node from the Cold Storage drawer, and is fenced
      * by a captured-pid guard so a project switch mid-flight drops the stale
@@ -503,64 +476,6 @@ export async function createDataCatalog(
       } catch (err) {
         log.warn("write.restore.rollback", { id, err: String(err) });
         commit({ graph: snapshot.graph.archive(id, Date.now()) });
-      }
-    },
-
-    /* ─── write commands (optimistic write-through) ──────────────────────── */
-    /**
-     * Toggle a transform-type audit entry — the catalog's FIRST optimistic
-     * write-through. The flow:
-     *   1. capture the prior `enabled` (for rollback);
-     *   2. OPTIMISTIC: commit the flipped graph for instant UI feedback;
-     *   3. PATCH via `primary.toggleAuditEntry?` (the backend write port);
-     *   4. on success, REVALIDATE the current project's audit + lineage so the
-     *      recompiled staging SQL/preview and the server `enabled` reflect truth
-     *      (reusing `revalidateScoped` under the captured-pid guard);
-     *   5. on rejection, ROLL BACK by committing the prior `enabled` (never
-     *      crashes — mirrors the SWR error contract).
-     * A no-op flip (graph reducer returns the same instance) is dropped by the
-     * commit guard, and no write is attempted.
-     */
-    toggleAudit: async (
-      nodeId: string,
-      auditEntryId: string,
-      enabled: boolean,
-    ): Promise<void> => {
-      const prior = snapshot.graph
-        .auditFor(nodeId)
-        .find((entry) => entry.auditEntryId === auditEntryId)?.enabled;
-      const optimistic = snapshot.graph.withAuditToggled(
-        nodeId,
-        auditEntryId,
-        enabled,
-      );
-      if (optimistic === snapshot.graph) return; // no-op flip — nothing to write
-      commit({ graph: optimistic });
-
-      if (!primary.toggleAuditEntry) return;
-      const requestedPid = currentScopedPid;
-      log.info("write.toggleAudit", { nodeId, auditEntryId, enabled });
-      try {
-        await primary.toggleAuditEntry(auditEntryId, enabled);
-        log.debug("write.toggleAudit.ok", { auditEntryId });
-        // Revalidate only if still on the project the toggle targeted; fresh so
-        // the recompiled staging SQL/preview is re-fetched, not served stale.
-        if (requestedPid !== undefined && requestedPid === currentScopedPid) {
-          await revalidateScoped(requestedPid, { fresh: true });
-        }
-      } catch (err) {
-        log.warn("write.toggleAudit.rollback", {
-          auditEntryId,
-          err: String(err),
-        });
-        // Roll back the optimistic flip to the prior server value.
-        commit({
-          graph: snapshot.graph.withAuditToggled(
-            nodeId,
-            auditEntryId,
-            prior ?? false,
-          ),
-        });
       }
     },
 

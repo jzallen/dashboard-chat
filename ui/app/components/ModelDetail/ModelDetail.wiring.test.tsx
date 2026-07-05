@@ -1,17 +1,14 @@
 // @vitest-environment happy-dom
 //
-// Component-wiring specs for the S5 catalog mutations under the amended ADR-034
+// Component-wiring specs for the catalog mutations under the amended ADR-034
 // (idiomatic RRv7 for catalog data). Each mutation with a ModelDetail UI entry —
-// dataset display-name rename, model_name change, audit toggle — must submit via
-// an RRv7 `useFetcher` to its same-origin `/ui-server/*` action route, NOT call
-// the imperative `catalog.*` write-through. On success RRv7 auto-revalidates the
-// active loaders; pessimistic-by-default. (View/report rename has no ModelDetail
-// entry point today — see the note below.)
+// dataset display-name rename, model_name change, audit toggle — submits via an
+// RRv7 `useFetcher` to its same-origin `/ui-server/*` action route. On success
+// RRv7 auto-revalidates the active loaders; pessimistic-by-default. (View/report
+// rename has no ModelDetail entry point today — see the note below.)
 //
-// IF YOU'RE AN AGENT, READ THIS: these are the spec. They are RED until the
-// ModelDetail call sites are rewired off `catalog.renameSource/setModelName/
-// toggleAudit` onto fetcher submissions. Do NOT weaken them to match the current
-// imperative-catalog behaviour — turn them green by moving the wiring.
+// IF YOU'RE AN AGENT, READ THIS: these are the spec — the fetcher submission IS
+// the contract. Do NOT weaken the captured-request assertions.
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   createMemoryRouter,
@@ -149,11 +146,8 @@ describe("ModelDetail wiring — dataset display-name rename", () => {
 // belongs with whatever UI entry DC-100 introduces, not here.
 
 describe("ModelDetail wiring — model_name change", () => {
-  it("submits the model_name via a PATCH fetcher to /ui-server/datasets/:datasetId after confirming, not catalog.setModelName", async () => {
+  it("submits the model_name via a PATCH fetcher to /ui-server/datasets/:datasetId after confirming", async () => {
     const { captured } = await renderDetailInRouter("d1");
-    const setModelNameSpy = vi
-      .spyOn(catalog, "setModelName")
-      .mockResolvedValue();
     const subheader = () =>
       screen
         .getAllByText("stg_customers")
@@ -180,14 +174,12 @@ describe("ModelDetail wiring — model_name change", () => {
       params: { datasetId: "d1" },
       body: { model_name: "warm_leads" },
     });
-    expect(setModelNameSpy).not.toHaveBeenCalled();
   });
 });
 
 describe("ModelDetail wiring — audit toggle", () => {
-  it("submits the toggle via a PATCH fetcher to /ui-server/projects/:projectId/audit/:auditEntryId, not catalog.toggleAudit", async () => {
+  it("submits the toggle via a PATCH fetcher to /ui-server/projects/:projectId/audit/:auditEntryId", async () => {
     const { captured } = await renderDetailInRouter("d1");
-    const toggleSpy = vi.spyOn(catalog, "toggleAudit").mockResolvedValue();
     await waitFor(() =>
       expect(screen.getByText("Trimmed whitespace on email")).toBeTruthy(),
     );
@@ -202,6 +194,5 @@ describe("ModelDetail wiring — audit toggle", () => {
       params: { projectId: "proj-1", auditEntryId: "ae-tx" },
       body: { enabled: false },
     });
-    expect(toggleSpy).not.toHaveBeenCalled();
   });
 });

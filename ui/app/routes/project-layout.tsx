@@ -4,8 +4,8 @@
    `apiFetch` (the cookie→Bearer hop) so the scoped project's data is fetched
    server-side and serialized into the initial document payload, replacing the
    prior browser `clientLoader` kick. The component seeds the catalog from
-   `useLoaderData()` and re-scopes the `scopedProjectId` holder so writes
-   (`toggleAudit`/write-through revalidation) target the right pid.
+   `useLoaderData()` and re-scopes the `scopedProjectId` holder so scoped
+   revalidation targets the right pid.
 
    RRv7 re-fires the loader on every :projectId change — that's the re-scope seam
    `shouldRevalidate` keys on. The single catalog instance is preserved: the
@@ -229,7 +229,7 @@ export default function ProjectLayout() {
   const data = useLoaderData() as ProjectScopedData | undefined;
 
   // Seed the SSR'd project-scoped payloads into the catalog snapshot and re-scope
-  // the holder so writes (toggleAudit/write-through revalidation) target this pid.
+  // the holder so scoped revalidation targets this pid.
   useEffect(() => {
     if (!data) return;
     void selectProject(data.projectId);
