@@ -124,6 +124,32 @@ export class LineageGraph {
     );
   }
 
+  /**
+   * Build the initial graph with pre-seeded cold storage records — the loader
+   * path. Archived datasets derived by the server loader are seeded directly
+   * rather than relying on client optimistic state, so the Cold Storage drawer
+   * reflects server truth on the first render. Active nodes in `nodes` take
+   * precedence: an id that appears in both `nodes` and `coldRecords` is treated as
+   * active (the server un-archived it between requests).
+   */
+  static fromWithCold(
+    nodes: Record<string, LineageNode>,
+    edges: Edge[],
+    audit: Record<string, AuditEntry[]>,
+    coldRecords: ColdStorageRecord[],
+  ): LineageGraph {
+    const g = LineageGraph.from(nodes, edges, audit);
+    if (coldRecords.length === 0) return g;
+    const cold = new Map<string, ColdStorageRecord>();
+    for (const rec of coldRecords) {
+      if (!g.nodes.has(rec.node.id)) {
+        cold.set(rec.node.id, rec);
+      }
+    }
+    if (cold.size === 0) return g;
+    return new LineageGraph(g.nodes, g.edgeList, cold, g.addedIds);
+  }
+
   /* ─── reads (active DAG only — archived nodes are structurally invisible) ── */
 
   /** The node for `id`, or undefined if absent/archived. */

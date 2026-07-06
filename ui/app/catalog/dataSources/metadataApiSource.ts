@@ -34,7 +34,6 @@ import type {
   AuditEntry,
   Edge,
   LineageNode,
-  ModelKind,
 } from "../lineage";
 import type {
   ChatHistoryItem,
@@ -47,7 +46,7 @@ import {
   type BackendAuditEntry,
   toAuditByNode,
 } from "./auditMappers";
-import { apiGet, apiPatch, apiPost, apiUpload } from "./backendClient";
+import { apiGet, apiPost, apiUpload } from "./backendClient";
 import {
   type BackendDbtManifest,
   toDbtFiles,
@@ -207,7 +206,8 @@ export function metadataApiSource(
             tok,
           ),
         ]);
-        return toLineageGraph(sources, datasets, views, reports);
+        const { nodes, edges } = toLineageGraph(sources, datasets, views, reports);
+        return { nodes, edges };
       })();
       lineageBundlesByPid.set(pid, bundle);
     }
@@ -332,93 +332,6 @@ export function metadataApiSource(
       // Shares the per-pid sessions fetch with getAllChats.
       const sessions = await fetchSessions();
       return toRecents(sessions, Date.now());
-    },
-
-    async toggleAuditEntry(
-      auditEntryId: string,
-      enabled: boolean,
-    ): Promise<void> {
-      // The catalog's first WRITE: PATCH the project-scoped audit entry. The
-      // backend resolves the transform via the reversed FK and flips its status
-      // (recompiling the staging SQL on read). Project-scoped like the reads;
-      // rejects on a non-2xx (apiPatch throws) so the catalog rolls back its
-      // optimistic flip. The response body is ignored — the write-through
-      // revalidates the affected scope from the read endpoints instead.
-      const pid = await scopedProjectId();
-      await apiPatch(
-        `/api/projects/${encodeURIComponent(pid)}/audit/${encodeURIComponent(auditEntryId)}`,
-        { enabled },
-        deps.getToken(),
-      );
-    },
-
-    async renameModel(
-      id: string,
-      kind: ModelKind,
-      name: string,
-    ): Promise<void> {
-      // A dataset's editable display label is `display_name` (its `name` is the
-      // immutable upload filename); views and reports rename `name` directly.
-      // Datasets are addressed org-globally; views/reports are project-scoped.
-      // Rejects on a non-2xx (apiPatch throws) so the catalog rolls back.
-      const token = deps.getToken();
-      if (kind === "dataset") {
-        await apiPatch(
-          `/api/datasets/${encodeURIComponent(id)}`,
-          { display_name: name },
-          token,
-        );
-        return;
-      }
-      const pid = await scopedProjectId();
-      const collection = kind === "view" ? "views" : "reports";
-      await apiPatch(
-        `/api/projects/${encodeURIComponent(pid)}/${collection}/${encodeURIComponent(id)}`,
-        { name },
-        token,
-      );
-    },
-
-    async setModelName(id: string, modelName: string): Promise<void> {
-      // A dataset's dbt machine name is `model_name` — DECOUPLED from the
-      // `display_name` that `renameModel` edits. PATCH it on its own so a
-      // machine-name change never disturbs the display label. The backend
-      // normalizes (`stg_<snake>`), rejects collisions (409), and repoints the
-      // live warehouse view. Rejects on a non-2xx (apiPatch throws) so the
-      // caller surfaces the error (no optimistic flip to roll back).
-      await apiPatch(
-        `/api/datasets/${encodeURIComponent(id)}`,
-        { model_name: modelName },
-        deps.getToken(),
-      );
-    },
-
-    async archiveModel(id: string, kind: ModelKind): Promise<void> {
-      // Only datasets support a restorable soft-delete (archived_at + retention);
-      // views/reports have hard-delete only, so archiving them is left local-only
-      // (no backend op) rather than an irreversible delete.
-      //
-      // The soft-delete goes through the same-origin ui-server action rather
-      // than a direct backend call: the browser POSTs to
-      // `/ui-server/datasets/{id}/archive` (riding its session cookie), and the
-      // action forwards to the backend server-side through auth-proxy. Rejects
-      // on a non-2xx (apiPost throws) so the catalog restores the
-      // optimistically-hidden node.
-      if (kind !== "dataset") return;
-      await apiPost(
-        `/ui-server/datasets/${encodeURIComponent(id)}/archive`,
-        undefined,
-        deps.getToken(),
-      );
-    },
-
-    async restoreModel(id: string, kind: ModelKind): Promise<void> {
-      if (kind !== "dataset") return;
-      await apiPost(
-        `/ui-server/datasets/${encodeURIComponent(id)}/restore`,
-        undefined,
-        deps.getToken(),
-      );
     },
 
     async createDataset(file: File): Promise<{ id: string }> {

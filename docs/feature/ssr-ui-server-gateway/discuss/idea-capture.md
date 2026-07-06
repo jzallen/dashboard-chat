@@ -177,6 +177,13 @@ proven.**
 
 > This came from the prior TanStack-vs-loaders discussion and frames Phase 1.
 
+> **Superseded (2026-06-25).** The "reactive reads stay in the client catalog"
+> lean below is superseded by
+> [ADR-034 §"Amendment (2026-06-25)"](../../../decisions/adr-034-frontend-coexistence-via-rrv7-framework-mode.md):
+> derivation stays server-side in the loader (SSE is a revalidation *trigger*),
+> with no client-side graph state and no client-side delta-merge. Preserved below
+> as captured; not rewritten.
+
 - Server loaders replicate the request -> action -> auto-revalidate loop and add
   native SSR, but do NOT replicate TanStack's warm entity-keyed **CROSS-ROUTE
   cache**, granular by-key invalidation, or staleness/background refetch — those

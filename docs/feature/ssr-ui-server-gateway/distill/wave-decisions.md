@@ -107,3 +107,64 @@ MANDATORY and on the crafter before `gt mq submit`.
 - Production `ui/` web-ssr image + nginx containerization.
 - Residual SSR-safety hardening beyond the chat path (if systemic).
 - Adopting `@dashboard-chat/shared-chat` zod schema in `ui/` (DWD-5).
+
+---
+
+# DISTILL Decisions — slice-4: catalog write-through convergence (DC-119)
+
+> The end-state counterpart to slice-1. Slice-1 stood up the `/ui-server/chat` SSE relay and
+> added `catalog.revalidateScope()` as the reflection seam. Slice-4 **converges that seam and
+> the remaining write surface onto RRv7 idioms** and deletes the bespoke write-through, per
+> **ADR-034 §"Amendment (2026-06-25)"**. Roadmap:
+> [`slice-4-catalog-write-through-convergence-roadmap.json`](./slice-4-catalog-write-through-convergence-roadmap.json).
+> Notes: [`slice-4-catalog-write-through-convergence-notes.md`](./slice-4-catalog-write-through-convergence-notes.md).
+
+## Reconciliation (pre-scenario gate)
+
+**Result: 1 contradiction, resolved by newer authority — not blocking.** DISCUSS
+(`open-questions.md` §Non-questions; `discuss/wave-decisions.md` §Constraints) records
+"reactive reads stay client-side"; ADR-034 §Amendment (2026-06-25) supersedes it
+(server-side loader derivation, no client graph state). The reconciliation action is in
+DC-119 scope (Task D). Logged in
+[`upstream-issues.md`](./upstream-issues.md) as UI-1.
+
+## Key Decisions
+
+- **[DWD-7] Dead-code deletion, not repointing.** The S5 `/api` write ports
+  (`renameModel` / `setModelName` / `toggleAuditEntry`) are **deleted** — DC-12 already moved
+  their call sites to `useFetcher`. They are not repointed at `/ui-server`.
+
+- **[DWD-8] Archive/restore convergence reuses existing routes.** `POST
+  /ui-server/datasets/:id/archive|restore` and the `metadataApiSource` archive/restore ports
+  already target `/ui-server` (built in S4). Only the *call sites* move onto `useFetcher`
+  (`Upload/hooks.ts`, `ColdStorage/hooks.ts`); the bespoke `client.ts` archive/restore +
+  optimistic Cold-Storage machinery are then deleted. The "just-archived stays visible"
+  affordance is preserved **loader-side**, replacing the `preserveCold` client flag.
+
+- **[DWD-9] SSE trigger = `revalidator.revalidate()` by default.** Replaces
+  `catalog.revalidateScope()`. Scoped `fetcher.load()` is the measured fallback for
+  high-frequency `row_*` events only (ADR-034 stance). The captured-pid fence is replaced by
+  RRv7 loader re-runs keyed on `:projectId` — proven via a router-navigation test, not assumed.
+
+- **[DWD-10] Walking-skeleton: none (refactor).** Per methodology a WS is features-only.
+  The single acceptance seam is the **existing** `ui/app/__acceptance__/ssr-ui-server-chat-wire.test.tsx`,
+  **re-pointed** in Task C to assert the `revalidator` trigger rather than
+  `catalog.revalidateScope`. Test strategy otherwise inherits DWD-6 (real component + real
+  broker; `/api` port stubbed via `fetch`).
+
+- **[DWD-11] One story, four task sub-issues.** DC-119 is one story → one story branch → one
+  PR into `catalog-behind-bff/release-6`. Tasks A→B→C are sequential (shared `client.ts`);
+  Task D is independent. The tasks land as commits, not separate PRs (linear-cyrus branching).
+
+## Open items (carried into DELIVER)
+
+- **OI-1** source-node rename is local-only (no backend/`/ui-server`) — keep a narrowed,
+  decoupled source-local rename or remove; decide during Task A/B.
+- **OI-2** trigger granularity (whole-loader vs scoped `fetcher.load`) — measured in Task C.
+- **OI-3** whether the catalog store still needs `subscribe`/`getSnapshot`/`useSyncExternalStore`
+  after write-through removal — re-evaluate at the end of Task C.
+
+## Gate caveat (carried)
+
+Same as slice-1: `tools/test/test.sh --auto` routes `ui/` to `--backend`, so
+`cd ui && npx vitest run` green is MANDATORY on the crafter before submit.

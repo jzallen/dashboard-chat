@@ -7,6 +7,14 @@ import { fixtureSource } from "../../catalog";
 import { installCatalogForTest } from "../useCatalog";
 import { AssistantOverlay } from "./Chat";
 
+// AssistantOverlay calls useRevalidator() to trigger the framework revalidator
+// after transform_applied SSE events. Stub it here so the overlay renders
+// without a full data-router context.
+vi.mock("react-router", async () => {
+  const actual = await vi.importActual<typeof import("react-router")>("react-router");
+  return { ...actual, useRevalidator: () => ({ revalidate: vi.fn(), state: "idle" }) };
+});
+
 beforeEach(async () => {
   await installCatalogForTest(fixtureSource, fixtureSource);
 });

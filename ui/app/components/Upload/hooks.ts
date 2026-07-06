@@ -1,6 +1,7 @@
 /* Upload-flow state: the upload modal, the archive-confirm dialog it can open,
    and the catalog mutations behind creating / renaming / archiving a source. */
 import { useCallback, useState } from "react";
+import { useFetcher, useRevalidator } from "react-router";
 
 import type { LineageNode } from "../../catalog";
 import { createLogger } from "../../lib/log";
@@ -52,6 +53,8 @@ export function useUpload(flash: (id: string) => void) {
   // The StateProxy.postEvent is the saga's report sink — the browser narrates
   // each past-tense Source-creation outcome to ui-state (zero-egress model).
   const { proxy } = useStateProxy();
+  const archiveFetcher = useFetcher();
+  const { revalidate } = useRevalidator();
   const [modal, setModal] = useState<{
     open: boolean;
     source: LineageNode | null;
@@ -81,11 +84,15 @@ export function useUpload(flash: (id: string) => void) {
   const cancelArchive = useCallback(() => setConfirmArchive(null), []);
   const archiveSource = useCallback(
     (src: LineageNode) => {
-      catalog.archiveSource(src);
+      archiveFetcher.submit(null, {
+        method: "POST",
+        action: `/ui-server/datasets/${encodeURIComponent(src.id)}/archive`,
+        encType: "application/json",
+      });
       setConfirmArchive(null);
       closeUpload();
     },
-    [closeUpload],
+    [archiveFetcher, closeUpload],
   );
   const renameSource = useCallback(
     (id: string, name: string) => catalog.renameSource(id, name),
@@ -113,11 +120,13 @@ export function useUpload(flash: (id: string) => void) {
               existingSource.id,
               src.file,
               proxy.postEvent,
+              revalidate,
             )
           : await catalog.createSourceFromUpload(
               src.file,
               src.name,
               proxy.postEvent,
+              revalidate,
             );
         if (result?.datasetId) flash(result.datasetId);
       } catch (error) {
@@ -126,7 +135,7 @@ export function useUpload(flash: (id: string) => void) {
         if (detail) setMismatch(detail);
       }
     },
-    [flash, proxy, existingSource],
+    [flash, proxy, existingSource, revalidate],
   );
 
   return {
