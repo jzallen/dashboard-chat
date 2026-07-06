@@ -24,7 +24,7 @@ import type {
   ChatAppWireEvent,
 } from "@dashboard-chat/ui-state-wire";
 
-import { ApiError } from "../catalog/dataSources/backendClient";
+import { ApiError } from "./api-error";
 import type { Logger } from "./log";
 
 // ───────────────────────────── injected ports ─────────────────────────────

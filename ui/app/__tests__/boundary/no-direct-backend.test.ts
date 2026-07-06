@@ -135,16 +135,15 @@ describe("boundary — the browser never calls the backend /api directly", () =>
       // Drive the real browser flows through their production modules. The
       // metadataApiSource ports cover the catalog read, the rename mutation, and
       // the one-step upload; the onboarding driver bound to the app-shell default
-      // client (apiGet/apiPost) covers the Phase-B org probe.
+      // client (onboardingClient, which rewrites /api → /ui-server) covers the
+      // Phase-B org probe.
       const { metadataApiSource } = await import(
         "../../catalog/dataSources/metadataApiSource"
       );
       const { createOnboardingDriver } = await import(
         "../../lib/onboarding-driver"
       );
-      const { apiGet, apiPost } = await import(
-        "../../catalog/dataSources/backendClient"
-      );
+      const { onboardingClient } = await import("../../lib/onboarding-client");
       const { createLogger } = await import("../../lib/log");
 
       const source = metadataApiSource({
@@ -152,10 +151,11 @@ describe("boundary — the browser never calls the backend /api directly", () =>
         getProjectId: () => "p1",
       });
 
-      // app-shell's default onboarding client is { get: apiGet, post: apiPost };
-      // the driver hands it the backend-shaped `/api/*` path constants.
+      // app-shell's default onboarding client is the onboardingClient — it takes
+      // the driver's backend-shaped `/api/*` path constants and rewrites them onto
+      // the same-origin `/ui-server/*` gateway, so the probe never hits `/api`.
       const driver = createOnboardingDriver({
-        client: { get: (p) => apiGet(p), post: (p, b) => apiPost(p, b) },
+        client: onboardingClient,
         report: (async () => ({
           regions: {
             onboarding: { state: "awaiting_org_report" },

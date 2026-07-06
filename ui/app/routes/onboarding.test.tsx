@@ -25,13 +25,13 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError } from "../catalog/dataSources/backendClient";
 import { ThemeProvider } from "../components/AppShell";
 import {
   dropSessionFlag,
   giveSessionFlag,
   scriptedStateProxy as scriptedProxy,
 } from "../lib/_stateProxyTestKit";
+import { ApiError } from "../lib/api-error";
 import type { OnboardingClient } from "../lib/onboarding-driver";
 import { type StateProxy } from "../lib/state-proxy";
 import { StateProxyProvider } from "../lib/StateProxyProvider";
