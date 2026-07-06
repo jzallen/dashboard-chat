@@ -48,11 +48,20 @@ export type NavIntent =
   | { name: "chats" }
   | { name: "chat" };
 
+/** Resolves a node id to its lineage node (or undefined). The default reaches
+ *  the catalog singleton; injectable so the recent→node lookup is an explicit
+ *  dependency rather than a hidden module import. */
+export type NodeResolver = (nodeId: string) => LineageNode | undefined;
+
 /**
  * The intent surface leaf views and the shell call. Navigation intents resolve
  * to URL changes (useNavigate); chat-open intents reach the useChat() setter.
+ *
+ * `resolveNode` is the seam for the openRecent lookup — it defaults to the
+ * catalog singleton so production call sites need no argument, but making it a
+ * parameter keeps that store dependency explicit and swappable.
  */
-export function useNavIntents() {
+export function useNavIntents(resolveNode: NodeResolver = catalog.getNode) {
   const navigate = useNavigate();
   const location = useLocation();
   const { projectId } = useParams();
@@ -88,7 +97,7 @@ export function useNavIntents() {
 
   const openRecent = useCallback(
     (nodeId: string | null) => {
-      const node = nodeId ? catalog.getNode(nodeId) : undefined;
+      const node = nodeId ? resolveNode(nodeId) : undefined;
       if (node && node.ref && projectId) {
         navigate(nodeToPath(node, projectId));
         openChat();
@@ -97,7 +106,7 @@ export function useNavIntents() {
       navigate(projectId ? "/project/" + projectId : "/");
       openChat();
     },
-    [navigate, openChat, projectId],
+    [navigate, openChat, projectId, resolveNode],
   );
 
   /** Compatibility shim for the existing Chat / ChatSessionList call sites. */
