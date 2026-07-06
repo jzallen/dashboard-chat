@@ -30,6 +30,7 @@
  * it still throws when there is no scoped (or first) project (an empty-shell
  * state is a separate follow-up).
  */
+import { gatewayUpload } from "../../lib/gateway-client";
 import type {
   AuditEntry,
   Edge,
@@ -47,7 +48,7 @@ import {
   type BackendAuditEntry,
   toAuditByNode,
 } from "./auditMappers";
-import { apiGet, apiPatch, apiPost, apiUpload } from "./backendClient";
+import { apiGet, apiPatch, apiPost } from "./backendClient";
 import {
   type BackendDbtManifest,
   toDbtFiles,
@@ -422,18 +423,20 @@ export function metadataApiSource(
     },
 
     async createDataset(file: File): Promise<{ id: string }> {
-      // One-step multipart upload: the backend writes the raw file to the data
-      // lake (minio), creates the dataset (parquet + schema inference), and
-      // emits the upload outbox event — returning the created dataset. Rejects
-      // on a non-2xx (apiUpload throws) so the caller can surface the failure.
+      // One-step multipart upload brokered same-origin through the ui-server
+      // action (`POST /ui-server/uploads`), which forwards the multipart body to
+      // the backend `/api/uploads` server-side through auth-proxy — NOT a
+      // browser-direct `/api` call. The backend writes the raw file to the data
+      // lake (minio), creates the dataset (parquet + schema inference), and emits
+      // the upload outbox event — returning the created dataset. Rejects on a
+      // non-2xx (gatewayUpload throws) so the caller can surface the failure.
       const pid = await scopedProjectId();
       const form = new FormData();
       form.append("file", file);
       form.append("project_id", pid);
-      const res = await apiUpload<{ data: { id: string } }>(
-        "/api/uploads",
+      const res = await gatewayUpload<{ data: { id: string } }>(
+        "/ui-server/uploads",
         form,
-        deps.getToken(),
       );
       return { id: res.data.id };
     },

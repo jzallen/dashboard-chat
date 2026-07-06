@@ -1101,7 +1101,9 @@ describe("metadataApiSource — createDataset (multipart upload)", () => {
 
     expect(res).toEqual({ id: "ds.x" });
     const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(call[0]).toBe("/api/uploads");
+    // Same-origin to the ui-server action — NOT a browser-direct /api/uploads
+    // call. The action forwards the multipart body to the backend server-side.
+    expect(call[0]).toBe("/ui-server/uploads");
     expect(call[1].method).toBe("POST");
     const fd = call[1].body as FormData;
     expect(fd.get("project_id")).toBe("p1");
