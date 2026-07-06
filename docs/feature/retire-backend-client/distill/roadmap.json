@@ -13,13 +13,15 @@
       "id": "AC1",
       "statement": "The browser-reachable source graph contains no apiGet/apiPost/apiPatch/apiUpload transport symbols and the catalog data plane performs no credentials:'include' browser fetch.",
       "guard": "no-direct-backend.test.ts :: AC1 (source-graph scan)",
-      "state_at_skeleton": "RED — backendClient still exists and is imported by metadataApiSource, app-shell, onboarding-client, catalog/index"
+      "state_at_skeleton": "RED — backendClient still exists and is imported by metadataApiSource, app-shell, onboarding-client, catalog/index",
+      "state_final": "GREEN — backendClient deleted (DC-149); the browser transport is lib/gateway-client.ts (targets /ui-server); ApiError lives in lib/api-error.ts; catalog/index no longer re-exports apiGet/apiPatch"
     },
     {
       "id": "AC2",
       "statement": "Driving the browser onboarding + catalog + mutation + upload flows with a fetch spy issues zero requests to the backend /api — only /ui-server/* and the storage presigned PUT are allowed.",
       "guard": "no-direct-backend.test.ts :: AC2 (runtime guard)",
-      "state_at_skeleton": "RED — getProjects → /api/projects, renameModel → /api/datasets/:id, createDataset → /api/uploads, probeOrg → /api/orgs/me"
+      "state_at_skeleton": "RED — getProjects → /api/projects, renameModel → /api/datasets/:id, createDataset → /api/uploads, probeOrg → /api/orgs/me",
+      "state_final": "GREEN — probe via onboardingClient → /ui-server/orgs/me (DC-146); createDataset → /ui-server/uploads (DC-147); org-global reads seeded by the app-shell loader + RRv7 revalidation, renameModel → /ui-server PATCH (DC-148)"
     }
   ],
   "steps": [
