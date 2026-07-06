@@ -681,9 +681,12 @@ export async function createDataCatalog(
      * Sets the scoped-pid guard baseline (so write-through revalidation targets
      * this project) and builds a FRESH {@link LineageGraph} from the loader's
      * nodes/edges/audit, so the previous project's lineage/sessions/dbt are dropped
-     * rather than merged — switching scope never surfaces stale-scope data. The
-     * org-global payloads (projects/org) are untouched; `currentProject` continues
-     * to track the org-global project list.
+     * rather than merged — switching scope never surfaces stale-scope data.
+     *
+     * `currentProject` is DERIVED from the already-seeded org-global project list
+     * (looked up by `projectId`) rather than fetched — the browser no longer reads
+     * the backend for it. When the scoped project is not yet in the list (a race
+     * before the org-global seed), the prior `currentProject` is kept.
      */
     seedProjectScoped: (data: {
       projectId: string;
@@ -695,11 +698,21 @@ export async function createDataCatalog(
       recents: ChatHistoryItem[];
     }): void => {
       currentScopedPid = data.projectId;
+      const scoped = snapshot.projects.find((p) => p.id === data.projectId);
       commit({
         graph: LineageGraph.from(data.nodes, data.edges, data.audit),
         chats: data.chats,
         recents: data.recents,
         dbtFiles: data.dbtFiles,
+        ...(scoped
+          ? {
+              currentProject: {
+                id: scoped.id,
+                name: scoped.name,
+                description: scoped.desc,
+              },
+            }
+          : {}),
       });
     },
 

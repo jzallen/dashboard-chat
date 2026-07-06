@@ -9,7 +9,7 @@
 //   - the StateProxy transport (scripted via scriptedStateProxy — posted[] is the
 //     event-contract assertion target: org_created / org_create_failed{cause});
 //   - the injected OnboardingClient (the driver's HTTP port — scripted per test);
-//   - the useCatalog module seam (refreshOrgGlobal — the (f) handoff).
+//   - the RRv7 useRevalidator (the (f) handoff — re-runs the app-shell loader).
 //
 // BINDING DISPLAY RULE (ratification amendment 2): the UI NEVER renders a raw
 // cause tag. Re-edit causes (org_name_taken / org_name_invalid) → FRIENDLY inline
@@ -27,7 +27,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "../catalog/dataSources/backendClient";
 import { ThemeProvider } from "../components/AppShell";
-import { refreshOrgGlobal } from "../components/useCatalog";
 import {
   dropSessionFlag,
   giveSessionFlag,
@@ -38,9 +37,17 @@ import { type StateProxy } from "../lib/state-proxy";
 import { StateProxyProvider } from "../lib/StateProxyProvider";
 import OnboardingRoute from "./onboarding";
 
-vi.mock("../components/useCatalog", () => ({
-  refreshOrgGlobal: vi.fn(() => Promise.resolve()),
-}));
+/** The (f) handoff drives an RRv7 revalidation (re-running the app-shell server
+ *  loader) before navigating home; mock useRevalidator so the ordering + the
+ *  never-trap-on-failure contract are observable without a real loader. */
+const mockRevalidate = vi.fn(() => Promise.resolve());
+vi.mock("react-router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router")>();
+  return {
+    ...actual,
+    useRevalidator: () => ({ revalidate: mockRevalidate, state: "idle" }),
+  };
+});
 
 // ── scripted documents ───────────────────────────────────────────────────────
 
@@ -139,8 +146,8 @@ function renderOnboarding(proxy: StateProxy, client: OnboardingClient) {
 afterEach(dropSessionFlag);
 
 beforeEach(() => {
-  vi.mocked(refreshOrgGlobal).mockReset();
-  vi.mocked(refreshOrgGlobal).mockResolvedValue(undefined);
+  mockRevalidate.mockReset();
+  mockRevalidate.mockResolvedValue(undefined);
 });
 
 // ── behaviors ────────────────────────────────────────────────────────────────
@@ -354,13 +361,13 @@ describe("OnboardingRoute — default-project step (phase advanced)", () => {
     ]);
   });
 
-  it("project_selected: awaits refreshOrgGlobal BEFORE navigating — the org-global catalog is stale at the handoff", async () => {
+  it("project_selected: awaits the RRv7 revalidation BEFORE navigating — the org-global catalog is stale at the handoff", async () => {
     giveSessionFlag();
-    let resolveRefresh!: () => void;
-    vi.mocked(refreshOrgGlobal).mockImplementation(
+    let resolveRevalidate!: () => void;
+    mockRevalidate.mockImplementation(
       () =>
         new Promise<void>((resolve) => {
-          resolveRefresh = resolve;
+          resolveRevalidate = resolve;
         }),
     );
     const selected = projectPhaseDocument("project_selected");
@@ -368,23 +375,21 @@ describe("OnboardingRoute — default-project step (phase advanced)", () => {
 
     const { router } = renderOnboarding(proxy, makeClient());
 
-    // Refresh in flight — still on /onboarding, refresh requested exactly once.
+    // Revalidation in flight — still on /onboarding, requested exactly once.
     expect(await screen.findByText(/entering the app/i)).toBeTruthy();
-    expect(refreshOrgGlobal).toHaveBeenCalledTimes(1);
+    expect(mockRevalidate).toHaveBeenCalledTimes(1);
     expect(router.state.location.pathname).toBe("/onboarding");
 
-    resolveRefresh();
+    resolveRevalidate();
 
-    // Only AFTER the refresh settles does navigation occur.
+    // Only AFTER the revalidation settles does navigation occur.
     expect(await screen.findByText("APP")).toBeTruthy();
     expect(router.state.location.pathname).toBe("/");
   });
 
-  it("project_selected: a rejected refreshOrgGlobal still navigates into the app — never traps the user", async () => {
+  it("project_selected: a rejected revalidation still navigates into the app — never traps the user", async () => {
     giveSessionFlag();
-    vi.mocked(refreshOrgGlobal).mockRejectedValue(
-      new Error("catalog refresh failed"),
-    );
+    mockRevalidate.mockRejectedValue(new Error("revalidation failed"));
     const selected = projectPhaseDocument("project_selected");
     const { proxy } = scriptedProxy(selected, () => selected);
 
@@ -392,7 +397,7 @@ describe("OnboardingRoute — default-project step (phase advanced)", () => {
 
     expect(await screen.findByText("APP")).toBeTruthy();
     expect(router.state.location.pathname).toBe("/");
-    expect(refreshOrgGlobal).toHaveBeenCalledTimes(1);
+    expect(mockRevalidate).toHaveBeenCalledTimes(1);
   });
 
   it("project_create_failed (retry class): renders the generic surface + retry, never a raw cause tag", async () => {

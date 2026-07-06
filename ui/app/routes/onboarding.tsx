@@ -31,7 +31,8 @@
      awaiting_scope_report / resolving_initial_scope / creating_project
                               → progress surface (Phase D auto-creates)
      project_selected         → navigate("/", {replace:true}) — the (f) home
-                                redirect after refreshOrgGlobal()
+                                redirect after an RRv7 revalidation re-runs the
+                                app-shell server loader (re-seeding real projects)
      error_recoverable        → the generic retry surface */
 import {
   type ReducedContext,
@@ -39,12 +40,11 @@ import {
 } from "@dashboard-chat/ui-state-wire";
 import { useSelector } from "@xstate/react";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Navigate, useNavigate } from "react-router";
+import { Navigate, useNavigate, useRevalidator } from "react-router";
 
 import { hasSession } from "../auth/tokenStorage";
 import { useTheme } from "../components/AppShell";
 import { LoadingSurface } from "../components/LoadingSurface/LoadingSurface";
-import { refreshOrgGlobal } from "../components/useCatalog";
 import { createLogger } from "../lib/log";
 import { onboardingClient } from "../lib/onboarding-client";
 import {
@@ -74,6 +74,7 @@ export default function OnboardingRoute({
 }) {
   const authenticated = hasSession();
   const navigate = useNavigate();
+  const { revalidate } = useRevalidator();
   const { rootClassName } = useTheme();
   const { proxy, ensureBootstrap } = useStateProxy();
   const phase = useSelector(proxy, (doc) => doc.phase);
@@ -114,26 +115,28 @@ export default function OnboardingRoute({
 
   // Onboarding complete — enter the app (the (f) contract, byte-preserved). Also
   // covers landing on /onboarding ALREADY project_selected: navigate away. The
-  // app-shell's org-global catalog was loaded BEFORE this org/project existed
-  // (shouldRevalidate false), so refresh it FIRST — otherwise the user lands on a
-  // stale "No projects yet" shell. A failed refresh must not trap the user here:
-  // log it and navigate anyway (a reload recovers).
+  // org-global catalog is seeded server-side by the app-shell loader; that org/
+  // project did not exist when it last ran, so REVALIDATE first — the framework
+  // re-runs the app-shell server loader, which re-seeds real projects/org into the
+  // catalog (the ADR-034 convergence: no browser read of the backend). Otherwise
+  // the user lands on a stale "No projects yet" shell. A failed revalidation must
+  // not trap the user here: log it and navigate anyway (a reload recovers).
   const projectSelected = projectContext.state === "project_selected";
   useEffect(() => {
     if (authenticated && projectSelected) {
       log.info("onboarding.project_selected.entering_app", {});
       void (async () => {
         try {
-          await refreshOrgGlobal();
+          await revalidate();
         } catch (error: unknown) {
-          log.error("onboarding.refresh_org_global.failed", {
+          log.error("onboarding.revalidate.failed", {
             error: String(error),
           });
         }
         navigate("/", { replace: true });
       })();
     }
-  }, [authenticated, projectSelected, navigate]);
+  }, [authenticated, projectSelected, navigate, revalidate]);
 
   if (!authenticated) return <Navigate to="/login" replace />;
 
