@@ -2,16 +2,14 @@
 import { Fragment, type ReactNode, useState } from "react";
 import { useFetcher } from "react-router";
 
-import type { LineageNode, Model } from "../../catalog";
+import type { AuditEntry, LineageNode, Model } from "../../catalog";
 import { Icon, LayerBadge, LayerDot, SqlBlock, TAG_ICON } from "../primitives";
 import { catalog } from "../useCatalog";
 import { useCatalog } from "../useCatalog";
+import { InlineEditLabel } from "./InlineEditLabel";
 import styles from "./ModelDetail.module.css";
-
-// node.ref is typed as the loose ModelRef (an index-signature bag); the detail
-// panels are written against the full discriminated Model, which is the actual
-// runtime shape for every non-source node this view renders.
-const modelOf = (node: LineageNode) => node.ref as unknown as Model;
+import { narrowModel } from "./narrowModel";
+import { useInlineEdit } from "./useInlineEdit";
 
 function MatBadge({ m }: { m?: string }) {
   return m ? <span className="badge neutral up">{m}</span> : null;
@@ -66,10 +64,16 @@ function CopyBtn({ text }: { text: string }) {
   );
 }
 
-function AuditPanel({ node }: { node: LineageNode }) {
-  const m = modelOf(node);
+function AuditPanel({
+  m,
+  audit,
+  projectId,
+}: {
+  m: Model;
+  audit: AuditEntry[];
+  projectId: string;
+}) {
   const fetcher = useFetcher();
-  const audit = catalog.auditFor(node.id);
   // map transform before/after samples onto matching audit lines for datasets
   const samples = (m.kind === "dataset" ? m.transforms : []).map(
     (t) => t.sample,
@@ -128,7 +132,7 @@ function AuditPanel({ node }: { node: LineageNode }) {
                       {
                         method: "PATCH",
                         action: `/ui-server/projects/${encodeURIComponent(
-                          catalog.getCurrentProject()?.id ?? "",
+                          projectId,
                         )}/audit/${encodeURIComponent(a.auditEntryId!)}`,
                         encType: "application/json",
                       },
@@ -145,8 +149,7 @@ function AuditPanel({ node }: { node: LineageNode }) {
   );
 }
 
-function ColumnsPanel({ node }: { node: LineageNode }) {
-  const m = modelOf(node);
+function ColumnsPanel({ m }: { m: Model }) {
   let head: string[];
   let rows: ReactNode[][];
   if (m.kind === "dataset") {
@@ -225,8 +228,7 @@ function ColumnsPanel({ node }: { node: LineageNode }) {
   );
 }
 
-function SummaryRow({ node }: { node: LineageNode }) {
-  const m = modelOf(node);
+function SummaryRow({ m }: { m: Model }) {
   const kvs: [string, string | number][] = [];
   if (m.kind === "view") {
     kvs.push(
@@ -275,8 +277,7 @@ function fmtCell(v: string | number | null) {
   return String(v);
 }
 
-function DataPreview({ node }: { node: LineageNode }) {
-  const m = modelOf(node);
+function DataPreview({ m }: { m: Model }) {
   const cols =
     m.kind === "dataset"
       ? m.fields.map((f) => f.name)
@@ -334,34 +335,10 @@ function DataPreview({ node }: { node: LineageNode }) {
  *
  * Editing is gated to dataset nodes — views/reports render a static label.
  */
-function DetName({ node }: { node: LineageNode }) {
-  const editable = modelOf(node).kind === "dataset";
+function DetName({ node, m }: { node: LineageNode; m: Model }) {
+  const editable = m.kind === "dataset";
   const fetcher = useFetcher();
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(node.label);
-
-  if (!editing) {
-    return (
-      <div
-        className={styles.detName}
-        onClick={
-          editable
-            ? () => {
-                setDraft(node.label);
-                setEditing(true);
-              }
-            : undefined
-        }
-      >
-        {node.label}
-      </div>
-    );
-  }
-
-  const commit = () => {
-    setEditing(false);
-    const next = draft.trim();
-    if (!next || next === node.label) return; // no-op / cancel
+  const edit = useInlineEdit(node.label, (next) =>
     fetcher.submit(
       { display_name: next },
       {
@@ -369,21 +346,16 @@ function DetName({ node }: { node: LineageNode }) {
         action: `/ui-server/datasets/${encodeURIComponent(node.id)}`,
         encType: "application/json",
       },
-    );
-  };
+    ),
+  );
 
   return (
-    <input
-      className={`${styles.detName} ${styles.detNameEditing}`}
-      aria-label="Edit dataset name"
-      autoFocus
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") commit();
-        if (e.key === "Escape") setEditing(false);
-      }}
+    <InlineEditLabel
+      text={node.label}
+      edit={editable ? edit : undefined}
+      className={styles.detName}
+      editingClassName={styles.detNameEditing}
+      ariaLabel="Edit dataset name"
     />
   );
 }
@@ -465,9 +437,8 @@ function DetSubline({ node, m }: { node: LineageNode; m: Model }) {
   const isDataset = m.kind === "dataset";
   const text = isDataset ? node.modelName : m.name;
   const fetcher = useFetcher();
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(text ?? "");
   const [pending, setPending] = useState<string | null>(null);
+  const edit = useInlineEdit(text ?? "", (next) => setPending(next));
 
   if (!text) return null;
 
@@ -485,7 +456,7 @@ function DetSubline({ node, m }: { node: LineageNode; m: Model }) {
           displayName={node.label}
           onCancel={() => {
             setPending(null);
-            setDraft(text);
+            edit.cancel();
           }}
           onConfirm={() => {
             fetcher.submit(
@@ -503,42 +474,13 @@ function DetSubline({ node, m }: { node: LineageNode; m: Model }) {
     );
   }
 
-  if (!editing) {
-    return (
-      <div
-        className={styles.detFriendly}
-        onClick={() => {
-          setDraft(text);
-          setEditing(true);
-        }}
-      >
-        {text}
-      </div>
-    );
-  }
-
-  const commit = () => {
-    setEditing(false);
-    const next = draft.trim();
-    if (!next || next === text) return; // no-op / cancel → no dialog
-    setPending(next);
-  };
-
   return (
-    <input
-      className={`${styles.detFriendly} ${styles.detNameEditing}`}
-      aria-label="Edit dataset machine name"
-      autoFocus
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") commit();
-        if (e.key === "Escape") {
-          setDraft(text);
-          setEditing(false);
-        }
-      }}
+    <InlineEditLabel
+      text={text}
+      edit={edit}
+      className={styles.detFriendly}
+      editingClassName={styles.detNameEditing}
+      ariaLabel="Edit dataset machine name"
     />
   );
 }
@@ -550,13 +492,16 @@ export function ModelDetail({
   node: LineageNode;
   onOpen: (node: LineageNode) => void;
 }) {
-  const m = modelOf(node);
   useCatalog(); // subscribe: re-render when the catalog mutates
+  const m = narrowModel(node);
+  if (!m) return null; // unknown/absent model kind — degrade rather than crash
+  const audit = catalog.auditFor(node.id);
+  const projectId = catalog.getCurrentProject()?.id ?? "";
   return (
     <div className={`${styles.det} layer-${node.layer}`}>
       <div className={styles.detHd}>
         <div>
-          <DetName node={node} />
+          <DetName node={node} m={m} />
           <DetSubline node={node} m={m} />
         </div>
         <div className={styles.detBadges}>
@@ -568,11 +513,11 @@ export function ModelDetail({
         </div>
       </div>
       <DepStrip node={node} onOpen={onOpen} />
-      <SummaryRow node={node} />
+      <SummaryRow m={m} />
       <div className={styles.detGrid} style={{ marginTop: 16 }}>
-        <DataPreview node={node} />
-        <AuditPanel node={node} />
-        <ColumnsPanel node={node} />
+        <DataPreview m={m} />
+        <AuditPanel m={m} audit={audit} projectId={projectId} />
+        <ColumnsPanel m={m} />
         <div className="panel spanfull">
           <div className={styles.sqlBar}>
             <Icon
