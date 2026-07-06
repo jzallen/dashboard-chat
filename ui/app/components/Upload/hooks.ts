@@ -27,7 +27,7 @@ export type SchemaMismatchDetail = {
 
 /** Parse a thrown upload error into a {@link SchemaMismatchDetail}, or `null`
  *  when it is not a 422 schema-mismatch (a network/auth/other failure). The
- *  backendClient throws an `ApiError` whose `body` is the JSON:API error
+ *  gateway client throws an `ApiError` whose `body` is the JSON:API error
  *  envelope `{ errors: [{ detail: {missing, extra, type_mismatch} }] }`. */
 export function parseSchemaMismatch(error: unknown): SchemaMismatchDetail | null {
   if (!error || typeof error !== "object") return null;

@@ -164,8 +164,8 @@ describe("useUpload — createSource (slice-4 saga)", () => {
   it("exposes the schema-mismatch detail for the recovery UX when the add path 422s", async () => {
     const primary = sagaPrimary();
     primary.processUpload = vi.fn(async () => {
-      // Mirror the ApiError the backendClient throws on a 422 from /process.
-      const { ApiError } = await import("../../catalog/dataSources/backendClient");
+      // Mirror the ApiError the gateway client throws on a 422 from /process.
+      const { ApiError } = await import("../../lib/api-error");
       throw new ApiError(
         422,
         {

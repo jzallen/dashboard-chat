@@ -25,11 +25,11 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { hasSession } from "../auth/tokenStorage";
-import { ApiError } from "../catalog/dataSources/backendClient";
 import { ThemeProvider } from "../components/AppShell/ThemeProvider";
 import { FlashedNodeProvider } from "../components/FlashedNodeProvider";
 import { installCatalogForTest } from "../components/useCatalog";
 import { scriptedStateProxy } from "../lib/_stateProxyTestKit";
+import { ApiError } from "../lib/api-error";
 import type { OnboardingClient } from "../lib/onboarding-driver";
 import { type StateProxy } from "../lib/state-proxy";
 import { StateProxyProvider } from "../lib/StateProxyProvider";

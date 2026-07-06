@@ -15,7 +15,7 @@ import {
 } from "@dashboard-chat/ui-state-wire";
 import { describe, expect, it, vi } from "vitest";
 
-import { ApiError } from "../catalog/dataSources/backendClient";
+import { ApiError } from "./api-error";
 import { createOnboardingDriver, type OnboardingClient } from "./onboarding-driver";
 
 // ───────────────────────────── test doubles ─────────────────────────────

@@ -381,13 +381,16 @@ export async function createDataCatalog(
      * client-side, this commits the SSR'd values straight through — no round-trip,
      * no browser read.
      *
-     * Records the current project scope and builds a FRESH {@link LineageGraph}
+     * Sets the scoped-pid guard baseline and builds a FRESH {@link LineageGraph}
      * from the loader's nodes/edges/audit (plus any archived datasets as cold
      * records), so the previous project's lineage/sessions/dbt are dropped rather
-     * than merged — switching scope never surfaces stale-scope data. `currentProject`
-     * is re-scoped from the org-global projects list (a minimal record when the
-     * project isn't in the list yet). The org-global payloads (projects/org) are
-     * untouched.
+     * than merged — switching scope never surfaces stale-scope data.
+     *
+     * `currentProject` is DERIVED from the already-seeded org-global project list
+     * (looked up by `projectId`) rather than fetched — the browser no longer reads
+     * the backend for it. When the scoped project is not yet in the list (a race
+     * before the org-global seed), a minimal record is used. The org-global
+     * payloads (projects/org) are untouched.
      */
     seedProjectScoped: (data: {
       projectId: string;
