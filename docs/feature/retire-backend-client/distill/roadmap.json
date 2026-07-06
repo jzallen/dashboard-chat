@@ -1,0 +1,110 @@
+{
+  "feature": "retire-backend-client",
+  "slice": "slice-1-single-boundary",
+  "wave": "DELIVER",
+  "target_tree": "ui/",
+  "outside_in": true,
+  "acceptance_test": "ui/app/__tests__/boundary/no-direct-backend.test.ts",
+  "acceptance_gate": "cd ui && npx vitest run app/__tests__/boundary/no-direct-backend.test.ts",
+  "walking_skeleton_scenario": "the browser reaches the backend only through the same-origin /ui-server gateway; no browser flow calls the backend /api directly, and backendClient is gone",
+  "decisions_ref": "docs/feature/retire-backend-client/distill/single-boundary.feature",
+  "acceptance_criteria": [
+    {
+      "id": "AC1",
+      "statement": "The browser-reachable source graph contains no apiGet/apiPost/apiPatch/apiUpload transport symbols and the catalog data plane performs no credentials:'include' browser fetch.",
+      "guard": "no-direct-backend.test.ts :: AC1 (source-graph scan)",
+      "state_at_skeleton": "RED — backendClient still exists and is imported by metadataApiSource, app-shell, onboarding-client, catalog/index"
+    },
+    {
+      "id": "AC2",
+      "statement": "Driving the browser onboarding + catalog + mutation + upload flows with a fetch spy issues zero requests to the backend /api — only /ui-server/* and the storage presigned PUT are allowed.",
+      "guard": "no-direct-backend.test.ts :: AC2 (runtime guard)",
+      "state_at_skeleton": "RED — getProjects → /api/projects, renameModel → /api/datasets/:id, createDataset → /api/uploads, probeOrg → /api/orgs/me"
+    }
+  ],
+  "steps": [
+    {
+      "id": 0,
+      "issue": "DC-145",
+      "title": "Skeleton — boundary guard tests (RED) + ApiError relocation seam + roadmap SSOT",
+      "intent": "Land the two ACs as honest RED tests; create ui/app/lib/api-error.ts as the future home of ApiError (seam only, backendClient NOT deleted); write this DISTILL SSOT. Done-state: ui/ compiles, both guard tests exist and are RED.",
+      "files": [
+        "ui/app/lib/api-error.ts",
+        "ui/app/__tests__/boundary/no-direct-backend.test.ts",
+        "docs/feature/retire-backend-client/distill/roadmap.json",
+        "docs/feature/retire-backend-client/distill/single-boundary.feature"
+      ],
+      "verify": "cd ui && npx tsc --noEmit; cd ui && npx vitest run app/__tests__/boundary/no-direct-backend.test.ts (expect RED)",
+      "blocks": ["DC-146", "DC-147", "DC-148", "DC-149", "DC-150"]
+    },
+    {
+      "id": 1,
+      "issue": "DC-146",
+      "title": "Repoint the onboarding Phase-B probe off browser /api onto /ui-server",
+      "intent": "Wire app-shell's default onboarding client to the same-origin gateway (onboarding-client → /ui-server/*) instead of the /api-direct apiGet/apiPost defaultClient, so driver.probeOrg() no longer fetches /api/orgs/me from the browser.",
+      "files": ["ui/app/routes/app-shell.tsx", "ui/app/lib/onboarding-client.ts"],
+      "verify": "cd ui && npx vitest run app-shell onboarding-client no-direct-backend",
+      "blocked_by": ["DC-145"]
+    },
+    {
+      "id": 2,
+      "issue": "DC-147",
+      "title": "Repoint the one-step dataset upload (createDataset → /api/uploads) onto /ui-server",
+      "intent": "Move metadataApiSource.createDataset off the browser-direct apiUpload('/api/uploads') onto a /ui-server upload broker (server-side multipart forward), so the browser upload flow lands only on /ui-server.",
+      "files": [
+        "ui/app/catalog/dataSources/metadataApiSource.ts",
+        "ui/app/routes/ui-server/uploads.tsx",
+        "ui/app/routes.ts"
+      ],
+      "verify": "cd ui && npx vitest run metadataApiSource no-direct-backend",
+      "blocked_by": ["DC-145"]
+    },
+    {
+      "id": 3,
+      "issue": "DC-148",
+      "title": "Converge org-global refresh to RRv7 revalidation; retire browser metadataApiSource reads",
+      "intent": "Move the browser-direct catalog reads/mutations (getProjects, lineage getters, org/dbt reads, renameModel/setModelName/toggleAuditEntry) onto server loaders + /ui-server actions with RRv7 revalidation, so no browser catalog read or mutation touches /api.",
+      "files": [
+        "ui/app/catalog/dataSources/metadataApiSource.ts",
+        "ui/app/routes/app-shell.tsx",
+        "ui/app/routes/project-layout.tsx",
+        "ui/app/routes/ui-server/"
+      ],
+      "verify": "cd ui && npx vitest run no-direct-backend",
+      "blocked_by": ["DC-145"]
+    },
+    {
+      "id": 4,
+      "issue": "DC-149",
+      "title": "Delete backendClient; relocate ApiError; strip barrel re-exports (AC1 green)",
+      "intent": "Delete ui/app/catalog/dataSources/backendClient.ts, repoint every ApiError importer to ui/app/lib/api-error.ts, and remove the catalog/index barrel re-exports of apiGet/apiPatch. AC1 goes green.",
+      "files": [
+        "ui/app/catalog/dataSources/backendClient.ts (delete)",
+        "ui/app/lib/api-error.ts",
+        "ui/app/catalog/index.ts",
+        "ui/app/lib/onboarding-driver.ts",
+        "ui/app/routes/app-shell.test.tsx",
+        "ui/app/routes/onboarding.test.tsx",
+        "ui/app/lib/onboarding-client.test.ts",
+        "ui/app/components/Upload/hooks.test.tsx"
+      ],
+      "verify": "cd ui && npx tsc --noEmit; cd ui && npx vitest run",
+      "blocked_by": ["DC-146", "DC-147", "DC-148"]
+    },
+    {
+      "id": 5,
+      "issue": "DC-150",
+      "title": "Assert the single boundary — AC2 runtime guard green + convergence gate",
+      "intent": "With every browser flow on the gateway, AC2 goes green (zero /api hits). Reconcile the guard harness with the final wiring if the read/mutation entrypoints changed, and run the full ui/ suite as the convergence gate.",
+      "files": ["ui/app/__tests__/boundary/no-direct-backend.test.ts"],
+      "verify": "cd ui && npx tsc --noEmit; cd ui && npx vitest run",
+      "blocked_by": ["DC-149"]
+    }
+  ],
+  "final_gate": [
+    "cd ui && npx tsc --noEmit",
+    "cd ui && npx vitest run",
+    "./tools/test/test.sh --auto",
+    "commit per step; PR into catalog-behind-bff/release-6"
+  ]
+}
