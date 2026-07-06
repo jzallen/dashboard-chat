@@ -32,6 +32,7 @@ import {
   type ProjectSummary,
   type SourceUpload,
 } from "../catalog";
+import type { ColdStorageRecord } from "../catalog/lineageGraph";
 
 /**
  * The application catalog — a live ESM binding, assigned by {@link initCatalog}
@@ -132,6 +133,7 @@ export function seedProjectScoped(data: {
   chats: ChatHistoryItem[];
   recents: ChatHistoryItem[];
   sourceUploads: Record<string, SourceUpload[]>;
+  coldRecords?: ColdStorageRecord[];
 }): void {
   // `sourceUploads` is carried on the loader payload for shape parity but is not
   // part of the catalog snapshot — uploads are read on demand per source — so it

@@ -8,7 +8,7 @@
  * Pure: types only, no concrete data dependency. The fixture cast lives in the
  * adapter that implements this interface, not here.
  */
-import type { AuditEntry, Edge, LineageNode, ModelKind } from "../lineage";
+import type { AuditEntry, Edge, LineageNode } from "../lineage";
 import type {
   ChatHistoryItem,
   ChatScript,
@@ -44,14 +44,6 @@ export interface CatalogSource {
   getAudit(): Promise<Record<string, AuditEntry[]>>;
   getChatScript(): Promise<ChatScript>;
   getDbtFiles(): Promise<DbtFile[]>;
-  /**
-   * Archive a model-bearing node (soft-delete). Only datasets support archival
-   * (a restorable Cold Storage); the impl no-ops for kinds the backend can't
-   * soft-delete. Rejects on failure so the optimistic archive rolls back.
-   */
-  archiveModel?(id: string, kind: ModelKind): Promise<void>;
-  /** Restore a previously archived model. Mirrors {@link archiveModel}. */
-  restoreModel?(id: string, kind: ModelKind): Promise<void>;
   /**
    * Create a dataset by uploading a file (multipart, one step). The active
    * project scope is the source's own concern. Resolves with the new dataset's

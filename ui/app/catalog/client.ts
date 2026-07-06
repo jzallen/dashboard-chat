@@ -44,9 +44,8 @@ import type {
   Edge,
   Layer,
   LineageNode,
-  ModelKind,
 } from "./lineage";
-import { LineageGraph } from "./lineageGraph";
+import { LineageGraph, type ColdStorageRecord } from "./lineageGraph";
 import type {
   ChatHistoryItem,
   ChatScript,
@@ -61,17 +60,7 @@ import type {
  * are folded into the {@link LineageGraph}; the seven non-lineage payloads are
  * served straight off the snapshot.
  */
-/**
- * The model kind behind a node, from its layer (the domain 1:1: staging→dataset,
- * intermediate→view, mart→report). `undefined` for source nodes, which have no
- * backend entity and stay local-only on write.
- */
 const log = createLogger("catalog");
-
-const modelKindForLayer = (layer: Layer): ModelKind | undefined =>
-  (({ staging: "dataset", intermediate: "view", mart: "report" }) as const)[
-    layer as "staging" | "intermediate" | "mart"
-  ];
 
 interface CatalogSnapshot {
   graph: LineageGraph;
@@ -202,14 +191,13 @@ export async function createDataCatalog(
    *
    * Note: because this builds a fresh graph, per-project working mutations
    * (rename/archive/live-add) and cold storage reset on switch — correct, since
-   * they're per-project. The one exception is `preserveCold`: a same-scope,
-   * write-triggered revalidation (the revalidate-after-archive) carries the
-   * current cold-storage store forward so the just-archived node is not evicted
-   * from the Cold Storage drawer by the fresh-graph rebuild.
+   * they're per-project. Cold storage is now derived from server truth by the
+   * project-layout loader (via `toLineageGraph` coldRecords), so this revalidation
+   * no longer needs to carry prior cold state forward.
    */
   const revalidateScoped = async (
     requestedPid: string,
-    opts?: { fresh?: boolean; preserveCold?: boolean },
+    opts?: { fresh?: boolean },
   ): Promise<void> => {
     // A write-triggered revalidation must see fresh server state, so drop the
     // source's per-project cache first. A project SWITCH leaves it cached (SWR).
@@ -273,12 +261,7 @@ export async function createDataCatalog(
         ])
           .then(([n, e, a]) => {
             if (!stillCurrent()) return;
-            const rebuilt = LineageGraph.from(n, e, a);
-            commit({
-              graph: opts?.preserveCold
-                ? rebuilt.withColdStorageFrom(snapshot.graph)
-                : rebuilt,
-            });
+            commit({ graph: LineageGraph.from(n, e, a) });
           })
           .catch((err) =>
             log.warn("read.lineage.failed", {
@@ -419,67 +402,6 @@ export async function createDataCatalog(
     addModel: (node: LineageNode, edge: Edge) =>
       commit({ graph: snapshot.graph.addModel(node, edge) }),
     /**
-     * Archive a node — optimistic write-through. Hide it (→ Cold Storage) for
-     * instant feedback, then POST the soft-delete via `primary.archiveModel`
-     * (datasets only; other kinds no-op server-side); on rejection, restore it.
-     * Source-layer nodes have no backend entity, so they stay local-only.
-     *
-     * On success, revalidate the scoped project so the derived views
-     * (lineage/preview/staging SQL) refetch from server truth.
-     * The revalidation passes `preserveCold` so the fresh-graph rebuild does NOT
-     * evict the just-archived node from the Cold Storage drawer, and is fenced
-     * by a captured-pid guard so a project switch mid-flight drops the stale
-     * commit against the superseded scope.
-     */
-    archiveSource: async (src: LineageNode): Promise<void> => {
-      const archived = snapshot.graph.archive(src.id, Date.now());
-      if (archived === snapshot.graph) return; // absent or already archived
-      commit({ graph: archived });
-
-      const kind = modelKindForLayer(src.layer);
-      if (!primary.archiveModel || kind === undefined) return; // local-only
-      const requestedPid = currentScopedPid;
-      log.info("write.archive", { id: src.id, kind });
-      try {
-        await primary.archiveModel(src.id, kind);
-        log.debug("write.archive.ok", { id: src.id });
-        // Revalidate only if still on the project the archive targeted; fresh so
-        // derived views re-fetch, preserveCold so the drawer keeps the node.
-        if (requestedPid !== undefined && requestedPid === currentScopedPid) {
-          await revalidateScoped(requestedPid, {
-            fresh: true,
-            preserveCold: true,
-          });
-        }
-      } catch (err) {
-        log.warn("write.archive.rollback", { id: src.id, err: String(err) });
-        commit({ graph: snapshot.graph.restore(src.id) });
-      }
-    },
-    /**
-     * Restore an archived node — optimistic write-through. Bring it back from
-     * Cold Storage, then POST the un-archive via `primary.restoreModel`; on
-     * rejection, re-archive it.
-     */
-    restoreSource: async (id: string): Promise<void> => {
-      const restored = snapshot.graph.restore(id);
-      if (restored === snapshot.graph) return; // nothing archived under that id
-      commit({ graph: restored });
-
-      const node = snapshot.graph.getNode(id);
-      const kind = node ? modelKindForLayer(node.layer) : undefined;
-      if (!primary.restoreModel || kind === undefined) return; // local-only
-      log.info("write.restore", { id, kind });
-      try {
-        await primary.restoreModel(id, kind);
-        log.debug("write.restore.ok", { id });
-      } catch (err) {
-        log.warn("write.restore.rollback", { id, err: String(err) });
-        commit({ graph: snapshot.graph.archive(id, Date.now()) });
-      }
-    },
-
-    /**
      * Create a dataset from an uploaded file. Delegates to `primary.createDataset`
      * (the multipart upload that lands the file in the lake and creates the
      * dataset), then re-fetches the current project scope so the new dataset
@@ -608,10 +530,16 @@ export async function createDataCatalog(
       dbtFiles: DbtFile[];
       chats: ChatHistoryItem[];
       recents: ChatHistoryItem[];
+      coldRecords?: ColdStorageRecord[];
     }): void => {
       currentScopedPid = data.projectId;
       commit({
-        graph: LineageGraph.from(data.nodes, data.edges, data.audit),
+        graph: LineageGraph.fromWithCold(
+          data.nodes,
+          data.edges,
+          data.audit,
+          data.coldRecords ?? [],
+        ),
         chats: data.chats,
         recents: data.recents,
         dbtFiles: data.dbtFiles,

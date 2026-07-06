@@ -34,7 +34,6 @@ import type {
   AuditEntry,
   Edge,
   LineageNode,
-  ModelKind,
 } from "../lineage";
 import type {
   ChatHistoryItem,
@@ -207,7 +206,8 @@ export function metadataApiSource(
             tok,
           ),
         ]);
-        return toLineageGraph(sources, datasets, views, reports);
+        const { nodes, edges } = toLineageGraph(sources, datasets, views, reports);
+        return { nodes, edges };
       })();
       lineageBundlesByPid.set(pid, bundle);
     }
@@ -332,34 +332,6 @@ export function metadataApiSource(
       // Shares the per-pid sessions fetch with getAllChats.
       const sessions = await fetchSessions();
       return toRecents(sessions, Date.now());
-    },
-
-    async archiveModel(id: string, kind: ModelKind): Promise<void> {
-      // Only datasets support a restorable soft-delete (archived_at + retention);
-      // views/reports have hard-delete only, so archiving them is left local-only
-      // (no backend op) rather than an irreversible delete.
-      //
-      // The soft-delete goes through the same-origin ui-server action rather
-      // than a direct backend call: the browser POSTs to
-      // `/ui-server/datasets/{id}/archive` (riding its session cookie), and the
-      // action forwards to the backend server-side through auth-proxy. Rejects
-      // on a non-2xx (apiPost throws) so the catalog restores the
-      // optimistically-hidden node.
-      if (kind !== "dataset") return;
-      await apiPost(
-        `/ui-server/datasets/${encodeURIComponent(id)}/archive`,
-        undefined,
-        deps.getToken(),
-      );
-    },
-
-    async restoreModel(id: string, kind: ModelKind): Promise<void> {
-      if (kind !== "dataset") return;
-      await apiPost(
-        `/ui-server/datasets/${encodeURIComponent(id)}/restore`,
-        undefined,
-        deps.getToken(),
-      );
     },
 
     async createDataset(file: File): Promise<{ id: string }> {
