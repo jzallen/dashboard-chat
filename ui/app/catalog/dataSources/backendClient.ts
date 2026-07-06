@@ -14,26 +14,17 @@
  * stays free of app-auth dependencies.
  */
 
-/**
- * A non-2xx HTTP failure carrying the response `status` and the parsed error
- * `body` (or `null` when the body is not JSON). Extends `Error` and KEEPS the
- * original message text, so the catalog's existing call sites — which read
- * `err.message` and rely on `instanceof Error` — keep working unchanged. New
- * callers (the onboarding driver) read `.status`/`.body` to map a definitive
- * HTTP answer to a closed-union outcome cause.
- */
 import { handleUnauthorized } from "../../auth/unauthorized";
+import { ApiError } from "../../lib/api-error";
 
-export class ApiError extends Error {
-  constructor(
-    public readonly status: number,
-    public readonly body: unknown,
-    message?: string,
-  ) {
-    super(message);
-    this.name = "ApiError";
-  }
-}
+/**
+ * Re-exported from its relocation seam ({@link import("../../lib/api-error")}) so
+ * every importer — old (`catalog/dataSources/backendClient`) and new
+ * (`lib/api-error`) — shares ONE class identity while this module is retired.
+ * Once every call site imports from the seam directly, this module (and this
+ * re-export) is deleted.
+ */
+export { ApiError };
 
 /** Read the error body as JSON, tolerant of a non-JSON (or empty) body → null. */
 async function parseErrorBody(response: Response): Promise<unknown> {

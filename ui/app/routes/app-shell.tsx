@@ -28,7 +28,6 @@ import type {
   OrgSettings,
   ProjectSummary,
 } from "../catalog";
-import { apiGet, apiPost } from "../catalog/dataSources/backendClient";
 import {
   type BackendOrg,
   type BackendProject,
@@ -54,17 +53,17 @@ import {
 import { ChatProvider } from "../lib/chatContext";
 import { createLogger } from "../lib/log";
 import { useNavIntents } from "../lib/nav";
+import { onboardingClient } from "../lib/onboarding-client";
 import {
   createOnboardingDriver,
   type OnboardingClient,
 } from "../lib/onboarding-driver";
 import { useStateProxy } from "../lib/StateProxyProvider";
 
-/** The default backend client adapter — the Phase-B probe's real HTTP port. */
-const defaultClient: OnboardingClient = {
-  get: (path) => apiGet(path),
-  post: (path, body) => apiPost(path, body),
-};
+/** The Phase-B probe's HTTP port — the same-origin `/ui-server` gateway adapter
+ *  (shared with routes/onboarding.tsx), so the browser never probes `/api`
+ *  directly. */
+const defaultClient: OnboardingClient = onboardingClient;
 
 /** The org-global payload the server loader returns for the initial document. */
 export interface OrgGlobalData {
