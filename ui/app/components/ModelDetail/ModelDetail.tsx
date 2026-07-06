@@ -446,8 +446,8 @@ function ConfirmModelName({
  *
  * For a DATASET node this renders the EDITABLE dbt machine name
  * (`node.modelName`, e.g. `stg_customers`) — a SECOND, independent editor from
- * {@link DetName} (the display label). The two are DECOUPLED: this path only
- * ever calls `catalog.setModelName`, never `renameSource`. Editing is
+ * {@link DetName} (the display label). The two are DECOUPLED: this path edits
+ * only the machine name, never the display label. Editing is
  * PESSIMISTIC: a click opens a draft input; committing it opens a blocking
  * {@link ConfirmModelName} dialog, and only confirming writes (no optimistic
  * flip). Cancel/Escape reverts the draft with no write. Gates to nothing for a

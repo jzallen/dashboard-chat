@@ -133,13 +133,17 @@ describe("boundary — the browser never calls the backend /api directly", () =>
       globalThis.fetch = spy as unknown as typeof fetch;
 
       // Drive the real browser flows through their production modules. The
-      // metadataApiSource ports cover the catalog read, the rename mutation, and
-      // the one-step upload; the onboarding driver bound to the app-shell default
-      // client (onboardingClient, which rewrites /api → /ui-server) covers the
-      // Phase-B org probe.
+      // metadataApiSource port covers the one-step upload; the model rename now
+      // lands through the RRv7 `/ui-server/datasets/:id` action (submitted as a
+      // `gatewayPatch` from the browser, mirroring the ModelDetail fetcher); the
+      // onboarding driver bound to the app-shell default client (onboardingClient,
+      // which rewrites /api → /ui-server) covers the Phase-B org probe. The catalog
+      // reads are seeded server-side by the loaders, so no browser read remains to
+      // spy on here.
       const { metadataApiSource } = await import(
         "../../catalog/dataSources/metadataApiSource"
       );
+      const { gatewayPatch } = await import("../../lib/gateway-client");
       const { createOnboardingDriver } = await import(
         "../../lib/onboarding-driver"
       );
@@ -165,11 +169,12 @@ describe("boundary — the browser never calls the backend /api directly", () =>
         log: createLogger("boundary-guard"),
       });
 
-      // The ports are optional on PartialCatalogSource but present on
+      // The upload port is optional on PartialCatalogSource but present on
       // metadataApiSource; optional-call keeps the types honest without asserting.
       await Promise.allSettled([
-        source.getProjects?.(), // catalog read
-        source.renameModel?.("d1", "dataset", "Renamed"), // mutation
+        // mutation: the browser rename submits a PATCH to the /ui-server action,
+        // which forwards to /api/datasets/:id server-side — never browser-direct.
+        gatewayPatch("/ui-server/datasets/d1", { display_name: "Renamed" }),
         source.createDataset?.(new File(["a,b\n1,2"], "x.csv")), // upload
         driver.probeOrg(), // onboarding
       ]);
@@ -180,6 +185,19 @@ describe("boundary — the browser never calls the backend /api directly", () =>
       expect(
         backendHits,
         "browser flows still hit the backend /api directly instead of the /ui-server gateway",
+      ).toEqual([]);
+
+      // Every reached URL is either a same-origin /ui-server/* gateway route or
+      // the presigned storage PUT — the spec's allow-list, no third channel.
+      const offBoundary = urls.filter((u) => {
+        const { pathname } = new URL(u, "http://localhost");
+        const isGateway = pathname.startsWith("/ui-server/");
+        const isStoragePut = /^https?:\/\//.test(u) && !isGateway;
+        return !isGateway && !isStoragePut;
+      });
+      expect(
+        offBoundary,
+        "a browser flow reached a URL outside the /ui-server gateway + storage-PUT allow-list",
       ).toEqual([]);
     });
   });

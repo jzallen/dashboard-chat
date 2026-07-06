@@ -4,8 +4,8 @@
    `apiFetch` (the cookie→Bearer hop) so the scoped project's data is fetched
    server-side and serialized into the initial document payload, replacing the
    prior browser `clientLoader` kick. The component seeds the catalog from
-   `useLoaderData()` and re-scopes the `scopedProjectId` holder so writes
-   (`toggleAudit`/write-through revalidation) target the right pid.
+   `useLoaderData()` and re-scopes the `scopedProjectId` holder so scoped
+   revalidation targets the right pid.
 
    RRv7 re-fires the loader on every :projectId change — that's the re-scope seam
    `shouldRevalidate` keys on. The single catalog instance is preserved: the
@@ -51,6 +51,7 @@ import {
 } from "../catalog/dataSources/metadataMappers";
 import type { BackendSession } from "../catalog/dataSources/sessionMappers";
 import { toChatHistoryItem, toRecents } from "../catalog/dataSources/sessionMappers";
+import type { ColdStorageRecord } from "../catalog/lineageGraph";
 import { seedProjectScoped, selectProject } from "../components/useCatalog";
 import {
   apiFetch,
@@ -82,6 +83,8 @@ export interface ProjectScopedData {
   chats: ChatHistoryItem[];
   recents: ChatHistoryItem[];
   sourceUploads: Record<string, SourceUpload[]>;
+  /** Archived datasets derived server-side, seeded into cold storage on mount. */
+  coldRecords: ColdStorageRecord[];
 }
 
 /**
@@ -162,7 +165,7 @@ export async function loader({
   const manifest = unwrapSingle<BackendDbtManifest>(await dbtRes.json());
   const auditEntries = unwrapList<BackendAuditEntry>(await auditRes.json());
 
-  const { nodes, edges } = toLineageGraph(sources, datasets, views, reports);
+  const { nodes, edges, coldRecords } = toLineageGraph(sources, datasets, views, reports);
   const now = Date.now();
   return {
     projectId,
@@ -173,29 +176,31 @@ export async function loader({
     chats: sessions.map((session) => toChatHistoryItem(session, now)),
     recents: toRecents(sessions, now),
     sourceUploads: {},
+    coldRecords,
   };
 }
 
 /**
- * Re-scope only when the path project changes. Without this, RRv7 revalidates the
- * loader on every navigation under the layout — including search-param-only
- * changes (e.g. the workspace's `?view=` toggle) and nested resource navigations
- * — needlessly re-running the project-scoped reads. The scope's only input is
- * projectId, so projectId-equality is the precise revalidation key; on a change
- * the loader re-runs for the new scope and the prior scope's data is not surfaced.
+ * Re-run the loader when the path project changes (a re-scope) OR when a
+ * non-GET fetcher submission completes (an archive, restore, rename, or audit
+ * toggle). Without the mutation arm, RRv7 would skip revalidation after a
+ * same-URL POST because `shouldRevalidate` defaults to `false` for those — but
+ * those are exactly the writes whose effects need loader re-derivation. GET-only
+ * navigations under the layout (e.g. a `?view=` toggle) still skip re-fetch
+ * since their `formMethod` is absent.
  */
 export function shouldRevalidate({
   currentParams,
   nextParams,
+  formMethod,
 }: {
   currentParams: { projectId?: string };
   nextParams: { projectId?: string };
+  formMethod?: string;
 }) {
-  // TODO: this is a business rule about project-scope identity ("the scope changed
-  // iff the project changed"), not routing glue. It belongs on a domain model or
-  // projection (e.g. a scope-equality on ProjectSummary) that this route hook
-  // delegates to, keeping the rule reusable and the route module thin.
-  return currentParams.projectId !== nextParams.projectId;
+  if (currentParams.projectId !== nextParams.projectId) return true;
+  if (formMethod && formMethod !== "GET") return true;
+  return false;
 }
 
 /**
@@ -229,7 +234,7 @@ export default function ProjectLayout() {
   const data = useLoaderData() as ProjectScopedData | undefined;
 
   // Seed the SSR'd project-scoped payloads into the catalog snapshot and re-scope
-  // the holder so writes (toggleAudit/write-through revalidation) target this pid.
+  // the holder so scoped revalidation targets this pid.
   useEffect(() => {
     if (!data) return;
     void selectProject(data.projectId);

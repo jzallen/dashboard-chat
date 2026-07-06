@@ -5,9 +5,12 @@ import { metadataApiSource } from "./metadataApiSource";
 /**
  * metadataApiSource is now WRITES-ONLY: every read is seeded server-side by the
  * app-shell / project-layout loaders, so this source never reads the backend from
- * the browser. Each write goes same-origin to a `/ui-server/*` action (the browser
- * never touches `/api`), except the presigned storage PUT which is direct to
- * object storage. These tests pin the ui-server paths + the failure contract.
+ * the browser. Model-level mutations (rename / model_name / audit / archive /
+ * restore) land through the RRv7 route actions, not this source. What remains here
+ * is the source-from-upload saga: each write goes same-origin to a `/ui-server/*`
+ * action (the browser never touches `/api`), except the presigned storage PUT
+ * which is direct to object storage. These tests pin the ui-server paths + the
+ * failure contract.
  */
 
 /** A fetch stub that returns a JSON body and records each request init. */
@@ -25,175 +28,6 @@ const realFetch = globalThis.fetch;
 afterEach(() => {
   globalThis.fetch = realFetch;
   vi.restoreAllMocks();
-});
-
-describe("metadataApiSource — toggleAuditEntry (optimistic write-through PATCH)", () => {
-  it("PATCHes the project-scoped ui-server audit-entry action with the enabled body", async () => {
-    const fetchMock = stubFetch({ data: {} });
-    const source = metadataApiSource({
-      getToken: () => "secret-token",
-      getProjectId: () => "p1",
-    });
-
-    await source.toggleAuditEntry!("ae1", false);
-
-    const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(call[0]).toBe("/ui-server/projects/p1/audit/ae1");
-    expect(call[1].method).toBe("PATCH");
-    expect(JSON.parse(call[1].body as string)).toEqual({ enabled: false });
-    expect(call[1].credentials).toBe("include");
-    expect(
-      (call[1].headers as Record<string, string>).Authorization,
-    ).toBeUndefined();
-  });
-
-  it("throws when no project scope is available (a scoped write with no pid)", async () => {
-    stubFetch({ data: {} });
-    const source = metadataApiSource({ getToken: () => "tok" });
-    await expect(source.toggleAuditEntry!("ae1", true)).rejects.toThrow();
-  });
-
-  it("rejects on a non-2xx PATCH response (drives the catalog rollback)", async () => {
-    stubFetch({ detail: "boom" }, false);
-    const source = metadataApiSource({
-      getToken: () => "tok",
-      getProjectId: () => "p1",
-    });
-    await expect(source.toggleAuditEntry!("ae1", true)).rejects.toThrow();
-  });
-});
-
-describe("metadataApiSource — renameModel (optimistic write-through PATCH)", () => {
-  it("renames a dataset via the org-global ui-server action, setting display_name", async () => {
-    const fetchMock = stubFetch({ data: {} });
-    const source = metadataApiSource({
-      getToken: () => "tok",
-      getProjectId: () => "p1",
-    });
-
-    await source.renameModel!("d1", "dataset", "Customers");
-
-    const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(call[0]).toBe("/ui-server/datasets/d1");
-    expect(call[1].method).toBe("PATCH");
-    expect(JSON.parse(call[1].body as string)).toEqual({
-      display_name: "Customers",
-    });
-  });
-
-  it("renames a view via the project-scoped ui-server action, setting name", async () => {
-    const fetchMock = stubFetch({ data: {} });
-    const source = metadataApiSource({
-      getToken: () => "tok",
-      getProjectId: () => "p1",
-    });
-
-    await source.renameModel!("v1", "view", "High Value Orders");
-
-    const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(call[0]).toBe("/ui-server/projects/p1/views/v1");
-    expect(JSON.parse(call[1].body as string)).toEqual({
-      name: "High Value Orders",
-    });
-  });
-
-  it("renames a report via the project-scoped ui-server action, setting name", async () => {
-    const fetchMock = stubFetch({ data: {} });
-    const source = metadataApiSource({
-      getToken: () => "tok",
-      getProjectId: () => "p1",
-    });
-
-    await source.renameModel!("r1", "report", "Revenue");
-
-    const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(call[0]).toBe("/ui-server/projects/p1/reports/r1");
-    expect(JSON.parse(call[1].body as string)).toEqual({ name: "Revenue" });
-  });
-
-  it("rejects on a non-2xx PATCH response (drives the catalog rollback)", async () => {
-    stubFetch({ detail: "boom" }, false);
-    const source = metadataApiSource({
-      getToken: () => "tok",
-      getProjectId: () => "p1",
-    });
-    await expect(source.renameModel!("v1", "view", "x")).rejects.toThrow();
-  });
-});
-
-describe("metadataApiSource — setModelName (machine-name PATCH)", () => {
-  it("PATCHes the dataset ui-server action with model_name (separate from display_name)", async () => {
-    const fetchMock = stubFetch({ data: {} });
-    const source = metadataApiSource({
-      getToken: () => "tok",
-      getProjectId: () => "p1",
-    });
-
-    await source.setModelName!("d1", "stg_warm_leads");
-
-    const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(call[0]).toBe("/ui-server/datasets/d1");
-    expect(call[1].method).toBe("PATCH");
-    expect(JSON.parse(call[1].body as string)).toEqual({
-      model_name: "stg_warm_leads",
-    });
-    expect(JSON.parse(call[1].body as string)).not.toHaveProperty(
-      "display_name",
-    );
-  });
-
-  it("rejects on a non-2xx (e.g. 409 collision) so the caller surfaces it", async () => {
-    stubFetch({ detail: "collision" }, false, 409);
-    const source = metadataApiSource({
-      getToken: () => "tok",
-      getProjectId: () => "p1",
-    });
-    await expect(
-      source.setModelName!("d1", "stg_warm_leads"),
-    ).rejects.toThrow();
-  });
-});
-
-describe("metadataApiSource — archiveModel / restoreModel (soft-delete POST)", () => {
-  it("archives a dataset via POST /ui-server/datasets/{id}/archive", async () => {
-    const fetchMock = stubFetch({ data: {} });
-    const source = metadataApiSource({ getToken: () => "tok" });
-
-    await source.archiveModel!("d1", "dataset");
-
-    const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(call[0]).toBe("/ui-server/datasets/d1/archive");
-    expect(call[1].method).toBe("POST");
-    expect(call[1].credentials).toBe("include");
-  });
-
-  it("restores a dataset via POST /ui-server/datasets/{id}/restore", async () => {
-    const fetchMock = stubFetch({ data: {} });
-    const source = metadataApiSource({ getToken: () => "tok" });
-
-    await source.restoreModel!("d1", "dataset");
-
-    const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(call[0]).toBe("/ui-server/datasets/d1/restore");
-    expect(call[1].method).toBe("POST");
-    expect(call[1].credentials).toBe("include");
-  });
-
-  it("no-ops (no request) for a non-dataset kind — views/reports have no soft-delete", async () => {
-    const fetchMock = stubFetch({ data: {} });
-    const source = metadataApiSource({ getToken: () => "tok" });
-
-    await source.archiveModel!("v1", "view");
-    await source.restoreModel!("r1", "report");
-
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("rejects on a non-2xx archive response (drives the catalog rollback)", async () => {
-    stubFetch({ detail: "boom" }, false);
-    const source = metadataApiSource({ getToken: () => "tok" });
-    await expect(source.archiveModel!("d1", "dataset")).rejects.toThrow();
-  });
 });
 
 describe("metadataApiSource — createDataset (one-step multipart upload)", () => {

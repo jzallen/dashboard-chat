@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
+import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { CatalogSource, PartialCatalogSource } from "../../catalog";
@@ -68,9 +69,18 @@ function recordingProxy() {
 }
 
 function wrapper(proxy: StateProxy) {
-  return ({ children }: { children: ReactNode }) => (
-    <StateProxyProvider proxy={proxy}>{children}</StateProxyProvider>
-  );
+  return ({ children }: { children: ReactNode }) => {
+    // useUpload calls useFetcher which requires a data router context.
+    const router = createMemoryRouter([
+      {
+        path: "/",
+        element: (
+          <StateProxyProvider proxy={proxy}>{children}</StateProxyProvider>
+        ),
+      },
+    ]);
+    return <RouterProvider router={router} />;
+  };
 }
 
 describe("useUpload — createSource (slice-4 saga)", () => {

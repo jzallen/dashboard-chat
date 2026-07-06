@@ -12,16 +12,21 @@
  * presigned bytes PUT is a direct browser→object-storage call (no `/api`, no
  * auth-proxy) — the single allowed non-gateway request.
  *
+ * Model-level mutations (rename / model_name / audit toggle / archive / restore)
+ * are NOT implemented here: they land through the framework instead — the RRv7
+ * route actions PATCH/POST the `/ui-server/*` endpoints via `useFetcher`, and the
+ * loader re-derives on success (SSE triggers the revalidation). This source keeps
+ * only the source-from-upload saga writes, which the browser still coordinates.
+ *
  * Scoping: the active project id is injected via `deps.getProjectId` (like
  * `deps.getToken`) so the catalog stays router-free. Project-scoped writes read it
  * synchronously — the `/project/:projectId` layout loader has always run
  * `selectProject` before any write can fire, so no pre-paint fallback is needed.
  *
- * Failure contract: a non-2xx REJECTS (gatewayPatch/Post/Upload throw), so the
+ * Failure contract: a non-2xx REJECTS (gatewayPost/Upload throw), so the
  * catalog's optimistic write-through rolls back.
  */
-import { gatewayPatch, gatewayPost, gatewayUpload } from "../../lib/gateway-client";
-import type { ModelKind } from "../lineage";
+import { gatewayPost, gatewayUpload } from "../../lib/gateway-client";
 import type { PartialCatalogSource } from "./source";
 
 /** Dependencies the source needs from the app — kept minimal and injected. */
@@ -65,77 +70,6 @@ export function metadataApiSource(
   };
 
   return {
-    async toggleAuditEntry(
-      auditEntryId: string,
-      enabled: boolean,
-    ): Promise<void> {
-      // PATCH the project-scoped audit entry through the ui-server action. The
-      // backend resolves the transform via the reversed FK and flips its status
-      // (recompiling the staging SQL on read). Rejects on a non-2xx so the catalog
-      // rolls back its optimistic flip.
-      const pid = requireProjectId();
-      await gatewayPatch(
-        `/ui-server/projects/${encodeURIComponent(pid)}/audit/${encodeURIComponent(auditEntryId)}`,
-        { enabled },
-      );
-    },
-
-    async renameModel(
-      id: string,
-      kind: ModelKind,
-      name: string,
-    ): Promise<void> {
-      // A dataset's editable display label is `display_name` (its `name` is the
-      // immutable upload filename); views and reports rename `name` directly.
-      // Datasets are addressed org-globally; views/reports are project-scoped.
-      // Each write goes through the same-origin ui-server action; rejects on a
-      // non-2xx so the catalog rolls back.
-      if (kind === "dataset") {
-        await gatewayPatch(`/ui-server/datasets/${encodeURIComponent(id)}`, {
-          display_name: name,
-        });
-        return;
-      }
-      const pid = requireProjectId();
-      const collection = kind === "view" ? "views" : "reports";
-      await gatewayPatch(
-        `/ui-server/projects/${encodeURIComponent(pid)}/${collection}/${encodeURIComponent(id)}`,
-        { name },
-      );
-    },
-
-    async setModelName(id: string, modelName: string): Promise<void> {
-      // A dataset's dbt machine name is `model_name` — DECOUPLED from the
-      // `display_name` that `renameModel` edits. PATCH it on its own through the
-      // ui-server action so a machine-name change never disturbs the display
-      // label. The backend normalizes (`stg_<snake>`), rejects collisions (409),
-      // and repoints the live warehouse view. Rejects on a non-2xx so the caller
-      // surfaces the error (no optimistic flip to roll back).
-      await gatewayPatch(`/ui-server/datasets/${encodeURIComponent(id)}`, {
-        model_name: modelName,
-      });
-    },
-
-    async archiveModel(id: string, kind: ModelKind): Promise<void> {
-      // Only datasets support a restorable soft-delete (archived_at + retention);
-      // views/reports have hard-delete only, so archiving them is left local-only
-      // (no backend op). The soft-delete goes same-origin to the ui-server action
-      // (`POST /ui-server/datasets/{id}/archive`), which forwards to the backend
-      // server-side. Rejects on a non-2xx so the catalog restores the
-      // optimistically-hidden node.
-      if (kind !== "dataset") return;
-      await gatewayPost(
-        `/ui-server/datasets/${encodeURIComponent(id)}/archive`,
-      );
-    },
-
-    async restoreModel(id: string, kind: ModelKind): Promise<void> {
-      if (kind !== "dataset") return;
-      await gatewayPost(
-        `/ui-server/datasets/${encodeURIComponent(id)}/restore`,
-      );
-    },
-
     async createDataset(file: File): Promise<{ id: string }> {
       // One-step multipart upload brokered same-origin through the ui-server
       // action (`POST /ui-server/uploads`), which forwards the multipart body to

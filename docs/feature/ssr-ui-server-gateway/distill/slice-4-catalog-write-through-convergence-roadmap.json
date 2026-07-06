@@ -1,0 +1,112 @@
+{
+  "feature": "ssr-ui-server-gateway",
+  "slice": "slice-4-catalog-write-through-convergence",
+  "story": "DC-119",
+  "wave": "DISTILL",
+  "goal": "Finish the idiomatic-RRv7 catalog data lifecycle: delete the now-dead S5 bespoke write-through, converge S4 archive/restore onto /ui-server actions via useFetcher, make SSE a pure revalidation trigger (revalidator.revalidate), and reconcile the superseded DISCUSS Decision #1. Realises ADR-034 §Amendment (2026-06-25).",
+  "entry_wave": "DISTILL",
+  "target_tree": "ui/",
+  "acceptance_gate": "cd ui && npx vitest run",
+  "delivery": {
+    "release": "Release 6 — Retire backendClient / single boundary",
+    "release_branch": "catalog-behind-bff/release-6",
+    "base_and_pr_into": "catalog-behind-bff/release-6",
+    "note": "One story branch for DC-119; the tasks below are the deliver session's internal plan and land as commits (no per-task branches/PRs)."
+  },
+  "authority": "docs/decisions/adr-034-frontend-coexistence-via-rrv7-framework-mode.md §\"Amendment (2026-06-25)\"",
+  "scope": [
+    "ui/app/catalog/client.ts",
+    "ui/app/catalog/dataSources/metadataApiSource.ts",
+    "ui/app/catalog/dataSources/source.ts",
+    "ui/app/components/useCatalog.ts",
+    "ui/app/components/Upload/hooks.ts",
+    "ui/app/components/ColdStorage/hooks.ts",
+    "ui/app/components/Chat/Chat.tsx",
+    "ui/app/lib/source-upload-driver.ts",
+    "ui/app/routes/project-layout.tsx (assert only)"
+  ],
+  "out_of_scope": [
+    "backend/ (no /api behaviour/endpoint/payload changes)",
+    "repointing the dead /api write ports (they are DELETED as dead code, not repointed)",
+    "retiring backendClient itself (that is DC-15 / S8 — this story blocks it)",
+    "new optimistic-UI framework (use RRv7 fetcher pending state only where warranted)"
+  ],
+  "reconciliation": {
+    "result": "1 contradiction, resolved by newer authority (ADR-034 amendment supersedes DISCUSS lean).",
+    "detail": "DISCUSS open-questions.md §Non-questions + discuss/wave-decisions.md §Constraints assert 'reactive reads stay client-side'. ADR-034 §Amendment (2026-06-25) supersedes this. Back-propagation is Task D.",
+    "upstream_issues": "docs/feature/ssr-ui-server-gateway/distill/upstream-issues.md"
+  },
+  "open_items": [
+    "OI-1 (source-node rename): catalog.renameSource is also called for SOURCE nodes (local-only; no backend entity, no /ui-server target). Decide during delivery: keep a narrowed source-local rename isolated from the deleted MODEL write-through, or remove if source rename is not a supported operation. Default lean: keep a minimal source-local rename, prove it is decoupled from the removed model paths.",
+    "OI-2 (trigger granularity): default to revalidator.revalidate() (idiomatic, simplest); switch a scoped fetcher.load()/route revalidation only if measured latency for high-frequency row_* events proves perceptible (ADR-034 measured-fallback stance).",
+    "OI-3 (store surface): after write-through removal, re-evaluate whether the catalog still needs subscribe/getSnapshot/useSyncExternalStore or can shrink to loader-seeded reads. Investigate at the end of Task C."
+  ],
+  "tasks": [
+    {
+      "id": "DC-119-A",
+      "linear": "sub-issue: S5 dead-code removal",
+      "title": "Remove the now-dead S5 bespoke write-through (rename[model] / setModelName / toggleAudit)",
+      "driving_port": "ui/ rename & audit-toggle UI (ModelDetail via useFetcher → /ui-server actions)",
+      "ac_refs": ["AC-A1", "AC-A2", "AC-A3"],
+      "delete": [
+        "ui/app/catalog/client.ts: renameSource (model kind path), setModelName, toggleAudit",
+        "ui/app/catalog/dataSources/metadataApiSource.ts: renameModel, setModelName, toggleAuditEntry",
+        "ui/app/catalog/dataSources/source.ts: orphaned write-port type decls (e.g. toggleAuditEntry?)",
+        "ui/app/components/useCatalog.ts: orphaned module-level toggleAudit helper"
+      ],
+      "verify": "cd ui && npx vitest run ModelDetail audit-update dataset-update; grep proves zero bespoke refs",
+      "blockedBy": [],
+      "status": "pending"
+    },
+    {
+      "id": "DC-119-B",
+      "linear": "sub-issue: Archive/restore convergence",
+      "title": "Converge S4 archive/restore onto /ui-server actions via useFetcher",
+      "driving_port": "Cold Storage archive/restore UI (Upload/hooks.ts, ColdStorage/hooks.ts) → useFetcher → /ui-server/datasets/:id/archive|restore",
+      "ac_refs": ["AC-B1", "AC-B2", "AC-B3"],
+      "change": [
+        "ui/app/components/Upload/hooks.ts: catalog.archiveSource(src) → useFetcher submit to /ui-server/datasets/:id/archive",
+        "ui/app/components/ColdStorage/hooks.ts: catalog.restoreSource(id) → useFetcher submit to /ui-server/datasets/:id/restore",
+        "DELETE ui/app/catalog/client.ts: archiveSource, restoreSource",
+        "DELETE ui/app/catalog/dataSources/metadataApiSource.ts: archiveModel, restoreModel",
+        "Preserve the Cold Storage 'just-archived node stays visible in drawer' affordance via loader-derived state (was preserveCold on revalidateScoped)"
+      ],
+      "verify": "cd ui && npx vitest run dataset-archive dataset-restore ColdStorage Upload",
+      "blockedBy": ["DC-119-A"],
+      "status": "pending"
+    },
+    {
+      "id": "DC-119-C",
+      "linear": "sub-issue: SSE-as-trigger seam",
+      "title": "Make SSE a pure revalidation trigger; remove the last client reflection machinery",
+      "driving_port": "assistant chat SSE stream (ui/app/lib/chat-stream.ts CATALOG_MUTATING_EVENTS) + source-upload driver",
+      "ac_refs": ["AC-C1", "AC-C2", "AC-C3"],
+      "change": [
+        "ui/app/components/Chat/Chat.tsx: replace catalog.revalidateScope() with revalidator.revalidate() (or scoped fetcher.load per OI-2)",
+        "ui/app/lib/source-upload-driver.ts: replace catalog.revalidateScope() likewise",
+        "DELETE ui/app/catalog/client.ts: revalidateScope, revalidateScoped, captured-pid fences",
+        "Assert ui/app/routes/project-layout.tsx remains the single derivation point (toLineageGraph); shouldRevalidate covers the trigger"
+      ],
+      "acceptance_test": "ui/app/__acceptance__/ssr-ui-server-chat-wire.test.tsx (re-point: assert revalidator is triggered on transform_applied, NOT catalog.revalidateScope)",
+      "verify": "cd ui && npx vitest run",
+      "blockedBy": ["DC-119-B"],
+      "status": "pending"
+    },
+    {
+      "id": "DC-119-D",
+      "linear": "sub-issue: Decision #1 reconciliation",
+      "title": "Reconcile the superseded DISCUSS Decision #1 to ADR-034's amendment",
+      "driving_port": "docs SSOT + Linear project record",
+      "ac_refs": ["AC-D1", "AC-D2"],
+      "change": [
+        "docs/feature/ssr-ui-server-gateway/discuss/idea-capture.md, discuss/wave-decisions.md, discuss/open-questions.md §Non-questions: annotate the 'reactive reads stay client-side' lean as superseded by ADR-034 §Amendment (2026-06-25)",
+        "Linear 'Catalog Behind BFF Gateway' project description bullet #1: point at ADR-034 amendment",
+        "Confirm ADR-034 back-reference is intact"
+      ],
+      "verify": "docs updated; grep confirms supersession note; project description references the amendment",
+      "blockedBy": [],
+      "status": "pending"
+    }
+  ],
+  "notes": "Walking skeleton is optional for a refactor (methodology: features only). The single acceptance-test seam is the existing ssr-ui-server-chat-wire.test.tsx, re-pointed in Task C. Error-path coverage target >=40%: assert failed archive/restore (non-2xx) surfaces error with no phantom client state and no /login redirect (AC-B3), and cross-project switch re-scopes correctly (AC-C3)."
+}

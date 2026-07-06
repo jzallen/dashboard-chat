@@ -5,8 +5,8 @@ import type {
   CatalogSource,
   PartialCatalogSource,
 } from "./dataSources/source";
-import type { Edge, LineageNode, ModelKind } from "./lineage";
-import type { ChatHistoryItem, DbtFile, ProjectSummary } from "./models";
+import type { Edge, LineageNode } from "./lineage";
+import type { ProjectSummary } from "./models";
 
 /**
  * A tiny in-memory complete CatalogSource (the FALLBACK): one source node, one
@@ -115,40 +115,6 @@ describe("createDataCatalog — write side", () => {
     ).toHaveLength(1);
   });
 
-  it("archiveSource removes the node + its edges from the graph and records cold storage", () => {
-    const src = catalog.getNode("src.orders")!;
-    catalog.archiveSource(src);
-
-    expect(catalog.getNode("src.orders")).toBeUndefined();
-    expect(
-      catalog
-        .listEdges()
-        .some(([a, b]) => a === "src.orders" || b === "src.orders"),
-    ).toBe(false);
-
-    const cold = catalog.listColdStorage();
-    expect(cold).toHaveLength(1);
-    expect(cold[0].id).toBe("src.orders");
-    expect(cold[0].name).toBe("orders");
-    expect(cold[0].retentionDays).toBe(90);
-  });
-
-  it("restoreSource reverses archive (graph + cold storage)", () => {
-    const src = catalog.getNode("src.orders")!;
-    catalog.archiveSource(src);
-    catalog.restoreSource("src.orders");
-
-    expect(catalog.getNode("src.orders")).toBeDefined();
-    expect(catalog.listEdges()).toContainEqual(["src.orders", "mart.revenue"]);
-    expect(catalog.listColdStorage()).toHaveLength(0);
-  });
-
-  it("getNode is scoped to the visible graph — archived nodes resolve to undefined", () => {
-    const src = catalog.getNode("src.orders")!;
-    catalog.archiveSource(src);
-    expect(catalog.getNode("src.orders")).toBeUndefined();
-  });
-
   it("getSnapshot returns a stable version that bumps only on mutation", () => {
     const before = catalog.getSnapshot();
     expect(catalog.getSnapshot()).toBe(before);
@@ -179,457 +145,10 @@ describe("createDataCatalog — write side", () => {
   });
 });
 
-describe("createDataCatalog — renameSource (optimistic write-through)", () => {
-  /** A primary backing one intermediate (view) node plus a spy-able rename write. */
-  function renamePrimary(
-    renameModel: (id: string, kind: ModelKind, name: string) => Promise<void>,
-  ): PartialCatalogSource {
-    const nodes: Record<string, LineageNode> = {
-      "v.1": {
-        id: "v.1",
-        label: "orders_view",
-        sub: "intermediate",
-        layer: "intermediate",
-        ref: { columns: [] },
-      },
-    };
-    return {
-      getCurrentProject: () =>
-        Promise.resolve({ id: "p1", name: "P1", description: "" }),
-      getNodes: () => Promise.resolve(nodes),
-      getEdges: () => Promise.resolve([]),
-      getAudit: () => Promise.resolve({}),
-      renameModel,
-    };
-  }
-
-  it("renames optimistically, then calls primary.renameModel routed by kind", async () => {
-    const renameModel = vi.fn().mockResolvedValue(undefined);
-    const catalog = await createDataCatalog(renamePrimary(renameModel), makeSource());
-    await catalog.selectProject("p1");
-    await flush();
-
-    const pending = catalog.renameSource("v.1", "high_value_orders");
-    // Optimistic: the new label is visible before the write resolves.
-    expect(catalog.getNode("v.1")?.label).toBe("high_value_orders");
-    expect(renameModel).toHaveBeenCalledWith("v.1", "view", "high_value_orders");
-    await pending;
-    expect(catalog.getNode("v.1")?.label).toBe("high_value_orders");
-  });
-
-  it("rolls the label back when the write rejects", async () => {
-    const renameModel = vi.fn().mockRejectedValue(new Error("backend down"));
-    const catalog = await createDataCatalog(renamePrimary(renameModel), makeSource());
-    await catalog.selectProject("p1");
-    await flush();
-
-    await catalog.renameSource("v.1", "broken");
-    expect(catalog.getNode("v.1")?.label).toBe("orders_view");
-  });
-
-  it("stays local-only for a source-layer node (no backend entity)", async () => {
-    const renameModel = vi.fn().mockResolvedValue(undefined);
-    // The seeded fallback graph holds src.orders (source layer) before any scope.
-    const catalog = await createDataCatalog(renamePrimary(renameModel), makeSource());
-
-    await catalog.renameSource("src.orders", "raw_orders");
-    expect(catalog.getNode("src.orders")?.label).toBe("raw_orders");
-    expect(renameModel).not.toHaveBeenCalled();
-  });
-});
-
-describe("createDataCatalog — setModelName (pessimistic, confirm-gated)", () => {
-  function modelNamePrimary(
-    setModelName: (id: string, modelName: string) => Promise<void>,
-  ): PartialCatalogSource {
-    const nodes: Record<string, LineageNode> = {
-      "d.1": {
-        id: "d.1",
-        label: "Customers",
-        sub: "dataset",
-        layer: "staging",
-        modelName: "stg_customers",
-        ref: { columns: [] },
-      },
-    };
-    return {
-      getCurrentProject: () =>
-        Promise.resolve({ id: "p1", name: "P1", description: "" }),
-      getNodes: () => Promise.resolve(nodes),
-      getEdges: () => Promise.resolve([]),
-      getAudit: () => Promise.resolve({}),
-      setModelName,
-    };
-  }
-
-  it("writes FIRST, then commits modelName only on success (pessimistic)", async () => {
-    let resolveWrite: () => void = () => {};
-    const setModelName = vi.fn(
-      () => new Promise<void>((r) => (resolveWrite = r)),
-    );
-    const catalog = await createDataCatalog(
-      modelNamePrimary(setModelName),
-      makeSource(),
-    );
-    await catalog.selectProject("p1");
-    await flush();
-
-    const pending = catalog.setModelName("d.1", "stg_warm_leads");
-    // Pessimistic: NOT applied while the write is in flight.
-    expect(setModelName).toHaveBeenCalledWith("d.1", "stg_warm_leads");
-    expect(catalog.getNode("d.1")?.modelName).toBe("stg_customers");
-
-    resolveWrite();
-    await pending;
-    // Applied only after the write resolves.
-    expect(catalog.getNode("d.1")?.modelName).toBe("stg_warm_leads");
-    // Decoupling: the display label is untouched.
-    expect(catalog.getNode("d.1")?.label).toBe("Customers");
-  });
-
-  it("does not apply modelName when the write rejects", async () => {
-    const setModelName = vi.fn().mockRejectedValue(new Error("409 collision"));
-    const catalog = await createDataCatalog(
-      modelNamePrimary(setModelName),
-      makeSource(),
-    );
-    await catalog.selectProject("p1");
-    await flush();
-
-    await expect(
-      catalog.setModelName("d.1", "stg_warm_leads"),
-    ).rejects.toThrow();
-    expect(catalog.getNode("d.1")?.modelName).toBe("stg_customers");
-  });
-});
-
-describe("createDataCatalog — archive/restore (optimistic write-through)", () => {
-  /**
-   * A primary backing one staging (dataset) node + spy-able archive/restore.
-   * `getNodes` models server truth via an `archived` set: a RESOLVED archiveModel
-   * drops the node from the active listing (and restoreModel re-adds it), so the
-   * revalidate-after-archive re-read reflects the soft-delete rather than
-   * resurrecting the node. The provided spies still observe each call.
-   */
-  function archivePrimary(opts: {
-    archiveModel?: (id: string, kind: ModelKind) => Promise<void>;
-    restoreModel?: (id: string, kind: ModelKind) => Promise<void>;
-  }): PartialCatalogSource {
-    const archived = new Set<string>();
-    const allNodes: Record<string, LineageNode> = {
-      "ds.1": {
-        id: "ds.1",
-        label: "customers",
-        sub: "staging",
-        layer: "staging",
-        ref: { fields: [] },
-      },
-    };
-    return {
-      getCurrentProject: () =>
-        Promise.resolve({ id: "p1", name: "P1", description: "" }),
-      getNodes: () =>
-        Promise.resolve(
-          Object.fromEntries(
-            Object.entries(allNodes).filter(([id]) => !archived.has(id)),
-          ),
-        ),
-      getEdges: () => Promise.resolve([]),
-      getAudit: () => Promise.resolve({}),
-      archiveModel: opts.archiveModel
-        ? async (id, kind) => {
-            await opts.archiveModel!(id, kind);
-            archived.add(id);
-          }
-        : undefined,
-      restoreModel: opts.restoreModel
-        ? async (id, kind) => {
-            await opts.restoreModel!(id, kind);
-            archived.delete(id);
-          }
-        : undefined,
-    };
-  }
-
-  async function scopedCatalog(primary: PartialCatalogSource) {
-    const catalog = await createDataCatalog(primary, makeSource());
-    await catalog.selectProject("p1");
-    await flush();
-    return catalog;
-  }
-
-  it("archives optimistically (→ cold storage), then calls primary.archiveModel", async () => {
-    const archiveModel = vi.fn().mockResolvedValue(undefined);
-    const catalog = await scopedCatalog(archivePrimary({ archiveModel }));
-
-    const pending = catalog.archiveSource(catalog.getNode("ds.1")!);
-    expect(catalog.getNode("ds.1")).toBeUndefined(); // optimistic, instant
-    expect(catalog.listColdStorage().map((c) => c.id)).toContain("ds.1");
-    expect(archiveModel).toHaveBeenCalledWith("ds.1", "dataset");
-    await pending;
-  });
-
-  it("restores the node when archiveModel rejects", async () => {
-    const archiveModel = vi.fn().mockRejectedValue(new Error("down"));
-    const catalog = await scopedCatalog(archivePrimary({ archiveModel }));
-
-    await catalog.archiveSource(catalog.getNode("ds.1")!);
-    expect(catalog.getNode("ds.1")).toBeDefined(); // rolled back
-    expect(catalog.listColdStorage()).toHaveLength(0);
-  });
-
-  it("restores optimistically, then calls primary.restoreModel", async () => {
-    const archiveModel = vi.fn().mockResolvedValue(undefined);
-    const restoreModel = vi.fn().mockResolvedValue(undefined);
-    const catalog = await scopedCatalog(
-      archivePrimary({ archiveModel, restoreModel }),
-    );
-    await catalog.archiveSource(catalog.getNode("ds.1")!);
-
-    const pending = catalog.restoreSource("ds.1");
-    expect(catalog.getNode("ds.1")).toBeDefined(); // optimistic, instant
-    expect(restoreModel).toHaveBeenCalledWith("ds.1", "dataset");
-    await pending;
-  });
-
-  it("re-archives the node when restoreModel rejects", async () => {
-    const archiveModel = vi.fn().mockResolvedValue(undefined);
-    const restoreModel = vi.fn().mockRejectedValue(new Error("down"));
-    const catalog = await scopedCatalog(
-      archivePrimary({ archiveModel, restoreModel }),
-    );
-    await catalog.archiveSource(catalog.getNode("ds.1")!);
-
-    await catalog.restoreSource("ds.1");
-    expect(catalog.getNode("ds.1")).toBeUndefined(); // re-archived
-    expect(catalog.listColdStorage().map((c) => c.id)).toContain("ds.1");
-  });
-});
-
-describe("createDataCatalog — archive → revalidate scope on success", () => {
-  /**
-   * A primary backing one dataset node whose `getNodes` reflects server truth
-   * via an `archived` set: a RESOLVED archiveModel marks the id archived, so the
-   * post-write revalidation reads the node out of the active DAG (mirroring the
-   * backend soft-delete + `?archived=true` listing). The scope hooks
-   * (invalidateScope/getCurrentProject) are spied so a test can observe that the
-   * revalidation actually ran. `archiveModel` is always a spy so call counts and
-   * rejections are controllable.
-   */
-  function revalidatingPrimary(opts?: {
-    archiveModel?: (id: string, kind: ModelKind) => Promise<void>;
-  }) {
-    const archived = new Set<string>();
-    const allNodes: Record<string, LineageNode> = {
-      "ds.1": {
-        id: "ds.1",
-        label: "customers",
-        sub: "staging",
-        layer: "staging",
-        ref: { fields: [] },
-      },
-    };
-    const invalidateScope = vi.fn();
-    const getCurrentProject = vi.fn(() =>
-      Promise.resolve({ id: "p1", name: "P1", description: "" }),
-    );
-    const archiveModel = vi.fn(
-      opts?.archiveModel ??
-        (async (id: string) => {
-          archived.add(id);
-        }),
-    );
-    const primary: PartialCatalogSource = {
-      invalidateScope,
-      getCurrentProject,
-      getNodes: () =>
-        Promise.resolve(
-          Object.fromEntries(
-            Object.entries(allNodes).filter(([id]) => !archived.has(id)),
-          ),
-        ),
-      getEdges: () => Promise.resolve([]),
-      getAudit: () => Promise.resolve({}),
-      archiveModel,
-    };
-    return { primary, invalidateScope, getCurrentProject, archiveModel };
-  }
-
-  async function scoped(primary: PartialCatalogSource) {
-    const catalog = await createDataCatalog(primary, makeSource());
-    await catalog.selectProject("p1");
-    await flush();
-    return catalog;
-  }
-
-  it("revalidates the scoped project exactly once after a successful archive", async () => {
-    const { primary, invalidateScope, getCurrentProject } =
-      revalidatingPrimary();
-    const catalog = await scoped(primary);
-    invalidateScope.mockClear();
-    getCurrentProject.mockClear();
-
-    await catalog.archiveSource(catalog.getNode("ds.1")!);
-    await flush();
-
-    // fresh:true → dropped the per-project cache for the scoped pid first…
-    expect(invalidateScope).toHaveBeenCalledWith("p1");
-    expect(invalidateScope).toHaveBeenCalledTimes(1);
-    // …then re-ran the project-scoped reads (mirrors the revalidateScope test).
-    expect(getCurrentProject).toHaveBeenCalled();
-  });
-
-  it("keeps the archived node in Cold Storage across the fresh-graph rebuild", async () => {
-    const { primary } = revalidatingPrimary();
-    const catalog = await scoped(primary);
-
-    await catalog.archiveSource(catalog.getNode("ds.1")!);
-    await flush();
-
-    // The design-tension guard: a fresh-graph revalidation must not evict the
-    // just-archived node from the drawer…
-    expect(catalog.listColdStorage().map((c) => c.id)).toContain("ds.1");
-    // …while server truth (archived) keeps it out of the active list.
-    expect(catalog.listNodes().map((n) => n.id)).not.toContain("ds.1");
-  });
-
-  it("drops the post-success revalidation when the scope changed mid-flight", async () => {
-    // Hold the backend write open so the scope can switch before it resolves.
-    let releaseArchive: () => void = () => {};
-    const archiveModel = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          releaseArchive = resolve;
-        }),
-    );
-    const { primary, invalidateScope } = revalidatingPrimary({ archiveModel });
-    const catalog = await scoped(primary);
-    invalidateScope.mockClear();
-
-    // Archive on p1, then switch to p2 before the archive write resolves.
-    const pending = catalog.archiveSource(catalog.getNode("ds.1")!);
-    await catalog.selectProject("p2");
-    releaseArchive();
-    await pending;
-    await flush();
-
-    // The captured-pid guard dropped A's revalidation: no fresh-cache drop ran
-    // for the superseded scope (selectProject's own re-scope is not fresh).
-    expect(invalidateScope).not.toHaveBeenCalled();
-  });
-
-  it("does NOT revalidate and rolls back when archiveModel rejects", async () => {
-    const archiveModel = vi.fn().mockRejectedValue(new Error("down"));
-    const { primary, invalidateScope } = revalidatingPrimary({ archiveModel });
-    const catalog = await scoped(primary);
-    invalidateScope.mockClear();
-
-    await catalog.archiveSource(catalog.getNode("ds.1")!);
-    await flush();
-
-    expect(invalidateScope).not.toHaveBeenCalled(); // no revalidation on failure
-    expect(catalog.getNode("ds.1")).toBeDefined(); // optimistic archive rolled back
-    expect(catalog.listColdStorage()).toHaveLength(0);
-  });
-
-  it("no-ops (no backend write, no revalidation) for an absent node", async () => {
-    const { primary, invalidateScope, archiveModel } = revalidatingPrimary();
-    const catalog = await scoped(primary);
-    invalidateScope.mockClear();
-
-    await catalog.archiveSource({
-      id: "ghost",
-      label: "ghost",
-      sub: "staging",
-      layer: "staging",
-      ref: { fields: [] },
-    } as LineageNode);
-    await flush();
-
-    expect(archiveModel).not.toHaveBeenCalled();
-    expect(invalidateScope).not.toHaveBeenCalled();
-  });
-
-  it("no-ops (no backend write, no revalidation) for an already-archived node", async () => {
-    const { primary, invalidateScope, archiveModel } = revalidatingPrimary();
-    const catalog = await scoped(primary);
-    const node = catalog.getNode("ds.1")!;
-    await catalog.archiveSource(node); // first archive: one write + revalidation
-    await flush();
-    invalidateScope.mockClear();
-    archiveModel.mockClear();
-
-    // The node is now absent from the active graph — re-archiving is a no-op.
-    await catalog.archiveSource(node);
-    await flush();
-
-    expect(archiveModel).not.toHaveBeenCalled();
-    expect(invalidateScope).not.toHaveBeenCalled();
-  });
-
-  it("archives a source-layer node locally with no backend write or revalidation", async () => {
-    const { primary, invalidateScope, archiveModel } = revalidatingPrimary();
-    const catalog = await scoped(primary);
-    invalidateScope.mockClear();
-
-    // A source-layer node maps to no ModelKind → the local-only archive path.
-    catalog.addSource({
-      id: "src.x",
-      label: "raw",
-      sub: "source",
-      layer: "source",
-      schema: [],
-      files: [],
-    });
-    await catalog.archiveSource(catalog.getNode("src.x")!);
-    await flush();
-
-    expect(catalog.listColdStorage().map((c) => c.id)).toContain("src.x");
-    expect(archiveModel).not.toHaveBeenCalled();
-    expect(invalidateScope).not.toHaveBeenCalled();
-  });
-});
-
-describe("createDataCatalog — createDataset (upload → revalidate)", () => {
-  it("uploads via the primary, then revalidates so the new dataset appears", async () => {
-    const created: Record<string, LineageNode> = {
-      "ds.new": {
-        id: "ds.new",
-        label: "uploaded",
-        sub: "staging",
-        layer: "staging",
-        ref: { fields: [] },
-      },
-    };
-    let hasNew = false;
-    const createDataset = vi.fn(async () => {
-      hasNew = true;
-      return { id: "ds.new" };
-    });
-    const primary: PartialCatalogSource = {
-      getCurrentProject: () =>
-        Promise.resolve({ id: "p1", name: "P1", description: "" }),
-      getNodes: () => Promise.resolve(hasNew ? created : {}),
-      getEdges: () => Promise.resolve([]),
-      getAudit: () => Promise.resolve({}),
-      createDataset,
-    };
-    const catalog = await createDataCatalog(primary, makeSource());
-    await catalog.selectProject("p1");
-    await flush();
-    expect(catalog.getNode("ds.new")).toBeUndefined(); // not yet uploaded
-
-    const id = await catalog.createDataset({} as File);
-    expect(id).toBe("ds.new");
-    expect(createDataset).toHaveBeenCalled();
-    expect(catalog.getNode("ds.new")).toBeDefined(); // revalidate brought it in
-  });
-
-  it("is a no-op (undefined) when the source backs no uploads", async () => {
-    const catalog = await createDataCatalog({}, makeSource());
-    await expect(catalog.createDataset({} as File)).resolves.toBeUndefined();
-  });
-});
+// The archive/restore optimistic write-through describe blocks are removed:
+// catalog.archiveSource and catalog.restoreSource are deleted. Archive/restore
+// now lands via useFetcher → /ui-server/datasets/:id/archive|restore.
+// Coverage: archive.wiring.test.tsx and restore.wiring.test.tsx.
 
 describe("createDataCatalog — createSourceFromUpload (saga + optimistic node)", () => {
   const file = new File(["a,b\n1,2\n"], "orders.csv", { type: "text/csv" });
@@ -678,8 +197,14 @@ describe("createDataCatalog — createSourceFromUpload (saga + optimistic node)"
       reported.push(e.type);
       return {} as never;
     });
+    const revalidate = vi.fn();
 
-    const result = await catalog.createSourceFromUpload(file, "orders_csv", report);
+    const result = await catalog.createSourceFromUpload(
+      file,
+      "orders_csv",
+      report,
+      revalidate,
+    );
 
     expect(primary.createSource).toHaveBeenCalledWith("orders_csv");
     expect(primary.requestUpload).toHaveBeenCalledWith("src.real", file);
@@ -699,9 +224,9 @@ describe("createDataCatalog — createSourceFromUpload (saga + optimistic node)"
       "source_upload_processed",
     ]);
     expect(result?.datasetId).toBe("ds.real");
-    // The real source + staging node landed after revalidation.
-    expect(catalog.getNode("src.real")).toBeDefined();
-    expect(catalog.getNode("ds.real")).toBeDefined();
+    // The saga triggers a framework revalidation so the loader re-derives the
+    // real source + staging node from server truth.
+    expect(revalidate).toHaveBeenCalled();
   });
 
   it("rolls back the optimistic node + reports failure when the saga rejects", async () => {
@@ -720,7 +245,7 @@ describe("createDataCatalog — createSourceFromUpload (saga + optimistic node)"
     });
 
     await expect(
-      catalog.createSourceFromUpload(file, "orders_csv", report),
+      catalog.createSourceFromUpload(file, "orders_csv", report, vi.fn()),
     ).rejects.toThrow();
 
     expect(reported).toContain("source_upload_failed");
@@ -735,7 +260,7 @@ describe("createDataCatalog — createSourceFromUpload (saga + optimistic node)"
     const catalog = await createDataCatalog({}, makeSource());
     const report = vi.fn(async () => ({}) as never);
     await expect(
-      catalog.createSourceFromUpload(file, "x", report),
+      catalog.createSourceFromUpload(file, "x", report, vi.fn()),
     ).resolves.toBeUndefined();
   });
 });
@@ -830,361 +355,106 @@ describe("createDataCatalog — stale-while-revalidate (primary over fallback)",
   });
 });
 
-describe("createDataCatalog — stale-while-revalidate (lineage graph)", () => {
-  /** A primary backing all three lineage getters with a dataset→view graph. */
-  function lineagePrimary(): PartialCatalogSource {
-    const nodes: Record<string, LineageNode> = {
-      "ds.1": {
-        id: "ds.1",
-        label: "customers",
-        sub: "staging",
-        layer: "staging",
-        ref: { kind: "dataset", fields: [] },
-      },
-      "view.1": {
-        id: "view.1",
-        label: "active",
-        sub: "intermediate",
-        layer: "intermediate",
-        ref: { kind: "view", columns: [] },
-      },
-    };
-    const edges: Edge[] = [["ds.1", "view.1"]];
+describe("createDataCatalog — seedProjectScoped (per-project re-scope)", () => {
+  // The project-layout loader fetches the scoped reads server-side; the component
+  // commits them through seedProjectScoped. Re-scope is therefore driven here via
+  // that seam — the client store no longer fetches project-scoped data itself.
+
+  const p1Node: LineageNode = {
+    id: "p1.node",
+    label: "p1_view",
+    sub: "intermediate",
+    layer: "intermediate",
+    ref: { kind: "view", columns: [] },
+  };
+  const p2Node: LineageNode = {
+    id: "p2.node",
+    label: "p2_view",
+    sub: "intermediate",
+    layer: "intermediate",
+    ref: { kind: "view", columns: [] },
+  };
+
+  type Seed = Parameters<
+    Awaited<ReturnType<typeof createDataCatalog>>["seedProjectScoped"]
+  >[0];
+
+  /** A minimal scoped-seed payload for a single-node project. */
+  function seed(
+    projectId: string,
+    node: LineageNode,
+    extra: Partial<Seed> = {},
+  ): Seed {
     return {
-      getNodes: () =>
-        new Promise((resolve) => setTimeout(() => resolve(nodes), 0)),
-      getEdges: () =>
-        new Promise((resolve) => setTimeout(() => resolve(edges), 0)),
-      getAudit: () => new Promise((resolve) => setTimeout(() => resolve({}), 0)),
+      projectId,
+      nodes: { [node.id]: node },
+      edges: [],
+      audit: {},
+      dbtFiles: [],
+      chats: [],
+      recents: [],
+      ...extra,
     };
-  }
-
-  it("a primary backing all three lineage getters replaces the fixture graph after flush", async () => {
-    const catalog = await createDataCatalog(lineagePrimary(), makeSource());
-
-    // Mounts on the fallback graph (src.orders + mart.revenue)…
-    expect(catalog.listNodes().map((n) => n.id).sort()).toEqual([
-      "mart.revenue",
-      "src.orders",
-    ]);
-
-    const fired = vi.fn();
-    catalog.subscribe(fired);
-    // The project-layout loader scopes the project, which loads its lineage.
-    await catalog.selectProject("p1");
-    await flush();
-
-    // …then the backend graph lands and REPLACES the fixtures.
-    expect(catalog.listNodes().map((n) => n.id).sort()).toEqual([
-      "ds.1",
-      "view.1",
-    ]);
-    expect(catalog.listModels().map((m) => m.id).sort()).toEqual([
-      "ds.1",
-      "view.1",
-    ]);
-    expect(catalog.listEdges()).toContainEqual(["ds.1", "view.1"]);
-    expect(fired).toHaveBeenCalled();
-  });
-
-  it("a primary resolving an EMPTY lineage graph BLANKS the canvas (not fixtures)", async () => {
-    const primary: PartialCatalogSource = {
-      getNodes: () => new Promise((resolve) => setTimeout(() => resolve({}), 0)),
-      getEdges: () => new Promise((resolve) => setTimeout(() => resolve([]), 0)),
-      getAudit: () => new Promise((resolve) => setTimeout(() => resolve({}), 0)),
-    };
-    const catalog = await createDataCatalog(primary, makeSource());
-    await catalog.selectProject("p1");
-    await flush();
-    expect(catalog.listNodes()).toEqual([]);
-    expect(catalog.listEdges()).toEqual([]);
-  });
-
-  it("a getNodes-rejecting primary keeps the fixture graph (error path, no crash)", async () => {
-    const primary: PartialCatalogSource = {
-      getNodes: () => Promise.reject(new Error("backend down")),
-      getEdges: () => Promise.resolve([]),
-      getAudit: () => Promise.resolve({}),
-    };
-    const catalog = await createDataCatalog(primary, makeSource());
-    await catalog.selectProject("p1");
-    await flush();
-    expect(catalog.listNodes().map((n) => n.id).sort()).toEqual([
-      "mart.revenue",
-      "src.orders",
-    ]);
-  });
-});
-
-describe("createDataCatalog — toggleAudit (optimistic write-through)", () => {
-  /**
-   * A primary backing the lineage triple with ONE toggleable audit entry on a
-   * mart, plus a spy-able `toggleAuditEntry` write. `getAudit` reflects the
-   * `serverEnabled` holder so a post-write revalidation can observe server truth.
-   */
-  function auditPrimary(opts: {
-    toggleAuditEntry: (id: string, enabled: boolean) => Promise<void>;
-    serverEnabled: () => boolean;
-  }): PartialCatalogSource {
-    const nodes: Record<string, LineageNode> = {
-      "ds.1": {
-        id: "ds.1",
-        label: "customers",
-        sub: "staging",
-        layer: "staging",
-        ref: { kind: "dataset", fields: [] },
-      },
-    };
-    return {
-      getCurrentProject: () =>
-        Promise.resolve({ id: "p1", name: "P1", description: "" }),
-      getNodes: () =>
-        new Promise((resolve) => setTimeout(() => resolve(nodes), 0)),
-      getEdges: () => new Promise((resolve) => setTimeout(() => resolve([]), 0)),
-      getAudit: () =>
-        new Promise((resolve) =>
-          setTimeout(
-            () =>
-              resolve({
-                "ds.1": [
-                  {
-                    tool: "trimWhitespace",
-                    say: "trimmed email",
-                    tag: "clean",
-                    auditEntryId: "ae1",
-                    transformId: "t1",
-                    enabled: opts.serverEnabled(),
-                  },
-                ],
-              }),
-            0,
-          ),
-        ),
-      toggleAuditEntry: opts.toggleAuditEntry,
-    };
-  }
-
-  it("optimistically flips enabled immediately, then calls the primary's toggleAuditEntry", async () => {
-    let server = true;
-    const toggleAuditEntry = vi.fn((_id: string, enabled: boolean) => {
-      server = enabled;
-      return Promise.resolve();
-    });
-    const catalog = await createDataCatalog(
-      auditPrimary({ toggleAuditEntry, serverEnabled: () => server }),
-      makeSource(),
-    );
-    await catalog.selectProject("p1");
-    await flush();
-    expect(catalog.auditFor("ds.1")[0].enabled).toBe(true);
-
-    // Do not await the revalidation yet — assert the OPTIMISTIC flip is instant.
-    const pending = catalog.toggleAudit("ds.1", "ae1", false);
-    expect(catalog.auditFor("ds.1")[0].enabled).toBe(false);
-    expect(toggleAuditEntry).toHaveBeenCalledWith("ae1", false);
-
-    await pending;
-    await flush();
-    // After success + revalidation the server-true value reflects the toggle.
-    expect(catalog.auditFor("ds.1")[0].enabled).toBe(false);
-  });
-
-  it("revalidates the audit from the backend after a successful toggle", async () => {
-    let server = true;
-    const toggleAuditEntry = vi.fn((_id: string, enabled: boolean) => {
-      server = enabled;
-      return Promise.resolve();
-    });
-    const primary = auditPrimary({
-      toggleAuditEntry,
-      serverEnabled: () => server,
-    });
-    const getAuditSpy = vi.spyOn(primary, "getAudit");
-    const catalog = await createDataCatalog(primary, makeSource());
-    await catalog.selectProject("p1");
-    await flush();
-    const callsAfterScope = getAuditSpy.mock.calls.length;
-
-    await catalog.toggleAudit("ds.1", "ae1", false);
-    await flush();
-
-    // The toggle re-ran getAudit (the revalidation), not just the optimistic flip.
-    expect(getAuditSpy.mock.calls.length).toBeGreaterThan(callsAfterScope);
-  });
-
-  it("rolls back the optimistic flip when the PATCH rejects (no crash)", async () => {
-    const toggleAuditEntry = vi.fn(() =>
-      Promise.reject(new Error("backend down")),
-    );
-    const catalog = await createDataCatalog(
-      auditPrimary({ toggleAuditEntry, serverEnabled: () => true }),
-      makeSource(),
-    );
-    await catalog.selectProject("p1");
-    await flush();
-    expect(catalog.auditFor("ds.1")[0].enabled).toBe(true);
-
-    await catalog.toggleAudit("ds.1", "ae1", false);
-    await flush();
-
-    // The rejection rolled the optimistic flip back to the prior value.
-    expect(catalog.auditFor("ds.1")[0].enabled).toBe(true);
-  });
-});
-
-describe("createDataCatalog — selectProject (per-project re-scope)", () => {
-  /**
-   * A primary whose lineage + currentProject reads are scoped by a mutable
-   * `scopedPid` (the holder the source closes over). Each project resolves a
-   * distinct one-node graph and a distinct currentProject. Org-global getters are
-   * spied so we can assert they are NOT re-run on re-scope.
-   */
-  function scopedPrimary(getPid: () => string) {
-    const graphs: Record<string, { nodes: Record<string, LineageNode>; edges: Edge[] }> = {
-      p1: {
-        nodes: {
-          "p1.node": {
-            id: "p1.node",
-            label: "p1_view",
-            sub: "intermediate",
-            layer: "intermediate",
-            ref: { kind: "view", columns: [] },
-          },
-        },
-        edges: [],
-      },
-      p2: {
-        nodes: {
-          "p2.node": {
-            id: "p2.node",
-            label: "p2_view",
-            sub: "intermediate",
-            layer: "intermediate",
-            ref: { kind: "view", columns: [] },
-          },
-        },
-        edges: [],
-      },
-    };
-    const projectsSpy = vi.fn(() =>
-      Promise.resolve([] as unknown as ProjectSummary[]),
-    );
-    const orgSpy = vi.fn(() => Promise.resolve({} as never));
-    const primary: PartialCatalogSource = {
-      getProjects: projectsSpy,
-      getOrg: orgSpy,
-      getCurrentProject: () =>
-        Promise.resolve({
-          id: getPid(),
-          name: getPid().toUpperCase(),
-          description: "",
-        }),
-      getNodes: () =>
-        new Promise((resolve) => setTimeout(() => resolve(graphs[getPid()].nodes), 0)),
-      getEdges: () =>
-        new Promise((resolve) => setTimeout(() => resolve(graphs[getPid()].edges), 0)),
-      getAudit: () => new Promise((resolve) => setTimeout(() => resolve({}), 0)),
-    };
-    return { primary, projectsSpy, orgSpy };
   }
 
   it("re-derives the lineage graph + currentProject for the newly scoped project", async () => {
-    let pid = "p1";
-    const { primary } = scopedPrimary(() => pid);
-    const catalog = await createDataCatalog(primary, makeSource());
-    await catalog.selectProject("p1"); // the loader scopes the initial project
-    await flush();
+    const catalog = await createDataCatalog({}, makeSource());
 
+    catalog.seedProjectScoped(seed("p1", p1Node));
     expect(catalog.listNodes().map((n) => n.id)).toEqual(["p1.node"]);
     expect(catalog.getCurrentProject().id).toBe("p1");
 
-    // Re-scope to p2: the source now reads p2, selectProject re-runs the scoped
-    // getters and commits the new graph + currentProject.
-    pid = "p2";
-    await catalog.selectProject("p2");
-    await flush();
-
+    catalog.seedProjectScoped(seed("p2", p2Node));
     expect(catalog.listNodes().map((n) => n.id)).toEqual(["p2.node"]);
     expect(catalog.getCurrentProject().id).toBe("p2");
   });
 
   it("bumps the version and notifies subscribers on re-scope", async () => {
-    let pid = "p1";
-    const { primary } = scopedPrimary(() => pid);
-    const catalog = await createDataCatalog(primary, makeSource());
-    await flush();
-
+    const catalog = await createDataCatalog({}, makeSource());
     const fired = vi.fn();
     catalog.subscribe(fired);
     const before = catalog.getSnapshot();
 
-    pid = "p2";
-    await catalog.selectProject("p2");
-    await flush();
+    catalog.seedProjectScoped(seed("p2", p2Node));
 
     expect(fired).toHaveBeenCalled();
     expect(catalog.getSnapshot()).not.toBe(before);
   });
 
   it("resets per-project working mutations on switch (a rename does not leak)", async () => {
-    let pid = "p1";
-    const { primary } = scopedPrimary(() => pid);
-    const catalog = await createDataCatalog(primary, makeSource());
-    await catalog.selectProject("p1");
-    await flush();
+    const catalog = await createDataCatalog({}, makeSource());
+    catalog.seedProjectScoped(seed("p1", p1Node));
 
     catalog.renameSource("p1.node", "renamed_in_p1");
     expect(catalog.getNode("p1.node")?.label).toBe("renamed_in_p1");
 
-    pid = "p2";
-    await catalog.selectProject("p2");
-    await flush();
+    catalog.seedProjectScoped(seed("p2", p2Node));
 
     // p1's node (and its rename) is gone; p2's graph is fresh.
     expect(catalog.getNode("p1.node")).toBeUndefined();
     expect(catalog.getNode("p2.node")?.label).toBe("p2_view");
   });
 
-  it("does NOT re-run org-global getters (getProjects/getOrg) on re-scope", async () => {
-    let pid = "p1";
-    const { primary, projectsSpy, orgSpy } = scopedPrimary(() => pid);
-    const catalog = await createDataCatalog(primary, makeSource());
-    // The app shell loads org-global once (construction no longer auto-fetches it).
-    await catalog.refreshOrgGlobal();
-    expect(projectsSpy).toHaveBeenCalledTimes(1);
-    expect(orgSpy).toHaveBeenCalledTimes(1);
+  it("leaves the org-global projects list untouched on re-scope", async () => {
+    const catalog = await createDataCatalog({}, fallbackWithProjects());
+    const before = catalog.listProjects();
 
-    pid = "p2";
-    await catalog.selectProject("p2");
-    await flush();
+    catalog.seedProjectScoped(seed("p2", p2Node));
 
-    // Re-scope re-runs only the scoped getters — org-global counts unchanged.
-    expect(projectsSpy).toHaveBeenCalledTimes(1);
-    expect(orgSpy).toHaveBeenCalledTimes(1);
+    expect(catalog.listProjects()).toEqual(before);
   });
 
   it("re-derives recents + chats for the newly scoped project (sessions are project-scoped)", async () => {
-    let pid = "p1";
-    const recentsByPid: Record<string, ChatHistoryItem[]> = {
-      p1: [{ title: "p1 chat", nodeId: "p1.node", when: "1m ago" }],
-      p2: [{ title: "p2 chat", nodeId: null, when: "2m ago" }],
-    };
-    const chatsByPid: Record<string, ChatHistoryItem[]> = {
-      p1: [
-        { title: "p1 chat", nodeId: "p1.node", when: "1m ago" },
-        { title: "p1 older", nodeId: null, when: "1h ago" },
-      ],
-      p2: [{ title: "p2 chat", nodeId: null, when: "2m ago" }],
-    };
-    const { primary } = scopedPrimary(() => pid);
-    primary.getRecents = () =>
-      new Promise((resolve) => setTimeout(() => resolve(recentsByPid[pid]), 0));
-    primary.getAllChats = () =>
-      new Promise((resolve) => setTimeout(() => resolve(chatsByPid[pid]), 0));
-
-    const catalog = await createDataCatalog(primary, makeSource());
-    await catalog.selectProject("p1"); // the loader scopes the initial project
-    await flush();
+    const catalog = await createDataCatalog({}, makeSource());
+    catalog.seedProjectScoped(
+      seed("p1", p1Node, {
+        recents: [{ title: "p1 chat", nodeId: "p1.node", when: "1m ago" }],
+        chats: [
+          { title: "p1 chat", nodeId: "p1.node", when: "1m ago" },
+          { title: "p1 older", nodeId: null, when: "1h ago" },
+        ],
+      }),
+    );
 
     expect(catalog.listRecents().map((r) => r.title)).toEqual(["p1 chat"]);
     expect(catalog.listChats().map((c) => c.title)).toEqual([
@@ -1192,168 +462,61 @@ describe("createDataCatalog — selectProject (per-project re-scope)", () => {
       "p1 older",
     ]);
 
-    pid = "p2";
-    await catalog.selectProject("p2");
-    await flush();
+    catalog.seedProjectScoped(
+      seed("p2", p2Node, {
+        recents: [{ title: "p2 chat", nodeId: null, when: "2m ago" }],
+        chats: [{ title: "p2 chat", nodeId: null, when: "2m ago" }],
+      }),
+    );
 
     expect(catalog.listRecents().map((r) => r.title)).toEqual(["p2 chat"]);
     expect(catalog.listChats().map((c) => c.title)).toEqual(["p2 chat"]);
   });
 
   it("re-derives dbtFiles for the newly scoped project (the manifest is project-scoped)", async () => {
-    let pid = "p1";
-    const dbtByPid: Record<string, DbtFile[]> = {
-      p1: [{ path: "models/staging/stg_p1.sql", layer: "staging", ref: "stg_p1" }],
-      p2: [{ path: "models/staging/stg_p2.sql", layer: "staging", ref: "stg_p2" }],
-    };
-    const { primary } = scopedPrimary(() => pid);
-    primary.getDbtFiles = () =>
-      new Promise((resolve) => setTimeout(() => resolve(dbtByPid[pid]), 0));
-
-    const catalog = await createDataCatalog(primary, makeSource());
-    await catalog.selectProject("p1"); // the loader scopes the initial project
-    await flush();
+    const catalog = await createDataCatalog({}, makeSource());
+    catalog.seedProjectScoped(
+      seed("p1", p1Node, {
+        dbtFiles: [
+          { path: "models/staging/stg_p1.sql", layer: "staging", ref: "stg_p1" },
+        ],
+      }),
+    );
 
     expect(catalog.listDbtFiles().map((f) => f.path)).toEqual([
       "models/staging/stg_p1.sql",
     ]);
 
-    pid = "p2";
-    await catalog.selectProject("p2");
-    await flush();
+    catalog.seedProjectScoped(
+      seed("p2", p2Node, {
+        dbtFiles: [
+          { path: "models/staging/stg_p2.sql", layer: "staging", ref: "stg_p2" },
+        ],
+      }),
+    );
 
     expect(catalog.listDbtFiles().map((f) => f.path)).toEqual([
       "models/staging/stg_p2.sql",
     ]);
   });
 
-  it("does NOT load dbtFiles at construction — only selectProject does (project-scoped)", async () => {
-    let pid = "p1";
-    const getDbtFiles = vi.fn(
-      () =>
-        Promise.resolve([
-          { path: "models/staging/stg_p1.sql", layer: "staging", ref: "stg_p1" },
-        ]) as Promise<DbtFile[]>,
+  it("a re-scope to a project with no sessions yields empty recents + chats (not fixtures)", async () => {
+    const catalog = await createDataCatalog({}, makeSource());
+    catalog.seedProjectScoped(
+      seed("p1", p1Node, {
+        recents: [{ title: "p1 chat", nodeId: null, when: "1m ago" }],
+        chats: [{ title: "p1 chat", nodeId: null, when: "1m ago" }],
+      }),
     );
-    const { primary } = scopedPrimary(() => pid);
-    primary.getDbtFiles = getDbtFiles;
-
-    const catalog = await createDataCatalog(primary, makeSource());
-    await flush();
-
-    // Construction touched no project-scoped getter — dbtFiles loads with the route.
-    expect(getDbtFiles).not.toHaveBeenCalled();
-
-    pid = "p1";
-    await catalog.selectProject("p1");
-    await flush();
-    expect(getDbtFiles).toHaveBeenCalledTimes(1);
-    expect(catalog.listDbtFiles().map((f) => f.path)).toEqual([
-      "models/staging/stg_p1.sql",
-    ]);
-  });
-
-  it("re-scope to a project with no sessions yields empty recents + chats (not fixtures)", async () => {
-    let pid = "p1";
-    const { primary } = scopedPrimary(() => pid);
-    primary.getRecents = () =>
-      new Promise((resolve) =>
-        setTimeout(
-          () =>
-            resolve(
-              pid === "p1"
-                ? [{ title: "p1 chat", nodeId: null, when: "1m ago" }]
-                : [],
-            ),
-          0,
-        ),
-      );
-    primary.getAllChats = () =>
-      new Promise((resolve) =>
-        setTimeout(
-          () =>
-            resolve(
-              pid === "p1"
-                ? [{ title: "p1 chat", nodeId: null, when: "1m ago" }]
-                : [],
-            ),
-          0,
-        ),
-      );
-
-    const catalog = await createDataCatalog(primary, makeSource());
-    await catalog.selectProject("p1"); // the loader scopes the initial project
-    await flush();
     expect(catalog.listRecents()).toHaveLength(1);
 
-    pid = "p2";
-    await catalog.selectProject("p2");
-    await flush();
+    catalog.seedProjectScoped(seed("p2", p2Node));
 
     expect(catalog.listRecents()).toEqual([]);
     expect(catalog.listChats()).toEqual([]);
   });
 
-  it("drops a stale commit from a fast A→B→A switch (captured-pid guard)", async () => {
-    // A primary whose getNodes resolves on a per-pid delay: p2 is SLOW, p1 fast.
-    // A→B→A must land A's graph, never B's late one.
-    const graphs: Record<string, Record<string, LineageNode>> = {
-      p1: {
-        "p1.node": {
-          id: "p1.node",
-          label: "p1_view",
-          sub: "intermediate",
-          layer: "intermediate",
-          ref: { kind: "view", columns: [] },
-        },
-      },
-      p2: {
-        "p2.node": {
-          id: "p2.node",
-          label: "p2_view",
-          sub: "intermediate",
-          layer: "intermediate",
-          ref: { kind: "view", columns: [] },
-        },
-      },
-    };
-    let pid = "p1";
-    const delays: Record<string, number> = { p1: 0, p2: 50 };
-    const primary: PartialCatalogSource = {
-      getCurrentProject: () =>
-        Promise.resolve({ id: pid, name: pid, description: "" }),
-      getNodes: () => {
-        const captured = pid;
-        return new Promise((resolve) =>
-          setTimeout(() => resolve(graphs[captured]), delays[captured]),
-        );
-      },
-      getEdges: () => Promise.resolve([]),
-      getAudit: () => Promise.resolve({}),
-    };
-    const catalog = await createDataCatalog(primary, makeSource());
-    await flush();
-
-    // Fast A→B→A: kick B (slow), then immediately back to A (fast).
-    pid = "p2";
-    const bSwitch = catalog.selectProject("p2");
-    pid = "p1";
-    const aSwitch = catalog.selectProject("p1");
-    await Promise.all([bSwitch, aSwitch]);
-    await new Promise((r) => setTimeout(r, 80)); // outlast p2's 50ms delay
-
-    // The late p2 commit must have been dropped — A's graph stands.
-    expect(catalog.listNodes().map((n) => n.id)).toEqual(["p1.node"]);
-  });
-
-  it("construction does NOT eagerly load a project — only selectProject does (no seed-scope race)", async () => {
-    // The route is the single source of the current project: construction loads
-    // ONLY org-global getters, so there's no seed-scope (first-project) default that
-    // could race a cold deep-link to another project. The project's sessions/lineage
-    // load exclusively when the layout loader calls selectProject.
-    const getAllChats = vi.fn(() =>
-      Promise.resolve([{ title: "p2 chat", nodeId: null }] as ChatHistoryItem[]),
-    );
+  it("construction does NOT eagerly load a project (the route seeds the scope)", async () => {
     const getNodes = vi.fn(() => Promise.resolve({} as Record<string, LineageNode>));
     const getCurrentProject = vi.fn(() =>
       Promise.resolve({ id: "p2", name: "P2", description: "" }),
@@ -1361,7 +524,6 @@ describe("createDataCatalog — selectProject (per-project re-scope)", () => {
     const primary: PartialCatalogSource = {
       getProjects: () => Promise.resolve([] as unknown as ProjectSummary[]),
       getCurrentProject,
-      getAllChats,
       getNodes,
       getEdges: () => Promise.resolve([]),
       getAudit: () => Promise.resolve({}),
@@ -1370,16 +532,12 @@ describe("createDataCatalog — selectProject (per-project re-scope)", () => {
     const catalog = await createDataCatalog(primary, makeSource());
     await flush();
 
-    // Construction touched no project-scoped getter — no eager seed-scope load.
+    // Construction touched no project-scoped getter — the route seeds the scope.
     expect(getCurrentProject).not.toHaveBeenCalled();
-    expect(getAllChats).not.toHaveBeenCalled();
     expect(getNodes).not.toHaveBeenCalled();
 
-    // The route loader scopes the project; now (and only now) they load.
-    await catalog.selectProject("p2");
-    await flush();
-    expect(getAllChats).toHaveBeenCalledTimes(1);
-    expect(catalog.listChats().map((c) => c.title)).toEqual(["p2 chat"]);
+    catalog.seedProjectScoped(seed("p2", p2Node));
     expect(catalog.getCurrentProject().id).toBe("p2");
+    expect(catalog.listNodes().map((n) => n.id)).toEqual(["p2.node"]);
   });
 });
