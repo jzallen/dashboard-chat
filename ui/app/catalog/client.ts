@@ -39,13 +39,8 @@ import type {
   PartialCatalogSource,
   SourceUpload,
 } from "./dataSources/source";
-import type {
-  AuditEntry,
-  Edge,
-  Layer,
-  LineageNode,
-  ModelKind,
-} from "./lineage";
+import type { AuditEntry, Edge, Layer, LineageNode } from "./lineage";
+import { modelKindForLayer } from "./lineage";
 import { LineageGraph } from "./lineageGraph";
 import type {
   ChatHistoryItem,
@@ -61,17 +56,7 @@ import type {
  * are folded into the {@link LineageGraph}; the seven non-lineage payloads are
  * served straight off the snapshot.
  */
-/**
- * The model kind behind a node, from its layer (the domain 1:1: staging→dataset,
- * intermediate→view, mart→report). `undefined` for source nodes, which have no
- * backend entity and stay local-only on write.
- */
 const log = createLogger("catalog");
-
-const modelKindForLayer = (layer: Layer): ModelKind | undefined =>
-  (({ staging: "dataset", intermediate: "view", mart: "report" }) as const)[
-    layer as "staging" | "intermediate" | "mart"
-  ];
 
 interface CatalogSnapshot {
   graph: LineageGraph;

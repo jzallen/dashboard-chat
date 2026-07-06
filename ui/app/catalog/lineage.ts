@@ -26,6 +26,24 @@ export type Layer = (typeof LAYER_ORDER)[number];
  */
 export type ModelKind = "dataset" | "view" | "report";
 
+/**
+ * The model kind behind a node, derived from its pipeline layer (the domain
+ * 1:1: staging→dataset, intermediate→view, mart→report). `undefined` for
+ * source-layer nodes, which have no backend model entity.
+ */
+export function modelKindForLayer(layer: Layer): ModelKind | undefined {
+  switch (layer) {
+    case "staging":
+      return "dataset";
+    case "intermediate":
+      return "view";
+    case "mart":
+      return "report";
+    default:
+      return undefined;
+  }
+}
+
 /** A field/column descriptor as it appears in source schemas and model refs. */
 export interface FieldDef {
   name: string;

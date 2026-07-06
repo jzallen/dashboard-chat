@@ -1,5 +1,5 @@
 /* Navigation intents — the URL-emitting layer. nodeToPath maps a lineage node
-   to its project-scoped resource URL (the kind lives on node.ref.kind);
+   to its project-scoped resource URL (the kind derives from the node's layer);
    useNavIntents wraps useNavigate/useParams so leaf views call openNode /
    selectProject / toggleOrg / openRecent / go, resolved against the
    project-in-path URL. Chat-open intents reach the useChat() context, never
@@ -8,29 +8,29 @@ import { useCallback } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 
 import type { LineageNode, ProjectSummary } from "../catalog";
+import { modelKindForLayer } from "../catalog";
 import { catalog } from "../components/useCatalog";
 import { useChat } from "./chatContext";
 
-/** The node kind discriminant, read off the loose ModelRef bag. */
-function kindOf(node: LineageNode): string | undefined {
-  return node.ref?.kind as string | undefined;
-}
-
-/** The resource path segment for a node's kind (bare singular). */
-const KIND_PREFIX: Record<string, string> = {
-  dataset: "dataset",
-  view: "view",
-  report: "report",
-};
-
 /**
  * The deep-linkable URL for a lineage node, scoped to its project:
- * `/project/:projectId/{dataset|view|report}/:id`. projectId is REQUIRED —
+ * `/project/:projectId/{dataset|view|report}/:id`. The kind segment derives
+ * from the node's layer (the domain 1:1 map), not the loose ModelRef bag, so a
+ * missing/wrong `ref.kind` can't silently mis-route. projectId is REQUIRED —
  * project is part of a resource's identity at the API, so it lives in the path.
+ *
+ * Only ever called for non-source nodes (the chrome routes source-layer nodes
+ * to their upload window, never here). A source layer yields no model kind, so
+ * that is a programmer error and throws rather than mis-routing.
  */
 export function nodeToPath(node: LineageNode, projectId: string): string {
-  const prefix = KIND_PREFIX[kindOf(node) ?? ""] ?? "dataset";
-  return `/project/${projectId}/${prefix}/${node.id}`;
+  const kind = modelKindForLayer(node.layer);
+  if (kind === undefined) {
+    throw new Error(
+      `nodeToPath: node ${node.id} is layer "${node.layer}" with no model kind`,
+    );
+  }
+  return `/project/${projectId}/${kind}/${node.id}`;
 }
 
 /**
