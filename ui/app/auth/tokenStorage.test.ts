@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { hasSession } from "./tokenStorage";
+import { clearSessionFlag, hasSession } from "./tokenStorage";
 
 /** Drop every cookie the document currently holds (happy-dom is per-file). */
 function clearCookies(): void {
@@ -32,6 +32,13 @@ describe("hasSession", () => {
 
   it("does not match a different cookie whose name merely contains 'session'", () => {
     document.cookie = "mysession=1; Path=/";
+    expect(hasSession()).toBe(false);
+  });
+
+  it("clearSessionFlag drops the flag hasSession reads (shared key, not convention)", () => {
+    document.cookie = "session=1; Path=/";
+    expect(hasSession()).toBe(true);
+    clearSessionFlag();
     expect(hasSession()).toBe(false);
   });
 });
