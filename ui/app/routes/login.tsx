@@ -94,13 +94,15 @@ export default function LoginRoute() {
         </button>
       ) : mode === "workos" ? (
         failed ? (
-          <div style={{ textAlign: "center", font: "16px/1.5 system-ui,sans-serif" }}>
+          <div
+            style={{
+              textAlign: "center",
+              font: "16px/1.5 system-ui,sans-serif",
+            }}
+          >
             <p>Couldn’t reach the sign-in service.</p>
             <button
-              onClick={() => {
-                redirectedRef.current = true;
-                void startLogin();
-              }}
+              onClick={() => void startLogin()}
               style={{
                 font: "600 16px/1 system-ui,sans-serif",
                 padding: "10px 20px",
