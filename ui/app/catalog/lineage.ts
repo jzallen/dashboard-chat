@@ -10,8 +10,21 @@
  * the catalog, never the reverse.
  */
 
+/**
+ * The source layer — raw uploaded CSVs. Unlike the model-bearing layers it has
+ * no backend entity and carries no assistant transforms, so audit-facing code
+ * derives "layers with an audit trail" by excluding it (rather than slicing a
+ * position off {@link LAYER_ORDER}).
+ */
+export const SOURCE_LAYER = "source" as const;
+
 /** The pipeline layers, ordered left-to-right / upstream-to-downstream. */
-export const LAYER_ORDER = ["source", "staging", "intermediate", "mart"] as const;
+export const LAYER_ORDER = [
+  SOURCE_LAYER,
+  "staging",
+  "intermediate",
+  "mart",
+] as const;
 
 /**
  * A single data-pipeline layer. Derived from {@link LAYER_ORDER} so the list is

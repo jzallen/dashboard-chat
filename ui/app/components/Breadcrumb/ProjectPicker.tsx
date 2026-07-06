@@ -3,7 +3,7 @@ import { useState } from "react";
 
 import type { ProjectSummary } from "../../catalog";
 import { Icon } from "../primitives";
-import { catalog } from "../useCatalog";
+import { catalog, useCatalog } from "../useCatalog";
 
 export function ProjectPicker({
   projectId,
@@ -14,6 +14,9 @@ export function ProjectPicker({
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
+  // Subscribe to catalog mutations so a project rename/add lands here even when
+  // no ancestor re-renders (mirrors how the canvas subscribes).
+  useCatalog();
   const projects = catalog.listProjects();
   const cur = projects.find((p) => p.id === projectId) || projects[0];
   const list = projects.filter((p) =>

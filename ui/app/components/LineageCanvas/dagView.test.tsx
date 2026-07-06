@@ -11,8 +11,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CatalogSource } from "../../catalog";
 import type { StateProxy } from "../../lib/state-proxy";
 import { StateProxyProvider } from "../../lib/StateProxyProvider";
-import { installCatalogForTest, selectProject } from "../useCatalog";
+import { catalog, installCatalogForTest, selectProject } from "../useCatalog";
 import { DagView } from "./dagView";
+import { OpenNodeProvider } from "./openNodeContext";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -23,7 +24,8 @@ function catalogWithOptimisticNode(): CatalogSource {
   const empty = [] as unknown;
   return {
     getProjects: () => Promise.resolve(empty as never),
-    getCurrentProject: () => Promise.resolve({ id: "p1", name: "P1", description: "" }),
+    getCurrentProject: () =>
+      Promise.resolve({ id: "p1", name: "P1", description: "" }),
     getOrg: () => Promise.resolve({} as never),
     getRecents: () => Promise.resolve(empty as never),
     getAllChats: () => Promise.resolve(empty as never),
@@ -46,7 +48,10 @@ function catalogWithOptimisticNode(): CatalogSource {
 }
 
 /** A StateProxy whose snapshot pins the sourceUpload region at `phase`. */
-function proxyWithPhase(phase: SourceUploadPhase, tempNodeId: string): StateProxy {
+function proxyWithPhase(
+  phase: SourceUploadPhase,
+  tempNodeId: string,
+): StateProxy {
   const doc: ChatAppStateDocument = anonymousStateDocument();
   doc.regions.sourceUpload = {
     phase,
@@ -67,7 +72,9 @@ function proxyWithPhase(phase: SourceUploadPhase, tempNodeId: string): StateProx
 
 function wrapper(proxy: StateProxy) {
   return ({ children }: { children: ReactNode }) => (
-    <StateProxyProvider proxy={proxy}>{children}</StateProxyProvider>
+    <StateProxyProvider proxy={proxy}>
+      <OpenNodeProvider onOpen={vi.fn()}>{children}</OpenNodeProvider>
+    </StateProxyProvider>
   );
 }
 
@@ -79,7 +86,7 @@ describe("DagView — optimistic source-upload phase badge", () => {
 
     const proxy = proxyWithPhase("uploading", "tmp.1");
     render(
-      <DagView version={1} sel={null} onOpen={vi.fn()} flashedNodeId={null} />,
+      <DagView catalog={catalog} version={1} sel={null} flashedNodeId={null} />,
       { wrapper: wrapper(proxy) },
     );
 
@@ -93,7 +100,7 @@ describe("DagView — optimistic source-upload phase badge", () => {
 
     const proxy = proxyWithPhase("idle", null as unknown as string);
     render(
-      <DagView version={1} sel={null} onOpen={vi.fn()} flashedNodeId={null} />,
+      <DagView catalog={catalog} version={1} sel={null} flashedNodeId={null} />,
       { wrapper: wrapper(proxy) },
     );
 

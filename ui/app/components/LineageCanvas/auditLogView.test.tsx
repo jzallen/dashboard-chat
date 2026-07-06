@@ -4,8 +4,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { fixtureFallback } from "../../../app/routes/_fixtureCatalog";
 import type { AuditEntry } from "../../catalog";
-import { installCatalogForTest, selectProject } from "../useCatalog";
+import { catalog, installCatalogForTest, selectProject } from "../useCatalog";
 import { AuditLogView } from "./auditLogView";
+import { OpenNodeProvider } from "./openNodeContext";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -25,7 +26,10 @@ async function installWithDisabledEntry(): Promise<void> {
       },
     ],
   };
-  await installCatalogForTest({}, { ...base, getAudit: () => Promise.resolve(audit) });
+  await installCatalogForTest(
+    {},
+    { ...base, getAudit: () => Promise.resolve(audit) },
+  );
   await act(async () => {
     await selectProject("proj-1");
   });
@@ -36,7 +40,9 @@ describe("AuditLogView — disabled transform treatment", () => {
     await installWithDisabledEntry();
 
     render(
-      <AuditLogView sel={null} onOpen={vi.fn()} flashedNodeId={null} />,
+      <OpenNodeProvider onOpen={vi.fn()}>
+        <AuditLogView catalog={catalog} sel={null} flashedNodeId={null} />
+      </OpenNodeProvider>,
     );
 
     // The entry stays visible in the audit trail...

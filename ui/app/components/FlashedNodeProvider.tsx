@@ -7,9 +7,14 @@ import {
   type ReactNode,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
+
+/** How long a freshly created node stays flashed before the canvas settles. */
+const FLASH_DURATION_MS = 1600;
 
 type FlashedNodeApi = {
   /** The freshly created node id, or null. Cleared ~1.6s after flash(). */
@@ -22,10 +27,23 @@ const FlashedNodeContext = createContext<FlashedNodeApi | null>(null);
 
 export function FlashedNodeProvider({ children }: { children: ReactNode }) {
   const [flashedNodeId, setFlashedNodeId] = useState<string | null>(null);
+  // Hold the pending clear timer so a rapid re-flash restarts the countdown and
+  // unmount can cancel it (no setState after teardown).
+  const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flash = useCallback((id: string) => {
+    if (clearTimer.current !== null) clearTimeout(clearTimer.current);
     setFlashedNodeId(id);
-    setTimeout(() => setFlashedNodeId(null), 1600);
+    clearTimer.current = setTimeout(() => {
+      clearTimer.current = null;
+      setFlashedNodeId(null);
+    }, FLASH_DURATION_MS);
   }, []);
+  useEffect(
+    () => () => {
+      if (clearTimer.current !== null) clearTimeout(clearTimer.current);
+    },
+    [],
+  );
   const value = useMemo<FlashedNodeApi>(
     () => ({ flashedNodeId, flash }),
     [flashedNodeId, flash],
