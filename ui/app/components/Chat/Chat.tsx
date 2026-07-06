@@ -1,5 +1,6 @@
 /* Chat dock (scripted creation): the assistant overlay and its terminal variant. */
 import { useEffect, useRef, useState } from "react";
+import { useRevalidator } from "react-router";
 
 import type { AuditTag, Edge, LineageNode } from "../../catalog";
 import {
@@ -66,12 +67,17 @@ function agentContext(node: LineageNode | null): {
 }
 
 /** Append a domain event to the catalog-revalidation decision: the live
- *  assistant-transform reflection fires a scoped revalidate on the first
- *  dataset-mutating event of a turn. */
-function revalidateOnMutation(event: ChatStreamEvent, fired: { done: boolean }) {
+ *  assistant-transform reflection triggers the framework revalidator on the
+ *  first dataset-mutating event of a turn, re-running the project-layout loader
+ *  so the lineage reflects the change. */
+function revalidateOnMutation(
+  event: ChatStreamEvent,
+  fired: { done: boolean },
+  revalidate: () => void,
+) {
   if (!fired.done && isCatalogMutatingEvent(event)) {
     fired.done = true;
-    void catalog.revalidateScope();
+    revalidate();
   }
 }
 
@@ -83,6 +89,7 @@ export function AssistantOverlay({
 }: ChatDockProps) {
   // Re-render the recents list when backend sessions land (catalog commit).
   useCatalog();
+  const { revalidate } = useRevalidator();
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -143,7 +150,7 @@ export function AssistantOverlay({
               : [...m.slice(0, -1), { role: "bot", text: accumulated }],
           );
         },
-        onEvent: (event) => revalidateOnMutation(event, fired),
+        onEvent: (event) => revalidateOnMutation(event, fired, revalidate),
         onError: (message) => {
           setTyping(false);
           setMsgs((m) => [...m, { role: "bot", text: `⚠️ ${message}` }]);

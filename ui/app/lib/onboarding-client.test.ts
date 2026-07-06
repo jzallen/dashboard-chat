@@ -6,7 +6,7 @@
 // the adapter is implemented (DC-130/131/133).
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError } from "../catalog/dataSources/backendClient";
+import { ApiError } from "./api-error";
 import { onboardingClient } from "./onboarding-client";
 
 /** A 2xx Response whose JSON body is a JSON:API envelope. */

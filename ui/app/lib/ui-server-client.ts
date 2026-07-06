@@ -5,7 +5,8 @@
  * on) and {@link agentFetch} (the `/worker` hop): the route-action plumbing lives
  * here once rather than copied across each resource route. {@link brokerPatch}
  * (PATCH) serves the catalog renames; {@link brokerPost} (POST) serves the
- * upload / source-creation saga writes; {@link brokerGet} (GET) serves the
+ * upload / source-creation saga writes; {@link brokerUpload} (multipart POST)
+ * serves the one-step dataset upload; {@link brokerGet} (GET) serves the
  * onboarding driver's read legs (org probe, project list / scope resolution).
  */
 import { apiFetch } from "./api-client";
@@ -119,6 +120,43 @@ export async function brokerPost(
   const upstream = await apiFetch(request, backendPath, {
     method: "POST",
     body: await request.text(),
+    headers: { "content-type": contentType },
+  });
+
+  const headers = new Headers();
+  headers.set(
+    "content-type",
+    upstream.headers.get("content-type") ?? "application/json",
+  );
+  const body = await upstream.text();
+  return new Response(body === "" ? "{}" : body, {
+    status: upstream.status,
+    headers,
+  });
+}
+
+/**
+ * Forward a `/ui-server/*` MULTIPART POST action to the backend `/api` endpoint at
+ * `backendPath` — the broker for the one-step dataset upload (`createDataset` →
+ * `POST /api/uploads`). Sibling of {@link brokerPost}; it differs only in that the
+ * inbound body is a binary `multipart/form-data` payload, so the raw bytes are
+ * forwarded via `arrayBuffer()` (not `text()`, which would corrupt the file) with
+ * the inbound `content-type` (carrying the multipart boundary) preserved.
+ *
+ * The browser POSTs the FormData same-origin (riding its session cookie); this
+ * forwards it to the backend through auth-proxy via {@link apiFetch}. The upstream
+ * status + JSON:API body pass straight through — a non-2xx is NOT turned into a
+ * `/login` redirect (this is a fetch target, so the caller surfaces the failure).
+ */
+export async function brokerUpload(
+  request: Request,
+  backendPath: string,
+): Promise<Response> {
+  const contentType =
+    request.headers.get("content-type") ?? "application/octet-stream";
+  const upstream = await apiFetch(request, backendPath, {
+    method: "POST",
+    body: await request.arrayBuffer(),
     headers: { "content-type": contentType },
   });
 
