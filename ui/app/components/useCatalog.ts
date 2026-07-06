@@ -148,6 +148,11 @@ export function currentScopedProjectIdForTest(): string | undefined {
   return scopedProjectId;
 }
 
+/** The primary a route/nav test installed, so {@link loadTestScope} can read the
+ * project-scoped payloads the production server loader would fetch. Not used by
+ * the app. */
+let testPrimary: PartialCatalogSource | undefined;
+
 /**
  * Install a catalog composed from explicit sources — the seam route/nav tests
  * use to seed a known fixture catalog (and exercise the async deep-link
@@ -159,7 +164,61 @@ export async function installCatalogForTest(
   fallback: CatalogSource,
 ): Promise<void> {
   scopedProjectId = undefined;
+  testPrimary = primary;
   catalog = await createDataCatalog(primary, fallback);
+}
+
+/**
+ * Route/nav test seam standing in for the production `/project/:projectId` server
+ * loader: it reads the installed test primary's project-scoped payloads and
+ * commits them via {@link seedProjectScoped}, just as the real loader fetches
+ * them through `apiFetch` and the component seeds `useLoaderData()`. Called
+ * fire-and-forget from the test route tree's layout loader so the route renders
+ * on the current snapshot first (the bounded-pending skeleton) and the scoped
+ * payloads commit reactively a beat later — the async deep-link resolution these
+ * tests exercise. A superseded scope's late resolution is dropped.
+ */
+export async function loadTestScope(projectId: string): Promise<void> {
+  scopedProjectId = projectId;
+  const p = testPrimary;
+  if (!p) return;
+  // No backend lineage getters → keep the seeded fallback graph, as the SSR
+  // loader carries no scoped payload for a fixture-only catalog.
+  if (!p.getNodes || !p.getEdges || !p.getAudit) return;
+  let nodes: Record<string, LineageNode>;
+  let edges: Edge[];
+  let audit: Record<string, AuditEntry[]>;
+  try {
+    [nodes, edges, audit] = await Promise.all([
+      p.getNodes ? p.getNodes() : Promise.resolve({}),
+      p.getEdges ? p.getEdges() : Promise.resolve([] as Edge[]),
+      p.getAudit ? p.getAudit() : Promise.resolve({}),
+    ]);
+  } catch {
+    return; // a failed lineage read keeps the seeded fallback (no blank canvas)
+  }
+  const [recents, chats, dbtFiles] = await Promise.all([
+    (p.getRecents ? p.getRecents() : Promise.resolve([])).catch(
+      () => [] as ChatHistoryItem[],
+    ),
+    (p.getAllChats ? p.getAllChats() : Promise.resolve([])).catch(
+      () => [] as ChatHistoryItem[],
+    ),
+    (p.getDbtFiles ? p.getDbtFiles() : Promise.resolve([])).catch(
+      () => [] as DbtFile[],
+    ),
+  ]);
+  if (scopedProjectId !== projectId) return; // a later navigation superseded us
+  seedProjectScoped({
+    projectId,
+    nodes,
+    edges,
+    audit,
+    dbtFiles,
+    chats,
+    recents,
+    sourceUploads: {},
+  });
 }
 
 /** Subscribe a component to catalog mutations; returns the store version. */

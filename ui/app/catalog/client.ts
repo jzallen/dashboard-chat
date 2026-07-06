@@ -131,9 +131,9 @@ export async function createDataCatalog(
     listeners.forEach((l) => l());
   };
 
-  // The currently-scoped project id, set ONLY by selectProject (the project-layout
-  // loader) and used by the captured-pid guard so a fast A→B→A re-scope can't land
-  // a stale commit. `undefined` until the first selectProject.
+  // The current project scope, set by selectProject / seedProjectScoped. Used only
+  // to tag the source-upload driver command's projectId (the report payload) and as
+  // the seed baseline. `undefined` until the first scope is set.
   let currentScopedPid: string | undefined;
 
   // Org-global revalidation (projects/org/chatScript). NOT run at construction:
@@ -180,131 +180,24 @@ export async function createDataCatalog(
     }
     await Promise.all(tasks);
   };
-  /**
-   * Re-run only the PROJECT-SCOPED primary getters (currentProject, the lineage
-   * triple, the sessions-backed recents/chats, and the dbt manifest) and commit
-   * their results, building a FRESH {@link LineageGraph}. The org-global getters
-   * (getProjects/getOrg/getChatScript) are NOT re-run — they don't change with the
-   * scope. recents/chats ARE project-scoped (a project's sessions) and dbtFiles is
-   * a per-project manifest, so they re-derive here. Each `.then` is guarded by a
-   * captured-pid check so a superseded switch's late resolution is dropped.
-   *
-   * Note: because this builds a fresh graph, per-project working mutations
-   * (rename/archive/live-add) and cold storage reset on switch — correct, since
-   * they're per-project. Cold storage is now derived from server truth by the
-   * project-layout loader (via `toLineageGraph` coldRecords), so this revalidation
-   * no longer needs to carry prior cold state forward.
-   */
-  const revalidateScoped = async (
-    requestedPid: string,
-    opts?: { fresh?: boolean },
-  ): Promise<void> => {
-    // A write-triggered revalidation must see fresh server state, so drop the
-    // source's per-project cache first. A project SWITCH leaves it cached (SWR).
-    if (opts?.fresh) primary.invalidateScope?.(requestedPid);
-    const stillCurrent = () => requestedPid === currentScopedPid;
-    const tasks: Promise<void>[] = [];
-    if (primary.getCurrentProject) {
-      tasks.push(
-        primary
-          .getCurrentProject()
-          .then((currentProject) => {
-            if (!stillCurrent()) return;
-            commit({ currentProject });
-          })
-          .catch((err) =>
-            log.warn("read.currentProject.failed", {
-              pid: requestedPid,
-              err: String(err),
-            }),
-          ),
-      );
-    }
-    if (primary.getRecents) {
-      tasks.push(
-        primary
-          .getRecents()
-          .then((recents) => {
-            if (!stillCurrent()) return;
-            commit({ recents });
-          })
-          .catch((err) =>
-            log.warn("read.recents.failed", {
-              pid: requestedPid,
-              err: String(err),
-            }),
-          ),
-      );
-    }
-    if (primary.getAllChats) {
-      tasks.push(
-        primary
-          .getAllChats()
-          .then((chats) => {
-            if (!stillCurrent()) return;
-            commit({ chats });
-          })
-          .catch((err) =>
-            log.warn("read.chats.failed", {
-              pid: requestedPid,
-              err: String(err),
-            }),
-          ),
-      );
-    }
-    if (primary.getNodes && primary.getEdges && primary.getAudit) {
-      tasks.push(
-        Promise.all([
-          primary.getNodes(),
-          primary.getEdges(),
-          primary.getAudit(),
-        ])
-          .then(([n, e, a]) => {
-            if (!stillCurrent()) return;
-            commit({ graph: LineageGraph.from(n, e, a) });
-          })
-          .catch((err) =>
-            log.warn("read.lineage.failed", {
-              pid: requestedPid,
-              err: String(err),
-            }),
-          ),
-      );
-    }
-    if (primary.getDbtFiles) {
-      tasks.push(
-        primary
-          .getDbtFiles()
-          .then((dbtFiles) => {
-            if (!stillCurrent()) return;
-            commit({ dbtFiles });
-          })
-          .catch((err) =>
-            log.warn("read.dbtFiles.failed", {
-              pid: requestedPid,
-              err: String(err),
-            }),
-          ),
-      );
-    }
-    await Promise.all(tasks);
-  };
-
-  // No project-scoped revalidation at construction: the project-layout loader
-  // calls selectProject(params.projectId) for the route's project (and `/`
-  // redirects to /project/:first), so the route is the only thing that loads a
-  // project's currentProject/recents/chats/lineage. Until then the snapshot shows
-  // the seeded fallback (fixtures).
+  // No client-side project-scoped revalidation: the project-layout loader
+  // fetches the scoped reads server-side and the component seeds them via
+  // seedProjectScoped, so the framework's loader IS the revalidation path. Until
+  // the first seed the snapshot shows the seeded fallback (fixtures).
 
   /**
    * Build the source-upload saga driver over the backend source ports + the
-   * catalog's optimistic add/remove + a scope revalidation, bound to the
-   * project scope captured at call time. Returns `null` when no backend source
-   * backs the source-upload ports (the fixture fallback) so callers resolve
-   * `undefined`. Shared by createSourceFromUpload (new source) and
+   * catalog's optimistic add/remove + a framework revalidation. Returns `null`
+   * when no backend source backs the source-upload ports (the fixture fallback)
+   * so callers resolve `undefined`. The `revalidate` callback (the surface's
+   * `useRevalidator().revalidate`) re-runs the loader once the saga lands the
+   * real source. Shared by createSourceFromUpload (new source) and
    * addUploadToSource (existing source, slice 5).
    */
-  const buildSourceUploadDriver = (report: ReportSink) => {
+  const buildSourceUploadDriver = (
+    report: ReportSink,
+    revalidate: () => void | Promise<void>,
+  ) => {
     if (
       !primary.createSource ||
       !primary.requestUpload ||
@@ -323,10 +216,8 @@ export async function createDataCatalog(
           primary.putToStorage!(putUrl, uploadFile),
         processUpload: (sourceId, uploadId, choices) =>
           primary.processUpload!(sourceId, uploadId, choices),
-        revalidateScope: async () => {
-          if (requestedPid !== undefined && requestedPid === currentScopedPid) {
-            await revalidateScoped(requestedPid, { fresh: true });
-          }
+        revalidate: async () => {
+          await revalidate();
         },
       },
       report,
@@ -402,33 +293,6 @@ export async function createDataCatalog(
     addModel: (node: LineageNode, edge: Edge) =>
       commit({ graph: snapshot.graph.addModel(node, edge) }),
     /**
-     * Create a dataset from an uploaded file. Delegates to `primary.createDataset`
-     * (the multipart upload that lands the file in the lake and creates the
-     * dataset), then re-fetches the current project scope so the new dataset
-     * appears in the lineage. Returns the new dataset id, or undefined when no
-     * backend source backs uploads (the fixture fallback). Rejects on a failed
-     * upload so the caller can surface it.
-     */
-    createDataset: async (file: File): Promise<string | undefined> => {
-      if (!primary.createDataset) return undefined;
-      log.info("write.createDataset", { name: file.name, size: file.size });
-      try {
-        const { id } = await primary.createDataset(file);
-        log.info("write.createDataset.ok", { id });
-        if (currentScopedPid !== undefined) {
-          await revalidateScoped(currentScopedPid, { fresh: true });
-        }
-        return id;
-      } catch (err) {
-        log.error("write.createDataset.failed", {
-          name: file.name,
-          err: String(err),
-        });
-        throw err;
-      }
-    },
-
-    /**
      * Create a Source from an uploaded file — the client-driven saga (slice 4).
      * Composes {@link createSourceUploadDriver} over the backend source ports +
      * the catalog's optimistic add/remove + a scope revalidation, and the
@@ -445,8 +309,9 @@ export async function createDataCatalog(
       file: File,
       name: string,
       report: ReportSink,
+      revalidate: () => void | Promise<void>,
     ): Promise<{ datasetId: string; tempNodeId: string } | undefined> => {
-      const built = buildSourceUploadDriver(report);
+      const built = buildSourceUploadDriver(report, revalidate);
       if (!built) return undefined;
       return built.driver.createSourceFromUpload({
         file,
@@ -468,8 +333,9 @@ export async function createDataCatalog(
       sourceId: string,
       file: File,
       report: ReportSink,
+      revalidate: () => void | Promise<void>,
     ): Promise<{ datasetId: string } | undefined> => {
-      const built = buildSourceUploadDriver(report);
+      const built = buildSourceUploadDriver(report, revalidate);
       if (!built) return undefined;
       return built.driver.addUploadToSource({
         file,
@@ -515,12 +381,13 @@ export async function createDataCatalog(
      * client-side, this commits the SSR'd values straight through — no round-trip,
      * no browser read.
      *
-     * Sets the scoped-pid guard baseline (so write-through revalidation targets
-     * this project) and builds a FRESH {@link LineageGraph} from the loader's
-     * nodes/edges/audit, so the previous project's lineage/sessions/dbt are dropped
-     * rather than merged — switching scope never surfaces stale-scope data. The
-     * org-global payloads (projects/org) are untouched; `currentProject` continues
-     * to track the org-global project list.
+     * Records the current project scope and builds a FRESH {@link LineageGraph}
+     * from the loader's nodes/edges/audit (plus any archived datasets as cold
+     * records), so the previous project's lineage/sessions/dbt are dropped rather
+     * than merged — switching scope never surfaces stale-scope data. `currentProject`
+     * is re-scoped from the org-global projects list (a minimal record when the
+     * project isn't in the list yet). The org-global payloads (projects/org) are
+     * untouched.
      */
     seedProjectScoped: (data: {
       projectId: string;
@@ -533,7 +400,12 @@ export async function createDataCatalog(
       coldRecords?: ColdStorageRecord[];
     }): void => {
       currentScopedPid = data.projectId;
+      const proj = snapshot.projects.find((p) => p.id === data.projectId);
+      const currentProject: CurrentProject = proj
+        ? { id: proj.id, name: proj.name, description: proj.desc }
+        : { id: data.projectId, name: data.projectId, description: "" };
       commit({
+        currentProject,
         graph: LineageGraph.fromWithCold(
           data.nodes,
           data.edges,
@@ -548,35 +420,15 @@ export async function createDataCatalog(
 
     /* ─── project re-scope (project-in-path) ─────────────────────────────── */
     /**
-     * Re-scope the catalog to a different project: set the scoped pid (the guard
-     * baseline), then re-run only the project-scoped primary getters
-     * (getCurrentProject + the lineage triple) and commit a FRESH graph +
-     * currentProject. Org-global payloads are untouched. Because a fresh graph is
-     * built, per-project working mutations and cold storage reset on switch
-     * (correct — they're per-project). The injected catalog source must already
-     * read the new scope (the app sets its scoped-pid holder before calling this;
-     * see useCatalog.selectProject). Safe to call rapidly: a superseded switch's
-     * late commit is dropped by the captured-pid guard.
+     * Record the current project scope. The project-layout loader fetches the
+     * scoped reads server-side and the component commits them via
+     * {@link seedProjectScoped}, so re-derivation is the framework loader's job —
+     * this only tracks which project the source-upload driver command targets.
      */
     selectProject: (projectId: string): Promise<void> => {
       currentScopedPid = projectId;
       log.debug("scope.select", { pid: projectId });
-      return revalidateScoped(projectId);
-    },
-
-    /**
-     * Revalidate the CURRENTLY-scoped project against fresh server state — the
-     * public seam for live reactive reads (e.g. the assistant-transform
-     * reflection: an SSE `transform_applied` event from /ui-server/chat triggers this so
-     * the lineage/preview re-derives). Wraps the private scoped revalidation with
-     * `fresh:true` (drop the source's per-project cache first). No-op until a
-     * project is scoped (the captured-pid guard also drops a late commit if the
-     * scope changes mid-flight). Defaults `fresh:true`; pass `{ fresh:false }` for
-     * an SWR-style refresh.
-     */
-    revalidateScope: (opts?: { fresh?: boolean }): Promise<void> => {
-      if (currentScopedPid === undefined) return Promise.resolve();
-      return revalidateScoped(currentScopedPid, { fresh: opts?.fresh ?? true });
+      return Promise.resolve();
     },
 
     /* ─── reactivity surface (for useSyncExternalStore) ──────────────────── */

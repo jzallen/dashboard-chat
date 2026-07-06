@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { fixtureFallback } from "../../../app/routes/_fixtureCatalog";
 import type { ChatHistoryItem, PartialCatalogSource } from "../../catalog";
-import { installCatalogForTest, selectProject } from "../useCatalog";
+import { installCatalogForTest, seedProjectScoped } from "../useCatalog";
 import { ChatSessionList } from "./ChatSessionList";
 
 afterEach(() => vi.restoreAllMocks());
@@ -20,9 +20,9 @@ function fallbackWithChat(): ReturnType<typeof fixtureFallback> {
 
 describe("ChatSessionList — reactivity to backend session commits", () => {
   it("re-renders when the project's sessions land (subscribes via useCatalog)", async () => {
-    // The project-layout loader scopes the project (selectProject), which loads its
-    // sessions a beat later (like a backend fetch) — so the seeded fixture chat is
-    // shown first, then replaced on the catalog commit.
+    // The project-layout loader seeds the scoped project's sessions via
+    // seedProjectScoped — so the seeded fixture chat paints first, then the
+    // component re-renders on the catalog commit with no user interaction.
     const backendChat: ChatHistoryItem[] = [
       { title: "Backend Session", nodeId: null, when: "2m ago" },
     ];
@@ -31,8 +31,6 @@ describe("ChatSessionList — reactivity to backend session commits", () => {
         Promise.resolve([
           { id: "p1", name: "P1", desc: "", datasets: 0, models: 0 },
         ]),
-      getAllChats: () =>
-        new Promise((resolve) => setTimeout(() => resolve(backendChat), 0)),
     };
 
     await installCatalogForTest(primary, fallbackWithChat());
@@ -42,11 +40,20 @@ describe("ChatSessionList — reactivity to backend session commits", () => {
     // Seeded fixture chat paints first…
     expect(screen.getByText("Fixture Session")).toBeTruthy();
 
-    // …the loader scopes the project, and its sessions commit re-renders the list
-    // with NO user interaction. (Without the useCatalog() subscription the
-    // component would stay on the seed.)
+    // …the loader seeds the scoped project's sessions, re-rendering the list with
+    // NO user interaction. (Without the useCatalog() subscription the component
+    // would stay on the seed.)
     await act(async () => {
-      await selectProject("p1");
+      seedProjectScoped({
+        projectId: "p1",
+        nodes: {},
+        edges: [],
+        audit: {},
+        dbtFiles: [],
+        chats: backendChat,
+        recents: [],
+        sourceUploads: {},
+      });
     });
     await waitFor(() => expect(screen.getByText("Backend Session")).toBeTruthy());
     expect(screen.queryByText("Fixture Session")).toBeNull();

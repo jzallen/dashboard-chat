@@ -13,15 +13,12 @@
  *                                    agent upstream, stubbed via fetch)
  *     <- SSE relayed straight back (un-buffered Response(upstream.body) passthrough)
  *   <- streamed assistant text lands in the transcript
- *      AND a transform_applied domain event triggers catalog.revalidateScope()
+ *      AND a transform_applied domain event triggers useRevalidator().revalidate()
  *
  * The setTimeout mock (catalog.getChatScript replay) is GONE for this path — the
  * overlay drives a real network turn. Only the true external boundary (the agent,
  * reached through auth-proxy at AUTH_PROXY_URL + /worker/chat) is faked; the broker
  * hop and the client are both real. See distill/wave-decisions.md (DWD-5, DWD-6).
- *
- * RED until DELIVER lands steps 4-7 (the /ui-server/chat action, the SSE reader, the
- * AssistantOverlay rewire, and the public catalog.revalidateScope()).
  */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
@@ -37,8 +34,16 @@ import {
 
 import { fixtureSource } from "../catalog";
 import { AssistantOverlay } from "../components/Chat/Chat";
-import { catalog, installCatalogForTest } from "../components/useCatalog";
+import { installCatalogForTest } from "../components/useCatalog";
 import { action as uiServerChatAction } from "../routes/ui-server/chat";
+
+// Intercept useRevalidator so the overlay's revalidate call is observable
+// without needing a full data-router context in this acceptance test.
+const mockRevalidate = vi.fn();
+vi.mock("react-router", async () => {
+  const actual = await vi.importActual<typeof import("react-router")>("react-router");
+  return { ...actual, useRevalidator: () => ({ revalidate: mockRevalidate, state: "idle" }) };
+});
 
 // The downstream origin the server-side broker targets (agent via auth-proxy).
 const AUTH_PROXY_URL = "http://auth-proxy.test";
@@ -115,10 +120,8 @@ beforeEach(async () => {
 });
 
 describe("SSR ui-server gateway · slice 1 · live assistant chat wire", () => {
-  it("streams a real assistant turn through /ui-server/chat and revalidates the catalog on transform_applied", async () => {
-    const revalidateSpy = vi
-      .spyOn(catalog, "revalidateScope")
-      .mockResolvedValue(undefined);
+  it("streams a real assistant turn through /ui-server/chat and triggers framework revalidation on transform_applied", async () => {
+    mockRevalidate.mockClear();
 
     const noop = () => {};
     render(
@@ -141,7 +144,7 @@ describe("SSR ui-server gateway · slice 1 · live assistant chat wire", () => {
       expect(screen.getByText(/Trimmed whitespace in city\./)).toBeTruthy(),
     );
 
-    // The transform_applied domain event triggered a scoped catalog revalidation.
-    await waitFor(() => expect(revalidateSpy).toHaveBeenCalled());
+    // The transform_applied domain event triggered the framework revalidator.
+    await waitFor(() => expect(mockRevalidate).toHaveBeenCalled());
   });
 });
