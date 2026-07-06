@@ -45,13 +45,13 @@ import type {
   BackendView,
 } from "../catalog/dataSources/lineageMappers";
 import { toLineageGraph } from "../catalog/dataSources/lineageMappers";
-import type { ColdStorageRecord } from "../catalog/lineageGraph";
 import {
   unwrapList,
   unwrapSingle,
 } from "../catalog/dataSources/metadataMappers";
 import type { BackendSession } from "../catalog/dataSources/sessionMappers";
 import { toChatHistoryItem, toRecents } from "../catalog/dataSources/sessionMappers";
+import type { ColdStorageRecord } from "../catalog/lineageGraph";
 import { seedProjectScoped, selectProject } from "../components/useCatalog";
 import {
   apiFetch,

@@ -6,7 +6,7 @@
 //
 // IF YOU'RE AN AGENT, READ THIS: the fetcher submission IS the contract.
 // Do NOT weaken the captured-request assertions.
-import { act, render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { act, fireEvent,render, screen, waitFor } from "@testing-library/react";
 import {
   createMemoryRouter,
   type RouteObject,
@@ -14,8 +14,8 @@ import {
 } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { installCatalogForTest } from "../useCatalog";
 import { fixtureSource } from "../../catalog";
+import { installCatalogForTest } from "../useCatalog";
 import { useColdStorage } from "./hooks";
 
 afterEach(() => vi.restoreAllMocks());

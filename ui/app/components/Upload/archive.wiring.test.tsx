@@ -6,6 +6,7 @@
 //
 // IF YOU'RE AN AGENT, READ THIS: the fetcher submission IS the contract.
 // Do NOT weaken the captured-request assertions.
+import { anonymousStateDocument } from "@dashboard-chat/ui-state-wire";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   createMemoryRouter,
@@ -14,7 +15,6 @@ import {
 } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { anonymousStateDocument } from "@dashboard-chat/ui-state-wire";
 import { fixtureSource } from "../../catalog";
 import { scriptedStateProxy } from "../../lib/_stateProxyTestKit";
 import { StateProxyProvider } from "../../lib/StateProxyProvider";
