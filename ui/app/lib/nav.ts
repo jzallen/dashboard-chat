@@ -33,8 +33,20 @@ export function nodeToPath(node: LineageNode, projectId: string): string {
   return `/project/${projectId}/${prefix}/${node.id}`;
 }
 
-/** A nav request handed back from leaf views (Chat / ChatSessionList). */
-export type NavIntent = { name: string; nodeId?: string | null };
+/**
+ * A nav request handed back from leaf views (Chat / ChatSessionList). A closed
+ * union of the four real intents so the {@link useNavIntents} `go` dispatch is
+ * exhaustive and call sites can only name an intent that exists:
+ *   - `openRecent` re-opens a recent session, optionally on its backing node;
+ *   - `assistant` opens the transient chat dock;
+ *   - `chats` routes to the project session list;
+ *   - `chat` routes back to the project home.
+ */
+export type NavIntent =
+  | { name: "openRecent"; nodeId?: string | null }
+  | { name: "assistant" }
+  | { name: "chats" }
+  | { name: "chat" };
 
 /**
  * The intent surface leaf views and the shell call. Navigation intents resolve
@@ -91,23 +103,24 @@ export function useNavIntents() {
   /** Compatibility shim for the existing Chat / ChatSessionList call sites. */
   const go = useCallback(
     (intent: NavIntent) => {
-      if (intent.name === "openRecent") {
-        openRecent(intent.nodeId ?? null);
-        return;
+      switch (intent.name) {
+        case "openRecent":
+          openRecent(intent.nodeId ?? null);
+          return;
+        case "assistant":
+          openChat();
+          return;
+        case "chats":
+          navigate(projectId ? "/project/" + projectId + "/chats" : "/");
+          return;
+        case "chat":
+          navigate(projectId ? "/project/" + projectId : "/");
+          return;
+        default: {
+          const _exhaustive: never = intent;
+          return _exhaustive;
+        }
       }
-      if (intent.name === "assistant") {
-        openChat();
-        return;
-      }
-      if (intent.name === "chats") {
-        navigate(projectId ? "/project/" + projectId + "/chats" : "/");
-        return;
-      }
-      if (intent.name === "chat") {
-        navigate(projectId ? "/project/" + projectId : "/");
-        return;
-      }
-      navigate(projectId ? "/project/" + projectId : "/");
     },
     [navigate, openChat, openRecent, projectId],
   );
