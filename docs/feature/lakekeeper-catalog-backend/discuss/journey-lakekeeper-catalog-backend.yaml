@@ -1,0 +1,245 @@
+schema_version: 1
+# Feature-level journey contract — lakekeeper-catalog-backend (operator / data-engineer perspective).
+#
+# This is NOT yet a product-SSOT journey. It is the operator/data-engineer
+# integration loop that the scoped LakeKeeper BUY must support, catalogued
+# provisionally as J-009 in docs/product/journeys/_inventory.md. Like J-008
+# (operator observability), it is a cross-cutting integration loop rather than an
+# end-user product flow, so it stays a feature-level contract unless/until it is
+# deliberately promoted.
+#
+# Human-readable perspective + emotional arc:
+#   journey-lakekeeper-catalog-backend-visual.md
+# Gherkin:
+#   journey-lakekeeper-catalog-backend.feature
+#
+# Authoritative DISCOVER source: ../discover/buy-vs-build.md (scoped BUY on the
+# catalog/management/audit plane; keep-build Ibis on the compile plane). The
+# original DISCOVER DECLINE recommendation is superseded (see the banner atop
+# ../discover/wave-decisions.md).
+
+journey:
+  id: "J-009-lakekeeper-catalog"
+  name: "Standing up an org's Iceberg catalog and handing a data engineer real tables"
+  goal: >
+    Let an operator point one org's Iceberg REST catalog (LakeKeeper) at the same
+    WorkOS IdP the app uses, represent a dc project as a LakeKeeper Project with a
+    default Warehouse, materialize a chat-authored dataset as an Iceberg table by
+    running the Ibis-compiled SQL through DuckDB directly (no dbt), prove the
+    materialized table is a derived cache (re-derive == materialized; determinism
+    probe passes with the catalog offline), and hand a data engineer a real
+    Iceberg table in a standard catalog their tools already speak — all without the
+    catalog ever becoming a render-time authority (ADR-026).
+
+  job_references:
+    - id: JOB-005
+      relationship: "primary — this journey IS the provision -> represent -> materialize -> prove -> hand-off loop JOB-005 names"
+    - id: JOB-003
+      relationship: >
+        foundational — JOB-003 makes operations the deterministic source of truth
+        and Ibis the only compiler (ADR-051/026); this journey's materialization
+        corollary depends on that invariant (the materialized table is re-derivable
+        from the same operations JOB-003 canonicalizes).
+    - id: JOB-001
+      relationship: >
+        supportive — JOB-001's eject-to-dbt handoff credibility (O4) is strengthened
+        when the handoff is real Iceberg tables in a standard catalog, not only a
+        dbt-zip; dbt stays the optional eject/handoff format.
+
+  primary_personas:
+    - id: PERSONA-OPERATOR
+      name: "Internal engineer / operator"
+      role: "provisions an org's catalog, represents projects, materializes datasets"
+      context: "starts inside one already-provisioned tenant (one LakeKeeper Server per org); needs the catalog to trust the same WorkOS IdP and needs to prove the determinism invariant holds"
+    - id: PERSONA-DATA-ENGINEER
+      name: "Data engineer (consumer)"
+      role: "consumes chat-authored datasets as Iceberg tables in their own lakehouse tools"
+      context: "wants a standard Iceberg REST catalog + evolvable table schema + snapshot history, not a proprietary Parquet layout plus a dbt-zip"
+
+  # The four planes this journey spans (../discover/buy-vs-build.md). Ibis (compile
+  # plane) is KEEP-BUILD and never becomes a catalog concern.
+  planes:
+    - id: catalog-storage
+      role: "BUY — LakeKeeper Iceberg REST catalog; Iceberg table schema + partition spec replace schema_config JSON (models/dataset.py:94)"
+    - id: execution-materialization
+      role: "BUY-the-engine — DuckDB writes Iceberg to LakeKeeper directly (INSERT INTO ... SELECT, GA since v1.4); NO dbt runtime"
+    - id: management
+      role: "PARTIAL BUY — LakeKeeper Project = dc project, behind the existing project repository port (ADR-020); authority model is a DESIGN open fork"
+    - id: auth
+      role: "PROVEN — LakeKeeper OIDC against WorkOS AuthKit issuer; auto-provisions users; authZ boundary is the open unknown"
+    - id: compile-invariant
+      role: "KEEP-BUILD — Ibis is the only compiler (ADR-026); the catalog is never a render-time authority; Iceberg Views are export sinks only"
+
+# The provision -> represent -> materialize -> prove -> hand-off loop, modeled as
+# operator-observable states.
+state_machine:
+  initial: "tenant_ready"
+  authority: "persisted_operations"   # ADR-026: operations are the ONLY source of truth; the catalog is downstream
+  states:
+    - id: "tenant_ready"
+      kind: "external"
+      description: >
+        One org's LakeKeeper Server is already provisioned (per-org Server is the
+        tenancy model; the org-lifecycle control plane that stands it up is OUT of
+        scope). The operator has a WorkOS token for that org.
+      transitions:
+        - on: "workos_token_authenticates"
+          to: "project_represented"
+        - on: "workos_token_rejected"
+          to: "blocked_auth"
+
+    - id: "project_represented"
+      kind: "in-flight"
+      description: >
+        A dc project is represented as a LakeKeeper Project with a default Warehouse
+        at the project's S3 prefix, created through the existing project repository
+        port (adapter -> LakeKeeper Management API). Application layer unchanged.
+      invariants:
+        - "the project use case calls repositories.projects.create(...) unchanged (ADR-020)"
+        - "routing, controllers, and use-case logic are not modified"
+        - "a project id and a default Warehouse at the S3 prefix exist"
+      transitions:
+        - on: "project_created"
+          to: "materialized"
+        - on: "project_create_failed"
+          to: "blocked_project"
+
+    - id: "materialized"
+      kind: "in-flight"
+      description: >
+        A dataset is materialized as an Iceberg table by running
+        INSERT INTO <iceberg_table> SELECT <ibis-compiled-sql> from DuckDB ATTACHed
+        to the Warehouse. A snapshot commits. No dbt process runs.
+      invariants:
+        - "the SQL is the Ibis-compiled SQL from the persisted operations, never hand-edited"
+        - "a snapshot commits and returns a snapshot id"
+        - "no dbt runtime is invoked"
+      transitions:
+        - on: "snapshot_committed"
+          to: "proven"
+        - on: "snapshot_commit_failed"
+          to: "blocked_commit"
+
+    - id: "proven"
+      kind: "in-flight"
+      description: >
+        The materialized table is proven to be a derived cache: re-deriving from the
+        persisted operations reproduces it, AND the determinism probe passes with
+        LakeKeeper offline. This is the ADR-026 materialization corollary made
+        observable.
+      invariants:
+        - "re-derive(operations) == materialized table (faithful cache)"
+        - "compile(ops) == compile(load_and_recompile(ops)) PASSES with LakeKeeper OFFLINE (adr-051...:283-289)"
+        - "the catalog is never consulted at compile/render time"
+      transitions:
+        - on: "cache_proven"
+          to: "handed_off"
+
+    - id: "handed_off"
+      kind: "terminal-success"
+      description: >
+        A reader queries the materialized Iceberg table from the catalog (server-side
+        DuckDB scan; stretch: DuckDB-WASM in the browser). A data engineer has a real
+        Iceberg table in a standard catalog. Loop complete.
+      invariants:
+        - "the reader reads the MATERIALIZED table (a derived cache), not stored SQL"
+        - "Iceberg Views, if exported, are sinks only — never read back at render"
+
+    # --- failure / boundary states ---
+    - id: "blocked_auth"
+      kind: "terminal-error"
+      description: >
+        The WorkOS token was rejected (issuer/audience misconfig). No user is
+        provisioned from an unverified token.
+      recovery: "point OPENID_PROVIDER_URI/audience at the WorkOS AuthKit issuer; retry; user auto-provisions"
+
+    - id: "blocked_project"
+      kind: "recoverable-error"
+      description: >
+        LakeKeeper Project create failed/timed out. Because LakeKeeper is an external
+        HTTP service outside the SQLAlchemy transaction, no orphaned half-state may be
+        silently left. The exact compensation is governed by the authority model —
+        a DESIGN OPEN FORK (dual-write mirror vs LakeKeeper-as-SoT).
+      recovery: "retry; DESIGN decides atomicity/authority (../discover/buy-vs-build.md Q2 #1)"
+
+    - id: "blocked_commit"
+      kind: "recoverable-error"
+      description: >
+        Snapshot commit failed (credential-vending or write error). No partial table
+        is presented as materialized.
+      recovery: "re-run the materialization; operations unchanged so the rebuild is the recovery"
+
+# The load-bearing guard: the determinism probe. Born inside the materialization
+# slice; it is the safety net the whole BUY rides on.
+build_time_guards:
+  - id: "adr026_determinism_probe"
+    description: >
+      A probe that (a) re-derives the table from the persisted operations and asserts
+      equality with the materialized Iceberg table, and (b) runs compilation with
+      LakeKeeper OFFLINE and asserts compile(ops) == compile(load_and_recompile(ops)).
+      This proves materialization is a derived cache and never a render-time
+      authority. It PASSES with the catalog disconnected. Born in the materialization
+      slice; re-asserted by every later slice that touches the table.
+  - id: "no_render_time_catalog_read"
+    description: >
+      A guard that no compile/render path resolves a column, type, or partition by
+      querying LakeKeeper. Iceberg Views are export sinks only.
+
+# DESIGN open forks surfaced by this journey (NOT decided here).
+open_forks_for_design:
+  - id: "project-authority-model"
+    description: "dual-write mirror (low risk) vs LakeKeeper Project as source of truth (full buy). Governs the project-create atomicity/compensation. ../discover/buy-vs-build.md Q2."
+  - id: "authz-boundary"
+    description: "LakeKeeper OpenFGA-authoritative for catalog objects vs trust-the-proxy. The one authN-vs-authZ unknown worth probing hands-on. ../discover/buy-vs-build.md Q3."
+  - id: "control-plane-shape-and-namespace"
+    description: "where org-create + auth-proxy + ui-state consolidate into a control plane provisioning each org's LakeKeeper Server; whether Namespaces stay default. ../discover/buy-vs-build.md open forks."
+  - id: "parquet-to-iceberg-migration"
+    description: "register-in-place vs rewrite (expand/contract); keep it cheap. Was a stated non-goal. ../discover/buy-vs-build.md open forks."
+  - id: "adr052-reconciliation"
+    description: "align the Iceberg-sink export with the shared Relation IR (ADR-052 View/Report normalization, PROPOSED) rather than fighting it. [K7]."
+
+shared_artifacts:
+  - name: "workos_token"
+    source_of_truth: "WorkOS AuthKit (the org's IdP), already consumed by auth-proxy (auth-proxy/lib/auth.ts:94-96)"
+    owner: "WorkOS / auth-proxy (mints M2M for backend->LakeKeeper calls or forwards the user token)"
+    derived: false
+    note: "presented to LakeKeeper (OPENID_PROVIDER_URI = AuthKit issuer); LakeKeeper auto-provisions the user keyed oidc~<sub|oid>"
+  - name: "lakekeeper_project_id"
+    source_of_truth: "the LakeKeeper Project created for a dc project via the Management API"
+    owner: "the LakeKeeperProjectRepository adapter (behind RepositoryContainer.projects, ADR-020)"
+    derived: false
+    note: "maps 1:1 to a dc project row; whether it is authoritative or a mirror is the project-authority-model DESIGN fork"
+  - name: "warehouse_prefix"
+    source_of_truth: "the project's S3 prefix (datasets/{project_id}/... today; config.py:27-33)"
+    owner: "the default Warehouse of the LakeKeeper Project"
+    derived: false
+    note: "one default Warehouse per Project; extra Warehouses for domain segregation deferred"
+  - name: "ibis_compiled_sql"
+    source_of_truth: "Ibis, compiling the persisted operations (transforms IR; ADR-051/026) — the ONLY compiler"
+    owner: "the backend compile path (unchanged; ADR-026 [K2])"
+    derived: true
+    note: "always re-derived from operations; never hand-edited; never read back from the catalog. Fed to DuckDB as the SELECT."
+  - name: "iceberg_table_ref"
+    source_of_truth: "the Iceberg table registered in LakeKeeper (Project.Warehouse.Namespace.table)"
+    owner: "LakeKeeper catalog"
+    derived: true
+    note: "a derived cache materialized from ${ibis_compiled_sql}; rebuilt when operations change; replaces schema_config JSON (models/dataset.py:94)"
+  - name: "snapshot_id"
+    source_of_truth: "the Iceberg snapshot committed by the DuckDB INSERT"
+    owner: "LakeKeeper catalog (Iceberg snapshot log)"
+    derived: true
+    note: "gives data/physical history for free (Q-audit BUY); the design-intent audit log (assistant_audit_entries) stays ours (keep-build)"
+  - name: "determinism_probe_result"
+    source_of_truth: "the adr026_determinism_probe run (re-derive == materialized; compile passes with catalog offline)"
+    owner: "the acceptance suite (DISTILL) / the materialization slice"
+    derived: true
+    note: "PASS is the observable that discharges the ADR-026 anxiety; must pass with LakeKeeper OFFLINE"
+
+integration_checkpoints:
+  - "the catalog authenticates against the SAME WorkOS IdP the app uses — one identity source, no user-sync job"
+  - "the dc project -> LakeKeeper Project mapping goes through the EXISTING project repository port (ADR-020); application layer unchanged"
+  - "${ibis_compiled_sql} is always re-derived from operations by Ibis; the catalog never emits SQL and is never read back at render (ADR-026 [K1][K2])"
+  - "the materialized ${iceberg_table_ref} is a derived cache: re-derive == materialized, and compilation passes with LakeKeeper offline"
+  - "Iceberg Views (if any) are export sinks only — never a source Ibis reads back"
+  - "no dbt runtime is required for the write path; dbt stays the optional eject/handoff format"
+  - "the authZ boundary (LakeKeeper-authoritative vs trust-the-proxy) is surfaced to DESIGN, not silently chosen"

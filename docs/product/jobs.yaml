@@ -322,6 +322,97 @@ jobs:
       - docs/evolution/2026-05-04-log-image-identity-on-startup.md
       - ui/app/lib/log.ts
 
+  - id: JOB-005
+    title: Carry each org's catalog on a standard Iceberg REST catalog that materializes tables from Ibis-compiled SQL
+    feature_id: lakekeeper-catalog-backend
+    abstraction_layer: strategic
+    statement: >
+      When I run a per-org data stack and need a data engineer to consume our
+      chat-authored datasets in their own tools, I want each org's catalog, physical
+      table schema, storage credentials, and data-version history carried by a
+      standard Iceberg REST catalog (LakeKeeper) that materializes tables from our
+      Ibis-compiled SQL, so I can hand a data engineer real, evolvable Iceberg tables
+      in a protocol their tools already speak — without hand-rolling schema_config
+      JSON, without a bespoke per-org BI-provisioning dance, and without ever letting
+      the catalog become a render-time authority that would break the
+      operations-as-data determinism invariant.
+    emotional_layer: >
+      When I materialize a dataset as an Iceberg table, I want to prove — not hope —
+      that materializing did not quietly turn the catalog into a source of truth: a
+      determinism probe passes with LakeKeeper offline and the re-derived table equals
+      the materialized one. And I want relief from carrying a second identity/tenancy
+      authority that must be kept in sync by hand.
+    social_layer: >
+      When I show this to a data engineer, I want the catalog to read like the Iceberg
+      lakehouse they already live in — a standard REST catalog, evolvable table
+      schemas, snapshot history for free — not a proprietary Parquet-on-S3 layout plus
+      a hand-rolled schema_config blob and a dbt-zip export.
+    outcome_statements:
+      # Provisional scoring — DISCUSS-derived (light JTBD bridge, no DIVERGE), grounded
+      # in the DC-139 DISCOVER buy-vs-build.md file:line/ADR evidence, NOT an
+      # ODI-rigorous study. Importance reflects operator + data-engineer + correctness
+      # impact; satisfaction reflects the current observable state (hand-rolled
+      # schema_config JSON, per-org pg_duckdb provisioning, no catalog protocol).
+      - id: O1
+        text: Minimize the per-org/per-project BI-provisioning surface required before a consumer can read a dataset
+        importance: 8
+        satisfaction: 3
+        score: 13
+        status: under-served
+      - id: O2
+        text: Maximize the credibility and standardness of the data-engineer handoff (real Iceberg tables in a REST catalog vs a dbt-zip over raw Parquet)
+        importance: 8
+        satisfaction: 2
+        score: 14
+        status: under-served
+      - id: O3
+        text: Minimize the effort to materialize a settled dataset as a queryable table without a new heavy runtime dependency (no dbt runtime)
+        importance: 7
+        satisfaction: 4
+        score: 11
+        status: marginal
+      - id: O4
+        text: Minimize the likelihood that materializing a table erodes the operations-as-data determinism invariant (catalog must never be a render-time authority)
+        importance: 9
+        satisfaction: 5
+        score: 14
+        status: under-served
+      - id: O5
+        text: Minimize the time-to-first-Iceberg-read for a data engineer (steps from "table exists" to "rows returned")
+        importance: 7
+        satisfaction: 3
+        score: 11
+        status: marginal
+    composition_with_other_jobs:
+      - related_job: JOB-003
+        relationship: >
+          Foundational — JOB-005's materialization corollary depends on the
+          reproducibility invariant JOB-003 establishes (operations are the
+          deterministic source of truth; Ibis is the only compiler, ADR-051/026). The
+          materialized Iceberg table is a derived cache re-derivable from the same
+          operations JOB-003 canonicalizes; the determinism probe (JOB-005 O4) is the
+          ADR-051-style reproducibility probe extended to pass with the external
+          catalog offline.
+      - related_job: JOB-001
+        relationship: >
+          Supportive — JOB-001's eject-to-dbt handoff credibility (O4) is strengthened
+          when the handoff is real Iceberg tables in a standard catalog, not only a
+          dbt-zip. dbt stays the optional eject/handoff format; JOB-005 adds a live
+          cataloged surface beside it.
+    references:
+      - docs/feature/lakekeeper-catalog-backend/discover/buy-vs-build.md
+      - docs/feature/lakekeeper-catalog-backend/discover/problem-validation.md
+      - docs/feature/lakekeeper-catalog-backend/discover/opportunity-tree.md
+      - docs/feature/lakekeeper-catalog-backend/discover/wave-decisions.md
+      - docs/feature/lakekeeper-catalog-backend/discuss/jtbd-job-stories.md
+      - docs/feature/lakekeeper-catalog-backend/discuss/journey-lakekeeper-catalog-backend.yaml
+      - docs/feature/lakekeeper-catalog-backend/discuss/user-stories.md
+      - docs/feature/lakekeeper-catalog-backend/discuss/story-map.md
+      - docs/feature/lakekeeper-catalog-backend/discuss/outcome-kpis.md
+      - docs/feature/lakekeeper-catalog-backend/discuss/wave-decisions.md
+      - docs/decisions/adr-026-ibis-as-only-sql-compiler.md
+      - docs/decisions/adr-051-operations-as-canonical-transform-ir.md
+
 changelog:
   - date: 2026-05-08
     feature: dbt-test-validation
@@ -351,4 +442,18 @@ changelog:
       not a contested product opportunity). Compositional with JOB-002 (ui-state
       flow machines are a primary instrumented surface) and supportive of JOB-001.
       Source issue DC-103; entered at DISCUSS per CLAUDE.md brownfield routing.
+    actor: nw-product-owner (Luna)
+  - date: 2026-07-06
+    feature: lakekeeper-catalog-backend
+    change: >
+      Added JOB-005 from DISCUSS wave (light JTBD bridge, no DIVERGE — the opportunity
+      (O1, reduce per-org BI-provisioning surface) was already validated in the DC-139
+      DISCOVER wave, and the design question is a scoped buy-vs-build across ratified
+      planes, not a contested product opportunity). Grounded in DC-139 DISCOVER
+      buy-vs-build.md (scoped BUY on the catalog/management/audit plane; keep-build Ibis
+      on the compile plane; the original DISCOVER DECLINE recommendation is superseded by
+      buy-vs-build.md). Foundational dependency on JOB-003 (operations-as-data
+      determinism / Ibis-only compiler, ADR-051/026 — the materialization corollary rests
+      on it) and supportive of JOB-001's eject-to-dbt handoff credibility. Outcome scoring
+      is provisional / DISCUSS-derived, not ODI-measured.
     actor: nw-product-owner (Luna)

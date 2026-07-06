@@ -33,6 +33,7 @@ its own DISCUSS pass and lands here as a separate row.
 | J-006 | View + report creation | future DISCUSS pass | weakest harness coverage; dive will add headless contracts |
 | J-007 | dbt export | future DISCUSS pass | already mostly server-driven via ADR-019/024; dive will be thin |
 | J-008 | Operator observability (diagnose a cross-service failure through the logs) | `log-coverage-and-quality` (DISCUSS 2026-06-20) | feature-level contract authored at `docs/feature/log-coverage-and-quality/discuss/journey-observability-sweep.yaml`; **not promoted to SSOT** — this is a cross-cutting operator/diagnosis loop (see Cross-cutting concerns below), not an end-user product flow |
+| J-009 | LakeKeeper catalog-backend operator loop (provision an org's Iceberg catalog → represent a project → materialize a dataset via DuckDB → prove it's a derived cache → hand off / read back) | `lakekeeper-catalog-backend` (DISCUSS 2026-07-06) | feature-level contract authored at `docs/feature/lakekeeper-catalog-backend/discuss/journey-lakekeeper-catalog-backend.yaml`; **not promoted to SSOT** — this is an operator/data-engineer integration loop (see Cross-cutting concerns below), not an end-user product flow |
 
 ---
 
@@ -55,6 +56,18 @@ its own DISCUSS pass and lands here as a separate row.
   here because it is an operator concern observed *across* journeys,
   not a product flow of its own. Feature contract:
   `docs/feature/log-coverage-and-quality/discuss/journey-observability-sweep.yaml`.
+* **LakeKeeper catalog-backend operator loop (J-009).** Cross-cutting
+  operator/data-engineer integration loop: provision an org's Iceberg
+  REST catalog (LakeKeeper) against WorkOS, represent a dc project as a
+  LakeKeeper Project, materialize a chat-authored dataset as an Iceberg
+  table via DuckDB (no dbt), prove the materialized table is a derived
+  cache (re-derive == materialized; determinism probe passes with the
+  catalog offline — the ADR-026 invariant), and hand a data engineer real
+  Iceberg tables. Owned by JOB-005 (`lakekeeper-catalog-backend`).
+  Catalogued as provisional J-009 above but kept here because it is an
+  operator/data-engineer loop, not an end-user product flow. Feature
+  contract:
+  `docs/feature/lakekeeper-catalog-backend/discuss/journey-lakekeeper-catalog-backend.yaml`.
 
 ---
 
@@ -79,3 +92,11 @@ its own DISCUSS pass and lands here as a separate row.
   `docs/feature/log-coverage-and-quality/discuss/journey-observability-sweep.yaml`.
   Not promoted to SSOT — it is a cross-journey operator diagnosis
   loop, not an end-user product flow.
+- 2026-07-06 — `lakekeeper-catalog-backend` DISCUSS catalogued J-009
+  (LakeKeeper catalog-backend operator loop) and recorded it as a
+  cross-cutting operator/data-engineer integration loop (JOB-005).
+  Feature-level journey contract at
+  `docs/feature/lakekeeper-catalog-backend/discuss/journey-lakekeeper-catalog-backend.yaml`.
+  Not promoted to SSOT — it is an operator/data-engineer integration
+  loop (provision an org's catalog → materialize → prove → hand off),
+  not an end-user product flow.
