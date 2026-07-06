@@ -16,7 +16,11 @@ import {
 import { describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "./api-error";
-import { createOnboardingDriver, type OnboardingClient } from "./onboarding-driver";
+import {
+  createOnboardingDriver,
+  type OnboardingClient,
+  orgCreateFailure,
+} from "./onboarding-driver";
 
 // ───────────────────────────── test doubles ─────────────────────────────
 
@@ -178,6 +182,38 @@ describe("reportOrgCreateResult — status → cause mapping", () => {
     await driver.reportOrgCreateResult("Acme");
     return { events, log };
   }
+});
+
+// ───────────────────────────── org-create status→cause (the reusable mapping) ─────────────────────────────
+
+describe("orgCreateFailure — the reusable status → cause mapping", () => {
+  it("409 → org_name_taken (carrying org_name)", () => {
+    expect(orgCreateFailure(apiError(409), "Acme")).toEqual({
+      type: "org_create_failed",
+      payload: { cause: "org_name_taken", org_name: "Acme" },
+    });
+  });
+
+  it.each([400, 422])("%i → org_name_invalid", (status) => {
+    expect(orgCreateFailure(apiError(status), "Acme")).toEqual({
+      type: "org_create_failed",
+      payload: { cause: "org_name_invalid", org_name: "Acme" },
+    });
+  });
+
+  it("500 → org_create_failed (the generic retry class)", () => {
+    expect(orgCreateFailure(apiError(500), "Acme")).toEqual({
+      type: "org_create_failed",
+      payload: { cause: "org_create_failed", org_name: "Acme" },
+    });
+  });
+
+  it("network/timeout (non-ApiError throw) → org_create_failed", () => {
+    expect(orgCreateFailure(new Error("network down"), "Acme")).toEqual({
+      type: "org_create_failed",
+      payload: { cause: "org_create_failed", org_name: "Acme" },
+    });
+  });
 });
 
 // ───────────────────────────── org probe (definitive-answers-only) ─────────────────────────────

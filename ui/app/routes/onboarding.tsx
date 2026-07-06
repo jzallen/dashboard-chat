@@ -35,12 +35,20 @@
                                 app-shell server loader (re-seeding real projects)
      error_recoverable        → the generic retry surface */
 import {
+  type ChatAppPhase,
+  OnboardingState,
+  ProjectContextState,
   type ReducedContext,
   type RegionView,
 } from "@dashboard-chat/ui-state-wire";
 import { useSelector } from "@xstate/react";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Navigate, useNavigate, useRevalidator } from "react-router";
+import {
+  Navigate,
+  type NavigateFunction,
+  useNavigate,
+  useRevalidator,
+} from "react-router";
 
 import { hasSession } from "../auth/tokenStorage";
 import { useTheme } from "../components/AppShell";
@@ -94,49 +102,15 @@ export default function OnboardingRoute({
     [client, proxy],
   );
 
-  useEffect(() => {
-    if (authenticated) void ensureBootstrap();
-  }, [authenticated, ensureBootstrap]);
-
-  // Phase D is AUTOMATIC: on entering the project phase awaiting a scope report,
-  // create the default project ONCE through the driver. The ref latches so a
-  // re-render (or a transient settle) never double-POSTs.
-  const projectAutoStarted = useRef(false);
-  const projectAwaiting =
-    (phase === "project_context" || phase === "chat") &&
-    projectContext.state === "awaiting_scope_report";
-  useEffect(() => {
-    if (authenticated && projectAwaiting && !projectAutoStarted.current) {
-      projectAutoStarted.current = true;
-      log.info("onboarding.project.auto_create.start", {});
-      void driver.createDefaultProject();
-    }
-  }, [authenticated, projectAwaiting, driver]);
-
-  // Onboarding complete — enter the app (the (f) contract, byte-preserved). Also
-  // covers landing on /onboarding ALREADY project_selected: navigate away. The
-  // org-global catalog is seeded server-side by the app-shell loader; that org/
-  // project did not exist when it last ran, so REVALIDATE first — the framework
-  // re-runs the app-shell server loader, which re-seeds real projects/org into the
-  // catalog (the ADR-034 convergence: no browser read of the backend). Otherwise
-  // the user lands on a stale "No projects yet" shell. A failed revalidation must
-  // not trap the user here: log it and navigate anyway (a reload recovers).
-  const projectSelected = projectContext.state === "project_selected";
-  useEffect(() => {
-    if (authenticated && projectSelected) {
-      log.info("onboarding.project_selected.entering_app", {});
-      void (async () => {
-        try {
-          await revalidate();
-        } catch (error: unknown) {
-          log.error("onboarding.revalidate.failed", {
-            error: String(error),
-          });
-        }
-        navigate("/", { replace: true });
-      })();
-    }
-  }, [authenticated, projectSelected, navigate, revalidate]);
+  useOnboardingChoreography({
+    authenticated,
+    phase,
+    projectContext,
+    driver,
+    navigate,
+    revalidate,
+    ensureBootstrap,
+  });
 
   if (!authenticated) return <Navigate to="/login" replace />;
 
@@ -155,15 +129,23 @@ export default function OnboardingRoute({
   function renderSurface() {
     // Phase advanced past onboarding — the default-project step (auto).
     if (phase === "project_context" || phase === "chat") {
-      return <ProjectPhaseSurface driver={driver} region={projectContext} />;
+      return (
+        <ProjectPhaseSurface
+          region={projectContext}
+          onRetry={() => driver.retryProject()}
+        />
+      );
     }
 
     switch (onboarding.state) {
-      case "needs_org":
+      case OnboardingState.NeedsOrg:
         return (
-          <OrgNameForm driver={driver} context={onboarding.context} />
+          <OrgNameForm
+            context={onboarding.context}
+            onCreateOrg={(orgName) => driver.reportOrgCreateResult(orgName)}
+          />
         );
-      case "error_recoverable":
+      case OnboardingState.ErrorRecoverable:
         return <RetrySurface onRetry={() => driver.probeOrg()} />;
       default:
         // verifying / awaiting_org_report (and any transient) — wait honestly.
@@ -172,19 +154,85 @@ export default function OnboardingRoute({
   }
 }
 
-function ProjectPhaseSurface({
+/**
+ * The imperative choreography this surface owns, consolidated into one cohesive
+ * effect group so the component body stays presentational:
+ *
+ *   - ensureBootstrap once the principal is authenticated;
+ *   - Phase D: auto-create the default project EXACTLY ONCE on entering the
+ *     project phase awaiting a scope report (a ref latch survives re-renders and
+ *     transient settles so the POST never fires twice);
+ *   - onboarding complete: REVALIDATE first so the framework re-runs the app-shell
+ *     server loader (re-seeding real projects/org into the catalog — the ADR-034
+ *     convergence, no browser read of the backend), then navigate("/", {replace}).
+ *     A failed revalidation must not trap the user — it is logged and navigation
+ *     proceeds anyway.
+ */
+function useOnboardingChoreography({
+  authenticated,
+  phase,
+  projectContext,
   driver,
-  region,
+  navigate,
+  revalidate,
+  ensureBootstrap,
 }: {
+  authenticated: boolean;
+  phase: ChatAppPhase;
+  projectContext: RegionView;
   driver: OnboardingDriver;
+  navigate: NavigateFunction;
+  revalidate: () => Promise<void>;
+  ensureBootstrap: () => Promise<unknown> | void;
+}) {
+  useEffect(() => {
+    if (authenticated) void ensureBootstrap();
+  }, [authenticated, ensureBootstrap]);
+
+  const projectAutoStarted = useRef(false);
+  const projectAwaiting =
+    (phase === "project_context" || phase === "chat") &&
+    projectContext.state === ProjectContextState.AwaitingScopeReport;
+  useEffect(() => {
+    if (authenticated && projectAwaiting && !projectAutoStarted.current) {
+      projectAutoStarted.current = true;
+      log.info("onboarding.project.auto_create.start", {});
+      void driver.createDefaultProject();
+    }
+  }, [authenticated, projectAwaiting, driver]);
+
+  const projectSelected =
+    projectContext.state === ProjectContextState.ProjectSelected;
+  useEffect(() => {
+    if (authenticated && projectSelected) {
+      log.info("onboarding.project_selected.entering_app", {});
+      void (async () => {
+        try {
+          await revalidate();
+        } catch (error: unknown) {
+          log.error("onboarding.revalidate.failed", {
+            error: String(error),
+          });
+        }
+        navigate("/", { replace: true });
+      })();
+    }
+  }, [authenticated, projectSelected, navigate, revalidate]);
+}
+
+function ProjectPhaseSurface({
+  region,
+  onRetry,
+}: {
   region: RegionView;
+  onRetry: () => void | Promise<unknown>;
 }) {
   switch (region.state) {
-    case "project_selected":
+    case ProjectContextState.ProjectSelected:
       // The navigation effect is taking us into the app.
       return <LoadingSurface message="Entering the app…" />;
-    case "error_recoverable":
-      return <RetrySurface onRetry={() => driver.retryProject()} />;
+    case ProjectContextState.ErrorRecoverable:
+      return <RetrySurface onRetry={onRetry} />;
     default:
       // awaiting_scope_report (Phase D auto-creating), creating_project,
       // resolving_initial_scope and other transients — a single progress view.
@@ -193,11 +241,11 @@ function ProjectPhaseSurface({
 }
 
 function OrgNameForm({
-  driver,
   context,
+  onCreateOrg,
 }: {
-  driver: OnboardingDriver;
   context: ReducedContext;
+  onCreateOrg: (orgName: string) => Promise<unknown>;
 }) {
   const [orgName, setOrgName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -209,7 +257,7 @@ function OrgNameForm({
     setBusy(true);
     void (async () => {
       try {
-        await driver.reportOrgCreateResult(orgName);
+        await onCreateOrg(orgName);
       } finally {
         setBusy(false);
       }
@@ -267,7 +315,11 @@ function FriendlyValidation({ error }: { error: ValidationError }) {
 /** The retry class generic surface (DISPLAY RULE): a distinct "our end" message
  *  with a retry control. NO raw cause tag — the machine cause stays in the audit
  *  log, never on screen. */
-function RetrySurface({ onRetry }: { onRetry: () => void }) {
+function RetrySurface({
+  onRetry,
+}: {
+  onRetry: () => void | Promise<unknown>;
+}) {
   const [busy, setBusy] = useState(false);
   const retry = () => {
     setBusy(true);

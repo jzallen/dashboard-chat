@@ -157,11 +157,60 @@ export function initialReducedContext(): ReducedContext {
 export type ChatAppPhase = "onboarding" | "project_context" | "chat";
 
 /** A derived slice of one lifecycle region — the discriminated state + its
- *  reduced context (the exact shape the per-machine projection exposed). */
+ *  reduced context (the exact shape the per-machine projection exposed).
+ *
+ *  `state` stays a wire-level `string` (a derived-view contract that must tolerate
+ *  any region-state name the origin emits). Consumers dispatching on it read the
+ *  typed vocabulary below ({@link OnboardingState} / {@link ProjectContextState})
+ *  rather than bare literals, so a rename is a single-source edit. */
 export interface RegionView {
   state: string;
   context: ReducedContext;
 }
+
+/** The `regions.onboarding.state` vocabulary — the settled discriminants the
+ *  onboarding lifecycle region emits. The named constants consumers compare
+ *  against instead of bare string literals. Co-declared as a type of the same
+ *  name below, so one identifier serves both the values and the union. */
+export const OnboardingState = {
+  Verifying: "verifying",
+  AwaitingOrgReport: "awaiting_org_report",
+  NeedsOrg: "needs_org",
+  Ready: "ready",
+  ErrorRecoverable: "error_recoverable",
+} as const;
+
+/** The union of {@link OnboardingState} members — the typed vocabulary consumers
+ *  narrow `RegionView.state` against on the onboarding region. */
+export type OnboardingState =
+  (typeof OnboardingState)[keyof typeof OnboardingState];
+
+/** The `regions.projectContext.state` vocabulary — the settled discriminants the
+ *  project-context lifecycle region emits. Co-declared as a type of the same name
+ *  below. */
+export const ProjectContextState = {
+  AwaitingScopeReport: "awaiting_scope_report",
+  ResolvingInitialScope: "resolving_initial_scope",
+  CreatingProject: "creating_project",
+  ProjectSelected: "project_selected",
+  NoProjects: "no_projects",
+  ErrorRecoverable: "error_recoverable",
+} as const;
+
+/** The union of {@link ProjectContextState} members — the typed vocabulary
+ *  consumers narrow `RegionView.state` against on the project-context region. */
+export type ProjectContextState =
+  (typeof ProjectContextState)[keyof typeof ProjectContextState];
+
+/** The onboarding states that keep an authenticated principal on the
+ *  client-driven `/onboarding` flow (the app-shell gate's active set). Declared
+ *  over `string` so a raw `RegionView.state` can be membership-tested directly;
+ *  its members are drawn from {@link OnboardingState}. */
+export const ONBOARDING_ACTIVE_STATES: ReadonlySet<string> =
+  new Set<OnboardingState>([
+    OnboardingState.NeedsOrg,
+    OnboardingState.ErrorRecoverable,
+  ]);
 
 /** The optimistic source node's phase, mirroring the ui-state source-upload
  *  child's state vocabulary (idle → creating_source → uploading → processing →
