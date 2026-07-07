@@ -39,13 +39,8 @@ import type {
   PartialCatalogSource,
   SourceUpload,
 } from "./dataSources/source";
-import type {
-  AuditEntry,
-  Edge,
-  Layer,
-  LineageNode,
-} from "./lineage";
-import { type ColdStorageRecord,LineageGraph } from "./lineageGraph";
+import type { AuditEntry, Edge, Layer, LineageNode } from "./lineage";
+import { type ColdStorageRecord, LineageGraph } from "./lineageGraph";
 import type {
   ChatHistoryItem,
   ChatScript,

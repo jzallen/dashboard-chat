@@ -8,19 +8,17 @@ import {
   isCatalogMutatingEvent,
   readChatStream,
 } from "../../lib/chat-stream";
+import type { NavIntent } from "../../lib/nav";
 import { Icon, type IconName, LayerDot, TAG_ICON } from "../primitives";
 import { catalog, useCatalog } from "../useCatalog";
 import styles from "./Chat.module.css";
-
-/** A nav request handed back to the app shell (e.g. open history or a recent). */
-type ChatRoute = { name: string; nodeId?: string | null };
 
 type ChatDockProps = {
   context: LineageNode | null;
   onCreate: (node: LineageNode, edge: Edge) => void;
   onClose: () => void;
   onOpenNode: (node: LineageNode) => void;
-  go: (route: ChatRoute) => void;
+  go: (intent: NavIntent) => void;
 };
 
 /** A message in the overlay transcript: prose bubbles or a tool-action card. */
