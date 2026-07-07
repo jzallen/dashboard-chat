@@ -6,29 +6,28 @@
 //
 // Recovery: clear the stale flag (so hasSession() reads false and /login won't
 // bounce back into the app), then navigate to /login — which in workos mode hands
-// off to WorkOS for a silent re-auth (SSO still alive) or a fresh login. Guarded
-// so a burst of concurrent 401s triggers exactly ONE navigation.
+// off to WorkOS for a silent re-auth (SSO still alive) or a fresh login. The
+// once() latch makes "exactly ONE navigation per burst of concurrent 401s"
+// declarative rather than a hand-rolled boolean flag.
+import { once } from "./once";
 import { clearSessionFlag } from "./tokenStorage";
 
-let handled = false;
-
-export function handleUnauthorized(): void {
-  if (handled) return;
-  handled = true;
+const recover = once(() => {
   try {
     clearSessionFlag();
   } catch {
     // ignore — best-effort
   }
-  if (
-    typeof window !== "undefined" &&
-    window.location.pathname !== "/login"
-  ) {
+  if (typeof window !== "undefined" && window.location.pathname !== "/login") {
     window.location.assign("/login");
   }
+});
+
+export function handleUnauthorized(): void {
+  recover.run();
 }
 
 /** Test seam: reset the one-shot guard between cases. */
 export function _resetUnauthorizedForTests(): void {
-  handled = false;
+  recover.reset();
 }
