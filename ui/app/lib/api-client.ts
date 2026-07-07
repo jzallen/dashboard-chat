@@ -9,6 +9,15 @@
  * `credentials:"include"` browser fetch). On a 401 the route surfaces an
  * unauthenticated signal it turns into a `/login` redirect — see
  * {@link ApiUnauthenticatedError} / {@link assertAuthenticated}.
+ *
+ * Auth-transport contract: this module is the SERVER leg of a two-transport
+ * split. The inbound `Request` carries the user's cookie; {@link proxyFetch}
+ * extracts it and mints a downstream Bearer token for the backend. The
+ * BROWSER leg is {@link gatewayGet} / {@link gatewayPatch} / {@link gatewayPost}
+ * in `gateway-client.ts`, which sends the cookie directly via
+ * `credentials:"include"` and never builds an Authorization header. Both are
+ * correct for their runtime context — server loader vs. browser fetch —
+ * and must not be mixed.
  */
 import { proxyFetch, type ProxyFetchOptions } from "./proxy-fetch";
 
