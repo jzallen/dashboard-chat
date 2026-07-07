@@ -35,11 +35,11 @@ export function ChatSessionList({ go }: { go: (intent: NavIntent) => void }) {
         />
       </div>
       <div className={styles.chatsList}>
-        {list.map((c, i) => {
+        {list.map((c) => {
           const node = c.nodeId ? catalog.getNode(c.nodeId) : null;
           return (
             <button
-              key={i}
+              key={`${c.nodeId ?? c.title}-${c.when ?? ""}`}
               className={`${styles.chatRow}${node ? " layer-" + node.layer : ""}`}
               onClick={() =>
                 go(
