@@ -4,7 +4,7 @@ import { useRevalidator } from "react-router";
 
 import type { Edge, LineageNode } from "../../catalog";
 import { fmt } from "../../lib/fmt";
-import type { NavIntent } from "../../lib/nav";
+import { useNavIntents } from "../../lib/nav";
 import { Icon, type IconName, LayerDot } from "../primitives";
 import { catalog, useCatalog } from "../useCatalog";
 import styles from "./Chat.module.css";
@@ -15,12 +15,12 @@ type ChatDockProps = {
   onCreate: (node: LineageNode, edge: Edge) => void;
   onClose: () => void;
   onOpenNode: (node: LineageNode) => void;
-  go: (intent: NavIntent) => void;
 };
 
-export function AssistantOverlay({ context, onClose, go }: ChatDockProps) {
+export function AssistantOverlay({ context, onClose }: ChatDockProps) {
   // Re-render the recents list when backend sessions land (catalog commit).
   useCatalog();
+  const { go } = useNavIntents();
   const { revalidate } = useRevalidator();
   const { msgs, typing, busy, send, reset } = useChatTurn(context, revalidate);
   const [input, setInput] = useState("");

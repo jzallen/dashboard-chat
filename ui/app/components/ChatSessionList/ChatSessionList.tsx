@@ -2,12 +2,13 @@
    project, searchable, each linking back to the model it was shaping. */
 import { useState } from "react";
 
-import type { NavIntent } from "../../lib/nav";
+import { useNavIntents } from "../../lib/nav";
 import { Icon } from "../primitives";
 import { catalog, useCatalog } from "../useCatalog";
 import styles from "./ChatSessionList.module.css";
 
-export function ChatSessionList({ go }: { go: (intent: NavIntent) => void }) {
+export function ChatSessionList() {
+  const { go } = useNavIntents();
   const [q, setQ] = useState("");
   // Subscribe to catalog commits so the list re-renders when sessions land from
   // the backend (getAllChats resolves a beat after first paint).

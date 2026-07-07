@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { LineageNode } from "../../catalog";
 import { fixtureSource } from "../../catalog";
+import { renderInShell } from "../../lib/testRouter";
 import { installCatalogForTest } from "../useCatalog";
 import { AssistantOverlay } from "./Chat";
 
@@ -44,15 +45,15 @@ beforeEach(async () => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
+const noop = () => {};
+
 function renderOverlay(context: LineageNode | null = null) {
-  const noop = () => {};
-  render(
+  return renderInShell(
     <AssistantOverlay
       context={context}
       onCreate={noop}
       onClose={noop}
       onOpenNode={noop}
-      go={noop}
     />,
   );
 }
@@ -96,14 +97,12 @@ describe("AssistantOverlay — streaming turn cancellation", () => {
       }),
     );
 
-    const noop = () => {};
-    const { unmount } = render(
+    const { unmount } = renderInShell(
       <AssistantOverlay
         context={null}
         onCreate={noop}
         onClose={noop}
         onOpenNode={noop}
-        go={noop}
       />,
     );
 

@@ -5,7 +5,6 @@
 import { useLocation, useParams } from "react-router";
 
 import { useChat } from "../../../app/lib/chatContext";
-import { useNavIntents } from "../../../app/lib/nav";
 import type { Edge, LineageNode } from "../../catalog";
 import { AssistantOverlay } from "../Chat";
 import chat from "../Chat/Chat.module.css";
@@ -48,7 +47,6 @@ export function Overlays({
   onOpenNode: (node: LineageNode) => void;
 }) {
   const { chatOpen, openChat, closeChat } = useChat();
-  const intents = useNavIntents();
   const location = useLocation();
   const params = useParams();
   const onOrg = location.pathname === "/org";
@@ -71,7 +69,6 @@ export function Overlays({
           onCreate={createModel}
           onClose={closeChat}
           onOpenNode={onOpenNode}
-          go={intents.go}
         />
       )}
       {exporter.open && <ExportDrawer onClose={exporter.closeExport} />}
