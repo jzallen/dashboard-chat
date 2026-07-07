@@ -11,6 +11,48 @@
  */
 import { apiFetch } from "./api-client";
 
+/** Options for the internal proxy helper — the body is BodyInit when present. */
+interface BrokerProxyOptions {
+  method: string;
+  body?: BodyInit;
+  headers?: Record<string, string>;
+}
+
+/**
+ * Core forwarding primitive — calls {@link apiFetch} with the given HTTP method
+ * and optional body, then re-shapes the upstream `Response` into the standard
+ * broker envelope: content-type forwarded from upstream (defaulting to
+ * `application/json`) and a body-less 2xx defaulted to `"{}"` so every caller
+ * can safely parse the response as JSON. Non-2xx status codes are forwarded
+ * byte-intact; the broker never turns them into redirects.
+ *
+ * The three exported brokers ({@link brokerGet}, {@link brokerPatch},
+ * {@link brokerPost}) are thin wrappers over this helper, each carrying
+ * per-method call-site documentation.
+ */
+async function brokerProxy(
+  request: Request,
+  backendPath: string,
+  opts: BrokerProxyOptions,
+): Promise<Response> {
+  const upstream = await apiFetch(request, backendPath, {
+    method: opts.method,
+    ...(opts.body !== undefined ? { body: opts.body } : {}),
+    ...(opts.headers !== undefined ? { headers: opts.headers } : {}),
+  });
+
+  const headers = new Headers();
+  headers.set(
+    "content-type",
+    upstream.headers.get("content-type") ?? "application/json",
+  );
+  const body = await upstream.text();
+  return new Response(body === "" ? "{}" : body, {
+    status: upstream.status,
+    headers,
+  });
+}
+
 /**
  * Forward a `/ui-server/*` GET resource-route loader to the backend `/api`
  * endpoint at `backendPath` — the read broker for the onboarding driver's probe
@@ -33,20 +75,7 @@ export async function brokerGet(
   request: Request,
   backendPath: string,
 ): Promise<Response> {
-  const upstream = await apiFetch(request, backendPath, { method: "GET" });
-
-  const headers = new Headers();
-  headers.set(
-    "content-type",
-    upstream.headers.get("content-type") ?? "application/json",
-  );
-  // Default a body-less 2xx to an empty JSON object so a caller reading the
-  // response as JSON still parses (mirrors brokerPost / brokerPatch).
-  const body = await upstream.text();
-  return new Response(body === "" ? "{}" : body, {
-    status: upstream.status,
-    headers,
-  });
+  return brokerProxy(request, backendPath, { method: "GET" });
 }
 
 /**
@@ -72,23 +101,10 @@ export async function brokerPatch(
   backendPath: string,
 ): Promise<Response> {
   const contentType = request.headers.get("content-type") ?? "application/json";
-  const upstream = await apiFetch(request, backendPath, {
+  return brokerProxy(request, backendPath, {
     method: "PATCH",
     body: await request.text(),
     headers: { "content-type": contentType },
-  });
-
-  const headers = new Headers();
-  headers.set(
-    "content-type",
-    upstream.headers.get("content-type") ?? "application/json",
-  );
-  // Default a body-less 2xx to an empty JSON object so a fetcher reading the
-  // response as JSON still parses (mirrors the archive/restore brokers).
-  const body = await upstream.text();
-  return new Response(body === "" ? "{}" : body, {
-    status: upstream.status,
-    headers,
   });
 }
 
@@ -117,21 +133,10 @@ export async function brokerPost(
   backendPath: string,
 ): Promise<Response> {
   const contentType = request.headers.get("content-type") ?? "application/json";
-  const upstream = await apiFetch(request, backendPath, {
+  return brokerProxy(request, backendPath, {
     method: "POST",
     body: await request.text(),
     headers: { "content-type": contentType },
-  });
-
-  const headers = new Headers();
-  headers.set(
-    "content-type",
-    upstream.headers.get("content-type") ?? "application/json",
-  );
-  const body = await upstream.text();
-  return new Response(body === "" ? "{}" : body, {
-    status: upstream.status,
-    headers,
   });
 }
 
@@ -154,20 +159,9 @@ export async function brokerUpload(
 ): Promise<Response> {
   const contentType =
     request.headers.get("content-type") ?? "application/octet-stream";
-  const upstream = await apiFetch(request, backendPath, {
+  return brokerProxy(request, backendPath, {
     method: "POST",
     body: await request.arrayBuffer(),
     headers: { "content-type": contentType },
-  });
-
-  const headers = new Headers();
-  headers.set(
-    "content-type",
-    upstream.headers.get("content-type") ?? "application/json",
-  );
-  const body = await upstream.text();
-  return new Response(body === "" ? "{}" : body, {
-    status: upstream.status,
-    headers,
   });
 }
