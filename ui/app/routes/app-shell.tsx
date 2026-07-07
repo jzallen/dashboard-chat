@@ -20,7 +20,6 @@ import {
 
 import { hasSession } from "../auth/tokenStorage";
 import type { OrgSettings, ProjectSummary } from "../catalog";
-import { apiGet, apiPost } from "../catalog/dataSources/backendClient";
 import {
   type BackendOrg,
   type BackendProject,
@@ -36,13 +35,13 @@ import {
   ApiUnauthenticatedError,
   assertAuthenticated,
 } from "../lib/api-client";
+import { onboardingClient } from "../lib/onboarding-client";
 import type { OnboardingClient } from "../lib/onboarding-driver";
 
-/** The default backend client adapter — the Phase-B probe's real HTTP port. */
-const defaultClient: OnboardingClient = {
-  get: (path) => apiGet(path),
-  post: (path, body) => apiPost(path, body),
-};
+/** The Phase-B probe's HTTP port — the same-origin `/ui-server` gateway adapter
+ *  (shared with routes/onboarding.tsx), so the browser never probes `/api`
+ *  directly. */
+const defaultClient: OnboardingClient = onboardingClient;
 
 /** The org-global payload the server loader returns for the initial document. */
 export interface OrgGlobalData {

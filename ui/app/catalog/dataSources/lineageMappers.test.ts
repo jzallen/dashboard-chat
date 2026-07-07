@@ -244,7 +244,7 @@ describe("toLineageGraph", () => {
     expect(edges.some(([, to]) => to === "d1")).toBe(false);
   });
 
-  it("excludes an archived dataset from the graph", () => {
+  it("excludes an archived dataset from the active nodes", () => {
     const { nodes } = toLineageGraph(
       [],
       [dataset(), dataset({ id: "d9", archived_at: "2026-01-01" })],
@@ -253,6 +253,32 @@ describe("toLineageGraph", () => {
     );
     expect(nodes.d1).toBeDefined();
     expect(nodes.d9).toBeUndefined();
+  });
+
+  it("maps archived datasets into coldRecords with retiredAt and retentionDays", () => {
+    const archivedAt = "2026-03-01T12:00:00Z";
+    const { coldRecords } = toLineageGraph(
+      [source()],
+      [
+        dataset({ source_id: "s1" }),
+        dataset({ id: "d9", name: "archived_csv", archived_at: archivedAt, source_id: "s1" }),
+      ],
+      [],
+      [],
+    );
+    expect(coldRecords).toHaveLength(1);
+    const rec = coldRecords[0];
+    expect(rec.node.id).toBe("d9");
+    expect(rec.node.layer).toBe("staging");
+    expect(rec.retiredAt).toBe(Date.parse(archivedAt));
+    expect(rec.retentionDays).toBe(90);
+    // The incident edge from source_id is carried so restore can re-wire it.
+    expect(rec.edges).toContainEqual(["s1", "d9"]);
+  });
+
+  it("returns empty coldRecords when no datasets are archived", () => {
+    const { coldRecords } = toLineageGraph([], [dataset()], [], []);
+    expect(coldRecords).toEqual([]);
   });
 
   it("handles views/reports with no source_refs (no edges)", () => {
@@ -266,6 +292,9 @@ describe("toLineageGraph", () => {
   });
 
   it("returns empty nodes + edges for empty inputs", () => {
-    expect(toLineageGraph([], [], [], [])).toEqual({ nodes: {}, edges: [] });
+    const { nodes, edges, coldRecords } = toLineageGraph([], [], [], []);
+    expect(nodes).toEqual({});
+    expect(edges).toEqual([]);
+    expect(coldRecords).toEqual([]);
   });
 });

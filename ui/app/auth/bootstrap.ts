@@ -22,6 +22,8 @@
 
 import { z } from "zod";
 
+import { STORAGE_KEYS } from "./storageKeys";
+
 interface LoginResponse {
   url: string;
   // workos mode only — the CSRF state to echo back at the callback.
@@ -31,7 +33,7 @@ interface LoginResponse {
 // sessionStorage key holding the in-flight WorkOS CSRF state between login() and
 // the callback. sessionStorage is per-origin and per-tab, so it survives the
 // WorkOS authorize redirect round-trip (unlike an in-memory variable).
-const OAUTH_STATE_KEY = "oauth_state";
+const OAUTH_STATE_KEY = STORAGE_KEYS.oauthState;
 
 // ───────────────────────────── auth-mode discovery (CDO-S5; ADR-050 §d) ─────────────────────────────
 //

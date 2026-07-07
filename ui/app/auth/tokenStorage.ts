@@ -8,13 +8,14 @@
 // the flag, so a stale flag at worst costs one redirect after a 401.
 //
 // Pure browser code; never runs during SSR (this app is SPA-only).
+import { SESSION_COOKIE, STORAGE_KEYS } from "./storageKeys";
 
 /** True iff the JS-readable `session=1` flag cookie is present. */
 export function hasSession(): boolean {
   return document.cookie
     .split(";")
     .map((pair) => pair.trim())
-    .some((pair) => pair === "session=1");
+    .some((pair) => pair === `${SESSION_COOKIE}=1`);
 }
 
 /** Drop the JS-readable `session=1` flag so hasSession() reads false. Used when a
@@ -22,14 +23,14 @@ export function hasSession(): boolean {
  *  otherwise /login would bounce a "still signed in" principal straight back into
  *  the app and loop. (The httpOnly auth_token is cleared server-side on logout.) */
 export function clearSessionFlag(): void {
-  document.cookie = "session=; path=/; max-age=0";
+  document.cookie = `${SESSION_COOKIE}=; path=/; max-age=0`;
 }
 
 // ── last-activity tracking (ported from frontend/src/core/auth) ──
 // The idle tracker stamps the wall-clock of the last *debounced* real input here
 // (localStorage → per-origin + cross-tab, so activity in one tab keeps every tab
 // alive). It drives both the keep-alive beat and the inactivity auto-logout.
-const ACTIVITY_KEY = "last_activity_ts";
+const ACTIVITY_KEY = STORAGE_KEYS.lastActivity;
 
 export function getLastActivity(): number | null {
   const raw = localStorage.getItem(ACTIVITY_KEY);

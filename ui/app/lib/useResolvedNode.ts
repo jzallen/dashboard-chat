@@ -28,7 +28,9 @@ export function useResolvedNode(id: string): ResolvedNode {
   const node = useMemo(() => catalog.getNode(id), [id, version]);
   const [timedOut, setTimedOut] = useState(false);
 
-  // Reset the bound whenever the id changes, then arm a fresh timer.
+  // Each id gets exactly one bounded window: on an id change the cleanup clears
+  // the prior timer before this effect re-arms a fresh one, so timers never
+  // accumulate and a switched id is never declared missing on the old id's clock.
   useEffect(() => {
     setTimedOut(false);
     const timer = setTimeout(() => setTimedOut(true), RESOLVE_TIMEOUT_MS);

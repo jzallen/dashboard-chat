@@ -228,11 +228,32 @@ describe("project-layout loader — project-scoped reads via the server /api hop
     ).toBe(true);
   });
 
-  it("does not revalidate when the path project is unchanged", () => {
+  it("does not revalidate when the path project is unchanged and the request is a GET navigation", () => {
     expect(
       shouldRevalidate({
         currentParams: { projectId: "p1" },
         nextParams: { projectId: "p1" },
+        formMethod: undefined,
+      }),
+    ).toBe(false);
+  });
+
+  it("revalidates after a non-GET fetcher submission (archive/restore/rename) so the loader re-derives", () => {
+    expect(
+      shouldRevalidate({
+        currentParams: { projectId: "p1" },
+        nextParams: { projectId: "p1" },
+        formMethod: "POST",
+      }),
+    ).toBe(true);
+  });
+
+  it("does not revalidate after a GET form submission (a search or filter, not a mutation)", () => {
+    expect(
+      shouldRevalidate({
+        currentParams: { projectId: "p1" },
+        nextParams: { projectId: "p1" },
+        formMethod: "GET",
       }),
     ).toBe(false);
   });

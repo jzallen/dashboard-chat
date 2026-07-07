@@ -80,4 +80,38 @@ describe("useInactivity", () => {
     expect(onLogout).toHaveBeenCalledTimes(1);
     expect(result.current.showModal).toBe(false);
   });
+
+  it("honors injected timings — small threshold opens the modal sooner", () => {
+    const { result } = renderHook(() =>
+      useInactivity({
+        isAuthenticated: true,
+        onLogout: vi.fn(),
+        timing: { thresholdMs: 1000, checkMs: 100 },
+      }),
+    );
+    // Default threshold is 20 min; with a 1s override the poll trips almost at once.
+    act(() => vi.advanceTimersByTime(1100));
+    expect(result.current.showModal).toBe(true);
+  });
+
+  it("honors an injected keep-alive debounce ceiling", () => {
+    const onKeepAlive = vi.fn();
+    renderHook(() =>
+      useInactivity({
+        isAuthenticated: true,
+        onLogout: vi.fn(),
+        onKeepAlive,
+        timing: { debounceMs: 1000 },
+      }),
+    );
+
+    // Inside the 1s window (mount stamped activity) → no beat.
+    act(() => document.dispatchEvent(new Event("keydown")));
+    expect(onKeepAlive).toHaveBeenCalledTimes(0);
+
+    // Past the injected 1s window → one beat.
+    act(() => vi.advanceTimersByTime(1500));
+    act(() => document.dispatchEvent(new Event("keydown")));
+    expect(onKeepAlive).toHaveBeenCalledTimes(1);
+  });
 });

@@ -6,33 +6,43 @@ import { useCallback, useEffect, useRef } from "react";
 
 import styles from "./ActivityCheckModal.module.css";
 
-const MODAL_TIMEOUT_MS = 10 * 60 * 1000; // grace before auto-logout
+/** Default grace before auto-logout. Overridable via {@link ActivityCheckModalProps.timeoutMs}
+ *  so tests inject small values and ops can tune without a rebuild. */
+export const DEFAULT_MODAL_TIMEOUT_MS = 10 * 60 * 1000;
 
 interface ActivityCheckModalProps {
   isOpen: boolean;
   onContinue: () => void;
   onLogout: () => void;
+  /** Grace window before auto-logout (default {@link DEFAULT_MODAL_TIMEOUT_MS}). */
+  timeoutMs?: number;
 }
 
 export function ActivityCheckModal({
   isOpen,
   onContinue,
   onLogout,
+  timeoutMs = DEFAULT_MODAL_TIMEOUT_MS,
 }: ActivityCheckModalProps) {
   const continueRef = useRef<HTMLButtonElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
 
-  // Focus the Continue button on open.
+  // Focus the Continue button on open, and restore focus to whatever the user
+  // was on when the dialog closes (a11y: focus must not be stranded on removed
+  // DOM). The bespoke Tab trap below still keeps focus inside while open.
   useEffect(() => {
-    if (isOpen) continueRef.current?.focus();
+    if (!isOpen) return;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    continueRef.current?.focus();
+    return () => previouslyFocused?.focus?.();
   }, [isOpen]);
 
   // Grace timer → auto-logout if the user never confirms.
   useEffect(() => {
     if (!isOpen) return;
-    const timerId = setTimeout(onLogout, MODAL_TIMEOUT_MS);
+    const timerId = setTimeout(onLogout, timeoutMs);
     return () => clearTimeout(timerId);
-  }, [isOpen, onLogout]);
+  }, [isOpen, onLogout, timeoutMs]);
 
   // Keep Tab focus within the dialog.
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -71,8 +81,8 @@ export function ActivityCheckModal({
           Are you still there?
         </h2>
         <p id="activity-check-description" className={styles.description}>
-          Your session will expire soon due to inactivity. Click Continue to keep
-          working.
+          Your session will expire soon due to inactivity. Click Continue to
+          keep working.
         </p>
         <div className={styles.actions}>
           <button
