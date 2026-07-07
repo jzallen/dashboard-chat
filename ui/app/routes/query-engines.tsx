@@ -1,11 +1,11 @@
 /* /query-engines — compute-management stub. */
+import styles from "./query-engines.module.css";
+
 export default function QueryEnginesRoute() {
   return (
-    <div style={{ padding: 40 }}>
-      <h1 className="serif" style={{ fontSize: 22, color: "var(--text-900)" }}>
-        Query Engines
-      </h1>
-      <p style={{ color: "var(--text-500)" }}>
+    <div className={styles.container}>
+      <h1 className={`serif ${styles.heading}`}>Query Engines</h1>
+      <p className={styles.subheading}>
         DuckDB · connected. Manage compute for previews and exports.
       </p>
     </div>
