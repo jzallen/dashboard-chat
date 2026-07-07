@@ -20,5 +20,10 @@ export type {
   SourceUpload,
 } from "./dataSources/source";
 export type * from "./lineage";
-export { AUDIT_TAGS, LAYER_ORDER, modelKindForLayer } from "./lineage";
+export {
+  AUDIT_TAGS,
+  LAYER_ORDER,
+  modelKindForLayer,
+  SOURCE_LAYER,
+} from "./lineage";
 export type * from "./models";

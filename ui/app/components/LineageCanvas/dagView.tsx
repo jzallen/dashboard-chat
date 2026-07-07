@@ -1,9 +1,13 @@
-/* DAG view (horizontal flow): nodes laid out in layer columns, edges as Béziers. */
+/* DAG view (horizontal flow): nodes laid out in layer columns, edges as Béziers.
+
+   Layering: a thin container (DagView) reads the catalog + derives focus/in-flight
+   state, then renders pure presentational Node/Edge cards from plain props. The
+   leaf cards never touch the catalog or drill an open-node callback — the card
+   reads it from context. Geometry stays in the React-free lineageLayout module. */
 import { type CSSProperties, useMemo, useState } from "react";
 
-import type { LineageNode } from "../../catalog";
+import type { DataCatalog, LineageNode } from "../../catalog";
 import { LayerDot } from "../primitives";
-import { catalog } from "../useCatalog";
 import styles from "./lineageCanvas.module.css";
 import {
   bezierPath,
@@ -11,12 +15,10 @@ import {
   DagDimensionConfig,
   type Point,
 } from "./lineageLayout";
+import { useOpenNode } from "./openNodeContext";
 import { AiEditChip } from "./shared";
-import {
-  isInFlightPhase,
-  sourceUploadPhaseLabel,
-  useSourceUpload,
-} from "./sourceUploadPhase";
+import { useInFlightSourceNode } from "./useInFlightSourceNode";
+import { dagFocusModel, dagNodeAuditCount } from "./viewModel";
 
 function Node({
   n,
@@ -25,9 +27,9 @@ function Node({
   orphan,
   dim,
   justAdded,
+  auditEditCount,
   phaseLabel,
   onHover,
-  onOpen,
 }: {
   n: LineageNode;
   style: CSSProperties;
@@ -35,12 +37,13 @@ function Node({
   orphan: boolean;
   dim: boolean;
   justAdded: boolean;
+  /** AI-edit count for this node (derived by the container, not read here). */
+  auditEditCount: number;
   /** The in-flight source-upload phase badge for this node, when advancing. */
   phaseLabel: string | null;
   onHover: (id: string | null) => void;
-  onOpen: (node: LineageNode) => void;
 }) {
-  const auditEditCount = catalog.auditCount(n.id);
+  const onOpen = useOpenNode();
   const fields = n.ref
     ? n.ref.fields?.length ||
       n.ref.columns?.length ||
@@ -99,39 +102,32 @@ function Edge({
 }
 
 export function DagView({
+  catalog,
   version,
   sel,
-  onOpen,
   flashedNodeId,
 }: {
+  catalog: DataCatalog;
   version: number;
   sel: string | null;
-  onOpen: (node: LineageNode) => void;
   flashedNodeId: string | null;
 }) {
   const [hover, setHover] = useState<string | null>(null);
   const layout = useMemo(
     () => computeDagLayout(catalog, DagDimensionConfig),
-    [version],
+    [catalog, version],
   );
 
-  // The optimistic source-upload node + its current phase (client-reported,
-  // slice 4). The in-flight node is the saga's `source_id` once created, else
-  // the optimistic `temp_node_id`; its badge shows the saga progress.
-  const sourceUpload = useSourceUpload();
-  const inFlightNodeId = isInFlightPhase(sourceUpload.phase)
-    ? sourceUpload.source_id ?? sourceUpload.temp_node_id
-    : null;
-  const inFlightLabel = sourceUploadPhaseLabel(sourceUpload.phase);
+  // The optimistic source-upload node + its phase badge, stitched from the
+  // XState upload region behind one derived value (the single view-substrate seam).
+  const { inFlightNodeId, inFlightLabel } = useInFlightSourceNode();
 
   const inFocusNodeId = hover || sel;
   const orphans = catalog.orphans();
-  const inFocusEdges = new Set<number>();
-  if (inFocusNodeId) {
-    catalog.listEdges().forEach((edge, index) => {
-      if (catalog.isEdgeAdjacent(edge, inFocusNodeId)) inFocusEdges.add(index);
-    });
-  }
+  const focus = useMemo(
+    () => dagFocusModel(catalog, inFocusNodeId),
+    [catalog, version, inFocusNodeId],
+  );
 
   return (
     <div
@@ -148,8 +144,8 @@ export function DagView({
             key={index}
             sourcePos={layout.nodePositions[sourceId]}
             targetPos={layout.nodePositions[targetId]}
-            hot={inFocusEdges.has(index)}
-            dim={!inFocusEdges.has(index) && !!inFocusNodeId}
+            hot={focus.hotEdges.has(index)}
+            dim={!focus.hotEdges.has(index) && !!inFocusNodeId}
           />
         ))}
       </svg>
@@ -162,24 +158,18 @@ export function DagView({
           width: DagDimensionConfig.nodeWidth,
           height: DagDimensionConfig.nodeHeight,
         };
-        const selected = sel === n.id;
-        const orphan = orphans.has(n.id);
-        const dim =
-          !!inFocusNodeId &&
-          inFocusNodeId !== n.id &&
-          !catalog.isNodeAdjacent(inFocusNodeId, n.id);
         return (
           <Node
             key={n.id}
             n={n}
             style={nodeStyle}
-            selected={selected}
-            orphan={orphan}
-            dim={dim}
+            selected={sel === n.id}
+            orphan={orphans.has(n.id)}
+            dim={focus.isDimmed(n.id)}
             justAdded={n.id === flashedNodeId}
+            auditEditCount={dagNodeAuditCount(catalog, n.id)}
             phaseLabel={n.id === inFlightNodeId ? inFlightLabel : null}
             onHover={setHover}
-            onOpen={onOpen}
           />
         );
       })}
