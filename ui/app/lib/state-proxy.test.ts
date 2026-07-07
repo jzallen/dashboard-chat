@@ -5,7 +5,11 @@ import {
 } from "@dashboard-chat/ui-state-wire";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createStateProxy, type StateEventSourceLike } from "./state-proxy";
+import {
+  createStateProxy,
+  FetchTimeoutError,
+  type StateEventSourceLike,
+} from "./state-proxy";
 
 // ── test doubles (injected at the proxy's transport ports) ──────────────────
 
@@ -263,6 +267,21 @@ describe("createStateProxy (cookie CSR transport)", () => {
     await expect(proxy.postEvent(ORG_SUBMITTED)).rejects.toMatchObject({
       status: 409,
     });
+    expect(proxy.getSnapshot()).toEqual(anonymousStateDocument());
+  });
+
+  it("a transport timeout throws FetchTimeoutError, not a synthetic Response(504)", async () => {
+    const abortingFetch = (async (_url: unknown, init?: RequestInit) => {
+      init?.signal?.dispatchEvent(new Event("abort"));
+      const err = new Error("The operation was aborted.");
+      err.name = "AbortError";
+      throw err;
+    }) as typeof fetch;
+    const proxy = createStateProxy({ fetchImpl: abortingFetch });
+
+    await expect(proxy.postEvent(ORG_SUBMITTED)).rejects.toBeInstanceOf(
+      FetchTimeoutError,
+    );
     expect(proxy.getSnapshot()).toEqual(anonymousStateDocument());
   });
 });

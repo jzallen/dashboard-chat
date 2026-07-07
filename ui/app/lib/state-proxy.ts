@@ -91,9 +91,23 @@ export interface StateProxy {
 
 // ───────────────────────────── bounded fetch ─────────────────────────────
 
+/**
+ * Thrown when the 5-second client-side transport timeout fires before the
+ * ui-state server responds. Distinct from a genuine upstream 504 Gateway
+ * Timeout (which arrives as a non-2xx `Response` and is re-thrown directly).
+ * Callers that need to distinguish "we aborted" from "backend said 504" can
+ * use `instanceof FetchTimeoutError`.
+ */
+export class FetchTimeoutError extends Error {
+  constructor(url: string) {
+    super(`ui-state fetch timed out: ${url}`);
+    this.name = "FetchTimeoutError";
+  }
+}
+
 /** A single JSON fetch bounded by a 5s AbortController. Non-2xx → thrown
- *  `Response(status)`; timeout → thrown `Response(504)` — so callers surface a
- *  fallback rather than hanging. */
+ *  `Response(status)`; client-side timeout → thrown {@link FetchTimeoutError}
+ *  (distinct from a genuine upstream 504). */
 async function fetchDocument(
   fetchImpl: typeof fetch,
   url: string | URL,
@@ -116,7 +130,7 @@ async function fetchDocument(
       err instanceof Error &&
       (err.name === "AbortError" || controller.signal.aborted)
     ) {
-      throw new Response("ui-state timeout", { status: 504 });
+      throw new FetchTimeoutError(String(url));
     }
     throw err;
   } finally {
