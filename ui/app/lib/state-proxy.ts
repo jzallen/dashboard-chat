@@ -151,7 +151,14 @@ export function createStateProxy(opts: StateProxyOptions = {}): StateProxy {
   // The cache — getSnapshot's synchronous return. Never undefined: the anonymous
   // document (every region in its initial `verifying` state) until the first
   // POST response or SSE frame replaces it.
-  let cached: ChatAppStateDocument = opts.seed ?? anonymousStateDocument();
+  //
+  // The `satisfies` assertion on `opts.seed` is a compile-time guard: if a
+  // caller passes a seed whose shape diverges from ChatAppStateDocument (e.g. a
+  // test fixture built against a stale wire type), the error is raised here
+  // rather than silently producing a mismatched initial snapshot.
+  const seed = (opts.seed satisfies ChatAppStateDocument | undefined) ??
+    anonymousStateDocument();
+  let cached: ChatAppStateDocument = seed;
 
   const observers = new Set<{
     next?: (doc: ChatAppStateDocument) => void;
