@@ -7,7 +7,7 @@ import { useLocation, useParams } from "react-router";
 import { useChat } from "../../../app/lib/chatContext";
 import { useNavIntents } from "../../../app/lib/nav";
 import type { Edge, LineageNode } from "../../catalog";
-import { AssistantOverlay, TerminalAssistant } from "../Chat";
+import { AssistantOverlay } from "../Chat";
 import chat from "../Chat/Chat.module.css";
 import type { ColdStorageApi } from "../ColdStorage";
 import { ColdStorageModal } from "../ColdStorage";
@@ -17,7 +17,6 @@ import { Icon } from "../primitives";
 import type { UploadApi } from "../Upload";
 import { ConfirmArchive, UploadModal } from "../Upload";
 import { catalog } from "../useCatalog";
-import { useTheme } from "./ThemeProvider";
 
 /**
  * The resolved deep-linked model for the chat context, or null off a model route.
@@ -48,7 +47,6 @@ export function Overlays({
   createModel: (node: LineageNode, edge: Edge) => void;
   onOpenNode: (node: LineageNode) => void;
 }) {
-  const { dark } = useTheme();
   const { chatOpen, openChat, closeChat } = useChat();
   const intents = useNavIntents();
   const location = useLocation();
@@ -67,24 +65,15 @@ export function Overlays({
         </button>
       )}
       {chatOpen && <div className={chat.aoScrim} onClick={closeChat} />}
-      {chatOpen &&
-        (dark ? (
-          <TerminalAssistant
-            context={chatContext}
-            onCreate={createModel}
-            onClose={closeChat}
-            onOpenNode={onOpenNode}
-            go={intents.go}
-          />
-        ) : (
-          <AssistantOverlay
-            context={chatContext}
-            onCreate={createModel}
-            onClose={closeChat}
-            onOpenNode={onOpenNode}
-            go={intents.go}
-          />
-        ))}
+      {chatOpen && (
+        <AssistantOverlay
+          context={chatContext}
+          onCreate={createModel}
+          onClose={closeChat}
+          onOpenNode={onOpenNode}
+          go={intents.go}
+        />
+      )}
       {exporter.open && <ExportDrawer onClose={exporter.closeExport} />}
       {upload.modal.open && (
         <UploadModal
