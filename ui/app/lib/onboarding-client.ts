@@ -27,10 +27,15 @@ const UI_SERVER_PREFIX = "/ui-server";
 
 /** Swap the driver's backend `/api/*` path for the same-origin `/ui-server/*`
  *  broker. The driver only ever passes its `/api`-prefixed route constants
- *  (`/api/orgs/me`, `/api/orgs`, `/api/projects`), so the prefix is replaced
- *  unconditionally — a non-`/api` path is a contract violation, not a supported
- *  input. */
+ *  (`/api/orgs/me`, `/api/orgs`, `/api/projects`). A path that does not start with
+ *  the `/api` prefix is a contract violation — rejected loudly rather than sliced
+ *  into a silently garbled URL. */
 function toUiServerPath(apiPath: string): string {
+  if (!apiPath.startsWith(API_PREFIX)) {
+    throw new Error(
+      `onboarding-client: expected an "${API_PREFIX}" path, got "${apiPath}"`,
+    );
+  }
   return `${UI_SERVER_PREFIX}${apiPath.slice(API_PREFIX.length)}`;
 }
 

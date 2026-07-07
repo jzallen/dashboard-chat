@@ -19,6 +19,11 @@
    There is NO rejected branch — the closed-union crash-class model (ADR-049 §4)
    retired phase==='rejected'. /onboarding never redirects an authenticated user
    back here, and the gate never targets /login when a session exists — no loops. */
+import {
+  ONBOARDING_ACTIVE_STATES,
+  OnboardingState,
+  ProjectContextState,
+} from "@dashboard-chat/ui-state-wire";
 import { useSelector } from "@xstate/react";
 import { useEffect, useMemo } from "react";
 import { Navigate } from "react-router";
@@ -32,8 +37,6 @@ import {
 import { useStateProxy } from "../../lib/StateProxyProvider";
 import { LoadingSurface } from "../LoadingSurface/LoadingSurface";
 import { Chrome } from "./Chrome";
-
-const ONBOARDING_ACTIVE_STATES = new Set(["needs_org", "error_recoverable"]);
 
 export function OnboardingGate({ client }: { client: OnboardingClient }) {
   const { proxy, ensureBootstrap } = useStateProxy();
@@ -65,18 +68,22 @@ export function OnboardingGate({ client }: { client: OnboardingClient }) {
   // client converges the flow by probing the org SSOT and reporting the
   // definitive outcome (org_found / org_not_found). Re-fires while the state
   // persists awaiting — the driver only POSTs on a definitive HTTP answer.
-  const awaitingOrgReport = onboardingState === "awaiting_org_report";
+  const awaitingOrgReport =
+    onboardingState === OnboardingState.AwaitingOrgReport;
   useEffect(() => {
     if (awaitingOrgReport) void driver.probeOrg();
   }, [awaitingOrgReport, driver]);
 
-  if (onboardingState === "verifying" || awaitingOrgReport) {
+  if (onboardingState === OnboardingState.Verifying || awaitingOrgReport) {
     return <LoadingSurface message="Checking your session…" />;
   }
   if (phase === "onboarding" && ONBOARDING_ACTIVE_STATES.has(onboardingState)) {
     return <Navigate to="/onboarding" replace />;
   }
-  if (phase !== "onboarding" && projectContextState === "no_projects") {
+  if (
+    phase !== "onboarding" &&
+    projectContextState === ProjectContextState.NoProjects
+  ) {
     return <Navigate to="/onboarding" replace />;
   }
   return (

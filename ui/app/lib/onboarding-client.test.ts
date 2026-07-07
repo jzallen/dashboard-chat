@@ -59,6 +59,22 @@ describe("onboardingClient — /api → /ui-server URL flip", () => {
   });
 });
 
+describe("onboardingClient — non-/api path is a contract violation", () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => okJson({ data: null })),
+    );
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("throws naming the offending path when the driver hands a non-/api path", () => {
+    expect(() => onboardingClient.get("/ui-server/orgs/me")).toThrow(
+      /\/ui-server\/orgs\/me/,
+    );
+  });
+});
+
 describe("onboardingClient — OnboardingClient contract preserved", () => {
   afterEach(() => vi.unstubAllGlobals());
 
