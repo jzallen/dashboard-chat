@@ -1,4 +1,4 @@
-/* Chat dock (scripted creation): the assistant overlay and its terminal variant. */
+/* Chat dock: the assistant overlay (live turn against the ui/ server broker). */
 import { useEffect, useRef, useState } from "react";
 import { useRevalidator } from "react-router";
 
@@ -26,12 +26,6 @@ type ChatMsg =
   | { role: "user" | "bot"; text: string }
   | { role: "tool"; say: string; tag: AuditTag };
 
-/** A line in the terminal transcript. */
-type TermLine =
-  | { kind: "user" | "out"; text: string }
-  | { kind: "tool"; text: string; tag: AuditTag }
-  | { kind: "wrote"; text: string; node: LineageNode };
-
 // Minimal markdown → HTML for chat bubbles. Escapes first (the only XSS guard
 // on rendered lines), then applies bold + inline code.
 function fmt(text: string) {
@@ -43,7 +37,6 @@ function fmt(text: string) {
   s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
   return s;
 }
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /** Best-effort agent context from the open lineage node — the agent reads
  *  contextType/contextId to scope its tools. ModelRef is heterogeneous (datasets
@@ -110,8 +103,7 @@ export function AssistantOverlay({
   // (/ui-server/chat), which relays the agent SSE straight back, and stream the
   // assistant's reply into the transcript. A dataset-mutating domain event
   // (transform_applied, column_renamed, row_*) triggers a scoped catalog
-  // revalidation so the lineage reflects the change. (The setTimeout script mock
-  // is gone for this path; TerminalAssistant stays scripted for now.)
+  // revalidation so the lineage reflects the change.
   async function runScript(promptText: string) {
     if (busy) return;
     setBusy(true);
@@ -330,241 +322,6 @@ export function AssistantOverlay({
         >
           <Icon name="send" size={17} />
         </button>
-      </div>
-    </div>
-  );
-}
-
-export function TerminalAssistant({
-  context,
-  onCreate,
-  onClose,
-  onOpenNode,
-  go,
-}: ChatDockProps) {
-  // Re-render the recents list when backend sessions land (catalog commit).
-  useCatalog();
-  const [lines, setLines] = useState<TermLine[]>([]);
-  const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [cursor, setCursor] = useState(false);
-  const [closing, setClosing] = useState(false);
-  const bodyRef = useRef<HTMLDivElement>(null);
-  const inRef = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (bodyRef.current)
-      bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
-  }, [lines, cursor]);
-  useEffect(() => {
-    if (inRef.current) inRef.current.focus();
-  }, []);
-  const closeWith = (fn?: () => void) => {
-    setClosing(true);
-    setTimeout(() => {
-      if (fn) fn();
-      onClose();
-    }, 200);
-  };
-
-  async function runScript(promptText: string) {
-    if (busy) return;
-    setBusy(true);
-    setLines((l) => [...l, { kind: "user", text: promptText }]);
-    const S = catalog.getChatScript();
-    setCursor(true);
-    await sleep(620);
-    setCursor(false);
-    for (const turn of S.turns) {
-      if (turn.type === "text") {
-        setCursor(true);
-        await sleep(440);
-        setCursor(false);
-        setLines((l) => [...l, { kind: "out", text: turn.text }]);
-      } else {
-        await sleep(300);
-        setLines((l) => [
-          ...l,
-          { kind: "tool", text: turn.say, tag: turn.tag },
-        ]);
-      }
-    }
-    onCreate(S.newNode, S.newEdge);
-    setLines((l) => [
-      ...l,
-      {
-        kind: "wrote",
-        text: "models/marts/fct_revenue_by_region.sql",
-        node: S.newNode,
-      },
-    ]);
-    setBusy(false);
-  }
-
-  function submit() {
-    const v = input.trim();
-    if (!v || busy) return;
-    if (v === "clear") {
-      setLines([]);
-      setInput("");
-      return;
-    }
-    runScript(v);
-    setInput("");
-  }
-  const newSession = () => {
-    if (!busy) {
-      setLines([]);
-      setInput("");
-    }
-  };
-  const where = context ? context.label : "pipeline";
-
-  return (
-    <div
-      className={`${styles.termDock}${closing ? " " + styles.out : ""}`}
-      onClick={() => inRef.current && inRef.current.focus()}
-    >
-      <div className={styles.termBar}>
-        <div className={styles.termLights}>
-          <i />
-          <i />
-          <i />
-        </div>
-        <span className={styles.termWhere}>
-          assistant@duckdb <b>—</b>{" "}
-          <span className={styles.termCtx}>{where}</span>
-        </span>
-        <div className={styles.termActs}>
-          <button
-            className={styles.termBtn}
-            title="New session"
-            onClick={newSession}
-          >
-            +
-          </button>
-          <button
-            className={styles.termBtn}
-            title="History"
-            onClick={() => closeWith(() => go({ name: "chats" }))}
-          >
-            ⌁
-          </button>
-          <button
-            className={styles.termBtn}
-            title="Close"
-            onClick={() => closeWith()}
-          >
-            ✕
-          </button>
-        </div>
-      </div>
-      <div className={styles.termBody} ref={bodyRef}>
-        <div className={`${styles.tl} ${styles.tlBanner}`}>
-          dashboard-chat <b>assistant</b> v1.0 · duckdb shell · type a request,
-          or{" "}
-          <span
-            className={styles.tlLink}
-            onClick={() => runScript(catalog.getChatScript().prompt)}
-          >
-            try a demo
-          </span>
-        </div>
-        {lines.length === 0 && (
-          <>
-            <div className={`${styles.tl} ${styles.tlDim}`} style={{ marginTop: 6 }}>
-              recent sessions —
-            </div>
-            {catalog.listRecents().map((r, i) => (
-              <div
-                className={`${styles.tl} ${styles.termRec}`}
-                key={i}
-                onClick={() =>
-                  closeWith(() => go({ name: "openRecent", nodeId: r.nodeId }))
-                }
-              >
-                <span className={styles.n}>[{i + 1}]</span> {r.title}
-              </div>
-            ))}
-            <div
-              className={`${styles.tl} ${styles.tlDim}`}
-              style={{ margin: "6px 0 2px" }}
-            >
-              type a request below, or run a number above ↑
-            </div>
-          </>
-        )}
-        {lines.map((ln, i) => {
-          if (ln.kind === "user")
-            return (
-              <div className={`${styles.tl} ${styles.tlUser}`} key={i}>
-                <span className={styles.tp}>analyst</span>
-                <span className={styles.tc}>@</span>
-                <span className={styles.th}>demo</span>
-                <span className={styles.tc}>:~$</span> {ln.text}
-              </div>
-            );
-          if (ln.kind === "tool")
-            return (
-              <div className={`${styles.tl} ${styles.tlTool}`} key={i}>
-                <span className={styles.ok}>[✓]</span>
-                <span>{ln.text}</span>
-                <span className={styles.tg}>{ln.tag}</span>
-              </div>
-            );
-          if (ln.kind === "wrote")
-            return (
-              <div className={`${styles.tl} ${styles.tlTool}`} key={i}>
-                <span className={styles.ok}>→</span>
-                <span>
-                  wrote{" "}
-                  <span
-                    className={styles.tlLink}
-                    onClick={() => onOpenNode(ln.node)}
-                  >
-                    {ln.text}
-                  </span>
-                </span>
-              </div>
-            );
-          return (
-            <div
-              className={`${styles.tl} ${styles.tlOut}`}
-              key={i}
-              dangerouslySetInnerHTML={{ __html: fmt(ln.text) }}
-            />
-          );
-        })}
-        {cursor && (
-          <div className={`${styles.tl} ${styles.tlOut}`}>
-            <span className={styles.tlDim}>…</span>{" "}
-            <span className={styles.termCursor} />
-          </div>
-        )}
-      </div>
-      <div className={styles.termInputRow}>
-        <span className={styles.termPrompt}>
-          <span className={styles.tp}>analyst</span>
-          <span className={styles.tc}>@</span>
-          <span className={styles.th}>demo</span>
-          <span className={styles.tc}>:~$</span>
-        </span>
-        <input
-          ref={inRef}
-          className={styles.termInput}
-          value={input}
-          placeholder={
-            busy ? "running…" : "describe a transform, join or metric"
-          }
-          disabled={busy}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              submit();
-            }
-          }}
-        />
-        {!busy && !input && <span className={styles.termCursor} />}
       </div>
     </div>
   );
