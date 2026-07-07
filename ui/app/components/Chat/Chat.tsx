@@ -2,16 +2,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useRevalidator } from "react-router";
 
-import type { AuditTag, Edge, LineageNode } from "../../catalog";
-import {
-  type ChatStreamEvent,
-  isCatalogMutatingEvent,
-  readChatStream,
-} from "../../lib/chat-stream";
+import type { Edge, LineageNode } from "../../catalog";
+import { fmt } from "../../lib/fmt";
 import type { NavIntent } from "../../lib/nav";
-import { Icon, type IconName, LayerDot, TAG_ICON } from "../primitives";
+import { Icon, type IconName, LayerDot } from "../primitives";
 import { catalog, useCatalog } from "../useCatalog";
 import styles from "./Chat.module.css";
+import { useChatTurn } from "./useChatTurn";
 
 type ChatDockProps = {
   context: LineageNode | null;
@@ -21,70 +18,12 @@ type ChatDockProps = {
   go: (intent: NavIntent) => void;
 };
 
-/** A message in the overlay transcript: prose bubbles or a tool-action card. */
-type ChatMsg =
-  | { role: "user" | "bot"; text: string }
-  | { role: "tool"; say: string; tag: AuditTag };
-
-// Minimal markdown → HTML for chat bubbles. Escapes first (the only XSS guard
-// on rendered lines), then applies bold + inline code.
-function fmt(text: string) {
-  let s = text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-  s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-  s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
-  return s;
-}
-
-/** Best-effort agent context from the open lineage node — the agent reads
- *  contextType/contextId to scope its tools. ModelRef is heterogeneous (datasets
- *  carry `fields`, views `columns`, reports `columns_metadata`). */
-function agentContext(node: LineageNode | null): {
-  contextType: "dataset" | "view" | "report" | null;
-  contextId: string | null;
-} {
-  if (!node) return { contextType: null, contextId: null };
-  const ref = node.ref;
-  const contextType = ref?.fields
-    ? "dataset"
-    : ref?.columns
-      ? "view"
-      : ref?.columns_metadata
-        ? "report"
-        : null;
-  return { contextType, contextId: node.id };
-}
-
-/** Append a domain event to the catalog-revalidation decision: the live
- *  assistant-transform reflection triggers the framework revalidator on the
- *  first dataset-mutating event of a turn, re-running the project-layout loader
- *  so the lineage reflects the change. */
-function revalidateOnMutation(
-  event: ChatStreamEvent,
-  fired: { done: boolean },
-  revalidate: () => void,
-) {
-  if (!fired.done && isCatalogMutatingEvent(event)) {
-    fired.done = true;
-    revalidate();
-  }
-}
-
-export function AssistantOverlay({
-  context,
-  onClose,
-  onOpenNode,
-  go,
-}: ChatDockProps) {
+export function AssistantOverlay({ context, onClose, go }: ChatDockProps) {
   // Re-render the recents list when backend sessions land (catalog commit).
   useCatalog();
   const { revalidate } = useRevalidator();
-  const [msgs, setMsgs] = useState<ChatMsg[]>([]);
+  const { msgs, typing, busy, send, reset } = useChatTurn(context, revalidate);
   const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [typing, setTyping] = useState(false);
   const [closing, setClosing] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   const closeWith = (fn?: () => void) => {
@@ -99,68 +38,8 @@ export function AssistantOverlay({
       bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
   }, [msgs, typing]);
 
-  // The live assistant turn: POST the message to the ui/ server broker
-  // (/ui-server/chat), which relays the agent SSE straight back, and stream the
-  // assistant's reply into the transcript. A dataset-mutating domain event
-  // (transform_applied, column_renamed, row_*) triggers a scoped catalog
-  // revalidation so the lineage reflects the change.
-  async function runScript(promptText: string) {
-    if (busy) return;
-    setBusy(true);
-    setMsgs((m) => [...m, { role: "user", text: promptText }]);
-    setTyping(true);
-
-    const { contextType, contextId } = agentContext(context);
-    const projectId = catalog.getCurrentProject()?.id ?? null;
-    const fired = { done: false };
-    // First text-delta starts the streaming bot bubble; later deltas replace it.
-    let started = false;
-
-    try {
-      const res = await fetch("/ui-server/chat", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          messages: [{ role: "user", content: promptText }],
-          contextType,
-          contextId,
-          project_id: projectId,
-        }),
-      });
-      if (!res.ok || !res.body) throw new Error(`chat ${res.status}`);
-
-      await readChatStream(res.body, {
-        onText: (accumulated) => {
-          setTyping(false);
-          const isFirst = !started;
-          started = true;
-          setMsgs((m) =>
-            isFirst
-              ? [...m, { role: "bot", text: accumulated }]
-              : [...m.slice(0, -1), { role: "bot", text: accumulated }],
-          );
-        },
-        onEvent: (event) => revalidateOnMutation(event, fired, revalidate),
-        onError: (message) => {
-          setTyping(false);
-          setMsgs((m) => [...m, { role: "bot", text: `⚠️ ${message}` }]);
-        },
-      });
-    } catch {
-      setTyping(false);
-      setMsgs((m) => [
-        ...m,
-        { role: "bot", text: "⚠️ The assistant is unavailable right now." },
-      ]);
-    } finally {
-      setTyping(false);
-      setBusy(false);
-    }
-  }
-
   const newSession = () => {
-    if (busy) return;
-    setMsgs([]);
+    reset();
     setInput("");
   };
   const suggestions: { t: string; ic: IconName }[] = [
@@ -212,11 +91,11 @@ export function AssistantOverlay({
               <span className={styles.aoSecLabel}>Recent</span>
             </div>
             <div className={styles.aoRecents}>
-              {catalog.listRecents().map((r, i) => {
+              {catalog.listRecents().map((r) => {
                 const node = r.nodeId ? catalog.getNode(r.nodeId) : null;
                 return (
                   <button
-                    key={i}
+                    key={r.nodeId ?? r.title}
                     className={`${styles.aoRecent}${node ? " layer-" + node.layer : ""}`}
                     onClick={() => go({ name: "openRecent", nodeId: r.nodeId })}
                   >
@@ -241,8 +120,8 @@ export function AssistantOverlay({
               <span>or start something new</span>
             </div>
             <div className={styles.suggest}>
-              {suggestions.map((s, i) => (
-                <button key={i} onClick={() => runScript(s.t)}>
+              {suggestions.map((s) => (
+                <button key={s.t} onClick={() => send(s.t)}>
                   <Icon name={s.ic} size={16} />
                   {s.t}
                 </button>
@@ -250,29 +129,17 @@ export function AssistantOverlay({
             </div>
           </>
         )}
-        {msgs.map((m, i) => {
-          if (m.role === "tool")
-            return (
-              <div className={styles.toolCard} key={i}>
-                <span className={styles.tcIco}>
-                  <Icon name={TAG_ICON[m.tag]} />
-                </span>
-                <span>{m.say}</span>
-                <span className={styles.tcTag}>{m.tag}</span>
-              </div>
-            );
-          return (
+        {msgs.map((m) => (
+          <div
+            className={`${styles.msg} ${m.role === "user" ? styles.user : styles.bot}`}
+            key={m.id}
+          >
             <div
-              className={`${styles.msg} ${m.role === "user" ? styles.user : styles.bot}`}
-              key={i}
-            >
-              <div
-                className={styles.bubble}
-                dangerouslySetInnerHTML={{ __html: fmt(m.text) }}
-              />
-            </div>
-          );
-        })}
+              className={styles.bubble}
+              dangerouslySetInnerHTML={{ __html: fmt(m.text) }}
+            />
+          </div>
+        ))}
         {typing && (
           <div className={`${styles.msg} ${styles.bot}`}>
             <div className={styles.bubble} style={{ padding: 0 }}>
@@ -284,16 +151,6 @@ export function AssistantOverlay({
             </div>
           </div>
         )}
-        {msgs.some((m) => m.role === "tool") && !busy && (
-          <button
-            className="btn sq"
-            style={{ alignSelf: "flex-start", fontSize: 13 }}
-            onClick={() => onOpenNode(catalog.getChatScript().newNode)}
-          >
-            <Icon name="eye" size={14} />
-            Open fct_revenue_by_region
-          </button>
-        )}
       </div>
       <div className={styles.aoInput}>
         <textarea
@@ -304,7 +161,7 @@ export function AssistantOverlay({
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               if (input.trim()) {
-                runScript(input.trim());
+                send(input.trim());
                 setInput("");
               }
             }
@@ -315,7 +172,7 @@ export function AssistantOverlay({
           disabled={busy || !input.trim()}
           onClick={() => {
             if (input.trim()) {
-              runScript(input.trim());
+              send(input.trim());
               setInput("");
             }
           }}
