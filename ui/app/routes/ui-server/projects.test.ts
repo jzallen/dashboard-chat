@@ -66,7 +66,7 @@ describe("/ui-server/projects loader (retry-probe / initial scope)", () => {
     );
   });
 
-  it("passes an empty-list 200 through unchanged (the driver maps it to no_projects_found)", async () => {
+  it("flattens an empty-list 200 to [] (the broker unwraps the envelope; the driver maps [] to no_projects_found)", async () => {
     stubFetch(new Response('{"data":[]}', { status: 200 }));
 
     const res = await loader({
@@ -77,7 +77,27 @@ describe("/ui-server/projects loader (retry-probe / initial scope)", () => {
 
     expect(res.status).toBe(200);
     expect(res.headers.get("location")).toBeNull();
-    expect(await res.text()).toBe('{"data":[]}');
+    expect(await res.text()).toBe("[]");
+  });
+
+  it("flattens a non-empty-list 200 to flat records (the driver maps it to scope_resolved)", async () => {
+    stubFetch(
+      new Response(
+        '{"data":[{"type":"projects","id":"proj-1","attributes":{"name":"Alpha"}}]}',
+        { status: 200 },
+      ),
+    );
+
+    const res = await loader({
+      request: getRequest(),
+      params: {},
+      context: {},
+    } as never);
+
+    expect(res.status).toBe(200);
+    expect(JSON.parse(await res.text())).toEqual([
+      { id: "proj-1", name: "Alpha" },
+    ]);
   });
 });
 

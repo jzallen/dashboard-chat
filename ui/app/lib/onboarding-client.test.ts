@@ -78,14 +78,12 @@ describe("onboardingClient — non-/api path is a contract violation", () => {
 describe("onboardingClient — OnboardingClient contract preserved", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("unwraps the JSON:API envelope on a 2xx GET → flat { id, name }", async () => {
+  it("returns the broker-flattened body on a 2xx GET → flat { id, name }", async () => {
+    // The `/ui-server` read broker owns the envelope→flat transform, so the GET
+    // response is already flat; the adapter passes it straight through.
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
-        okJson({
-          data: { type: "orgs", id: "org-7", attributes: { name: "Acme" } },
-        }),
-      ),
+      vi.fn(async () => okJson({ id: "org-7", name: "Acme" })),
     );
     const body = await onboardingClient.get("/api/orgs/me");
     expect(body).toEqual({ id: "org-7", name: "Acme" });
