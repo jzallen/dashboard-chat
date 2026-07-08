@@ -10,7 +10,7 @@ import { useColdStorage } from "../ColdStorage";
 import { useExport } from "../Export";
 import { useFlashedNode } from "../FlashedNodeProvider";
 import { useUpload } from "../Upload";
-import { useCatalogContext, useCatalogSelector } from "../useCatalog";
+import { useCatalogContext, useCatalogWithSelector } from "../useCatalog";
 import { Overlays } from "./Overlays";
 import { useTheme } from "./ThemeProvider";
 import { Topbar } from "./Topbar";
@@ -24,7 +24,7 @@ export function Chrome() {
   const catalog = useCatalogContext();
   // Re-derive the model list only when the graph mutates (rename/archive/
   // restore/add), not on an unrelated org-global or session commit.
-  const graph = useCatalogSelector((s) => s.graph);
+  const graph = useCatalogWithSelector((s) => s.graph);
   const models = useMemo(() => catalog.listModels(), [catalog, graph]);
   const { rootClassName } = useTheme();
   const intents = useNavIntents();

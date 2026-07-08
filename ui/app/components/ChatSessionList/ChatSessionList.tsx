@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { useNavIntents } from "../../lib/nav";
 import { Icon } from "../primitives";
-import { useCatalogContext, useCatalogSelector } from "../useCatalog";
+import { useCatalogContext, useCatalogWithSelector } from "../useCatalog";
 import styles from "./ChatSessionList.module.css";
 
 export function ChatSessionList() {
@@ -14,8 +14,8 @@ export function ChatSessionList() {
   // Re-render when backend sessions land (getAllChats resolves a beat after
   // first paint), or when the graph mutates — each row reads its backing node's
   // label off the graph.
-  const chats = useCatalogSelector((s) => s.chats);
-  useCatalogSelector((s) => s.graph);
+  const chats = useCatalogWithSelector((s) => s.chats);
+  useCatalogWithSelector((s) => s.graph);
   const list = chats.filter((c) =>
     (c.title + " " + (c.snippet ?? ""))
       .toLowerCase()

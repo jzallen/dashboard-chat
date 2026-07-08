@@ -70,7 +70,7 @@ interface CatalogSnapshot {
 
 /**
  * The immutable state the reactive store hands to a selector-based subscription
- * (`useCatalogSelector`). It is the {@link CatalogSnapshot} narrowed to a
+ * (`useCatalogWithSelector`). It is the {@link CatalogSnapshot} narrowed to a
  * read-only projection: every commit replaces the snapshot object wholesale, so
  * the reference is stable between mutations and changes on every mutation —
  * exactly the identity a `useSyncExternalStoreWithSelector` selector memoizes

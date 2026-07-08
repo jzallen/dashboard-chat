@@ -4,12 +4,12 @@
    to /login, and must NOT navigate to /project/undefined. */
 import { Navigate } from "react-router";
 
-import { useCatalogSelector } from "../components/useCatalog";
+import { useCatalogWithSelector } from "../components/useCatalog";
 
 export default function HomeRedirect() {
   // Re-render only when the project list changes (backend projects revalidate a
   // beat after the instant fixture seed).
-  const projects = useCatalogSelector((s) => s.projects);
+  const projects = useCatalogWithSelector((s) => s.projects);
 
   if (projects.length === 0) {
     return (

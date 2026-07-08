@@ -7,7 +7,7 @@ import { useRevalidator } from "react-router";
 import type { Edge, LineageNode } from "../../catalog";
 import { useNavIntents } from "../../lib/nav";
 import { Icon, type IconName, LayerDot } from "../primitives";
-import { useCatalogContext, useCatalogSelector } from "../useCatalog";
+import { useCatalogContext, useCatalogWithSelector } from "../useCatalog";
 import styles from "./Chat.module.css";
 import { ChatBubble } from "./ChatBubble";
 import { useChatTurn } from "./useChatTurn";
@@ -23,9 +23,9 @@ export function ChatOverlay({ context, onClose }: ChatOverlayProps) {
   const catalog = useCatalogContext();
   // Re-render the recents list when backend sessions land, and pick up the
   // revalidated chat-script prompt — the graph feeds each recent's node label.
-  useCatalogSelector((s) => s.recents);
-  useCatalogSelector((s) => s.chatScript);
-  useCatalogSelector((s) => s.graph);
+  useCatalogWithSelector((s) => s.recents);
+  useCatalogWithSelector((s) => s.chatScript);
+  useCatalogWithSelector((s) => s.graph);
   const { navigateTo } = useNavIntents();
   const { revalidate } = useRevalidator();
   const { msgs, typing, busy, send, reset } = useChatTurn(context, revalidate);

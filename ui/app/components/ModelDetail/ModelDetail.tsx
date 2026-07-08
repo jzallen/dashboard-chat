@@ -9,7 +9,7 @@ import type {
   Model,
 } from "../../catalog";
 import { Icon, LayerBadge, LayerDot, SqlBlock, TAG_ICON } from "../primitives";
-import { useCatalogContext, useCatalogSelector } from "../useCatalog";
+import { useCatalogContext, useCatalogWithSelector } from "../useCatalog";
 import { InlineEditLabel } from "./InlineEditLabel";
 import styles from "./ModelDetail.module.css";
 import { narrowModel } from "./narrowModel";
@@ -501,8 +501,8 @@ export function ModelDetail({
   const catalog = useCatalogContext();
   // Re-render when the graph mutates (audit lands, dependency added) or the
   // scope's current project changes.
-  useCatalogSelector((s) => s.graph);
-  useCatalogSelector((s) => s.currentProject);
+  useCatalogWithSelector((s) => s.graph);
+  useCatalogWithSelector((s) => s.currentProject);
   const m = narrowModel(node);
   if (!m) return null; // unknown/absent model kind — degrade rather than crash
   const audit = catalog.auditFor(node.id);

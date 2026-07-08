@@ -7,7 +7,7 @@
  * Two ways to subscribe a React component to the catalog's mutations, both over
  * the same reactive store:
  *
- *   - useCatalogSelector(selector) — the granular path: projects a SLICE off the
+ *   - useCatalogWithSelector(selector) — the granular path: projects a SLICE off the
  *     immutable CatalogState and re-renders only when that slice changes, so an
  *     unrelated commit (e.g. a single audit toggle) skips the component.
  *   - useCatalog() — the coarse back-compat path: returns the opaque store
@@ -297,7 +297,7 @@ export function useCatalogContext(): DataCatalog {
  * entry no longer re-renders every subscriber. Replaces the opaque-`version`
  * {@link useCatalog} for granular reads.
  */
-export function useCatalogSelector<T>(
+export function useCatalogWithSelector<T>(
   selector: (state: CatalogState) => T,
   isEqual?: (a: T, b: T) => boolean,
 ): T {
