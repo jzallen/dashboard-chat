@@ -6,7 +6,7 @@ import { useLocation, useParams } from "react-router";
 
 import { useChat } from "../../../app/lib/chatContext";
 import type { Edge, LineageNode } from "../../catalog";
-import { AssistantOverlay } from "../Chat";
+import { ChatOverlay } from "../Chat";
 import chat from "../Chat/Chat.module.css";
 import type { ColdStorageApi } from "../ColdStorage";
 import { ColdStorageModal } from "../ColdStorage";
@@ -64,7 +64,7 @@ export function Overlays({
       )}
       {chatOpen && <div className={chat.aoScrim} onClick={closeChat} />}
       {chatOpen && (
-        <AssistantOverlay
+        <ChatOverlay
           context={chatContext}
           onCreate={createModel}
           onClose={closeChat}

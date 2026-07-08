@@ -1,4 +1,6 @@
-/* Chat dock: the assistant overlay (live turn against the ui/ server broker). */
+/* The chat overlay dock: a live turn against the ui/ server broker. "Chat" is
+   the feature (sessions, message bubbles); the assistant is the persona of the
+   streamed bot replies shown inside it. */
 import { useEffect, useRef, useState } from "react";
 import { useRevalidator } from "react-router";
 
@@ -10,14 +12,14 @@ import styles from "./Chat.module.css";
 import { ChatBubble } from "./ChatBubble";
 import { useChatTurn } from "./useChatTurn";
 
-type ChatDockProps = {
+type ChatOverlayProps = {
   context: LineageNode | null;
   onCreate: (node: LineageNode, edge: Edge) => void;
   onClose: () => void;
   onOpenNode: (node: LineageNode) => void;
 };
 
-export function AssistantOverlay({ context, onClose }: ChatDockProps) {
+export function ChatOverlay({ context, onClose }: ChatOverlayProps) {
   // Re-render the recents list when backend sessions land (catalog commit).
   useCatalog();
   const { navigateTo } = useNavIntents();

@@ -6,7 +6,7 @@
  *
  * Port-to-port proof of the FIRST slice of the SSR-as-ui-server progression:
  *
- *   AssistantOverlay submit        (client driving port — the user)
+ *   ChatOverlay submit        (client driving port — the user)
  *     -> POST /ui-server/chat            (the ui/ SERVER broker: a REAL RRv7 resource
  *                                    route action, NOT a network stub)
  *       -> POST /worker/chat       (the SOLE mocked downstream port: auth-proxy's
@@ -33,7 +33,7 @@ import {
 } from "vitest";
 
 import { fixtureSource } from "../catalog";
-import { AssistantOverlay } from "../components/Chat/AssistantOverlay";
+import { ChatOverlay } from "../components/Chat/ChatOverlay";
 import { installCatalogForTest } from "../components/useCatalog";
 import { renderInShell } from "../lib/testRouter";
 import { action as uiServerChatAction } from "../routes/ui-server/chat";
@@ -126,7 +126,7 @@ describe("SSR ui-server gateway · slice 1 · live assistant chat wire", () => {
 
     const noop = () => {};
     renderInShell(
-      <AssistantOverlay
+      <ChatOverlay
         context={null}
         onCreate={noop}
         onClose={noop}

@@ -6,7 +6,7 @@ import type { LineageNode } from "../../catalog";
 import { fixtureSource } from "../../catalog";
 import { renderInShell } from "../../lib/testRouter";
 import { installCatalogForTest } from "../useCatalog";
-import { AssistantOverlay } from "./AssistantOverlay";
+import { ChatOverlay } from "./ChatOverlay";
 
 /**
  * A stream whose frames are pushed one at a time under test control, so a turn
@@ -30,7 +30,7 @@ function controllableStream() {
 
 const frame = (o: unknown) => `data: ${JSON.stringify(o)}\n\n`;
 
-// AssistantOverlay calls useRevalidator() to trigger the framework revalidator
+// ChatOverlay calls useRevalidator() to trigger the framework revalidator
 // after transform_applied SSE events. Stub it here so the overlay renders
 // without a full data-router context; the stable spy lets a test assert the
 // revalidator is not driven after the overlay unmounts.
@@ -49,7 +49,7 @@ const noop = () => {};
 
 function renderOverlay(context: LineageNode | null = null) {
   return renderInShell(
-    <AssistantOverlay
+    <ChatOverlay
       context={context}
       onCreate={noop}
       onClose={noop}
@@ -66,7 +66,7 @@ const datasetNode: LineageNode = {
   ref: { fields: [] },
 };
 
-describe("AssistantOverlay — live chat error path", () => {
+describe("ChatOverlay — live chat error path", () => {
   it("shows an unavailable notice when the broker call fails", async () => {
     vi.stubGlobal(
       "fetch",
@@ -84,7 +84,7 @@ describe("AssistantOverlay — live chat error path", () => {
   });
 });
 
-describe("AssistantOverlay — streaming turn cancellation", () => {
+describe("ChatOverlay — streaming turn cancellation", () => {
   it("aborts the fetch and does not drive the revalidator when a mutating event arrives after unmount", async () => {
     mockRevalidate.mockClear();
     const wire = controllableStream();
@@ -98,7 +98,7 @@ describe("AssistantOverlay — streaming turn cancellation", () => {
     );
 
     const { unmount } = renderInShell(
-      <AssistantOverlay
+      <ChatOverlay
         context={null}
         onCreate={noop}
         onClose={noop}
@@ -130,7 +130,7 @@ describe("AssistantOverlay — streaming turn cancellation", () => {
   });
 });
 
-describe("AssistantOverlay — context indicator", () => {
+describe("ChatOverlay — context indicator", () => {
   it("shows the dataset name AND its layer word when a context node is present", () => {
     renderOverlay(datasetNode);
 
