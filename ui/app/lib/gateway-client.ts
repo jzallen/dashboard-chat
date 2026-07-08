@@ -11,11 +11,12 @@
  * it and mints the downstream Bearer server-side. No `Authorization` header is
  * built in the browser.
  *
- * The contract mirrors the retired transport so its consumers (the onboarding
- * client adapter, the catalog write ports) port over unchanged: a 2xx GET returns
- * the envelope-unwrapped payload; a 2xx POST/upload returns the RAW decoded body
- * (callers that need a JSON:API `data.id` read it themselves); a non-2xx throws
- * {@link ApiError}(status, body); a 401 also trips {@link handleUnauthorized}.
+ * The contract: a 2xx GET returns the response body as decoded — already flat,
+ * because the `/ui-server` read broker ({@link brokerGet}) owns the JSON:API
+ * envelope→flat transform, so this browser transport does NOT unwrap; a 2xx
+ * POST/upload returns the RAW decoded body (callers that need a JSON:API `data.id`
+ * read it themselves); a non-2xx throws {@link ApiError}(status, body); a 401 also
+ * trips {@link handleUnauthorized}.
  *
  * Auth-transport contract: this module is the BROWSER leg of a two-transport
  * split. It relies on `credentials:"include"` to send the session cookie to the
@@ -36,23 +37,12 @@ async function parseErrorBody(response: Response): Promise<unknown> {
   }
 }
 
-/** Flatten a JSON:API resource `{ type, id, attributes }` into `{ id, ...attributes }`. */
-function unwrapResource(item: unknown): unknown {
-  if (
-    item &&
-    typeof item === "object" &&
-    "attributes" in (item as Record<string, unknown>)
-  ) {
-    const record = item as Record<string, unknown>;
-    return { id: record.id, ...(record.attributes as object) };
-  }
-  return item;
-}
-
 /**
- * GET `path` (a same-origin `/ui-server/*` route) and return the unwrapped
- * payload. Sends the session cookie via `credentials:"include"`. Rejects on a
- * non-2xx response so the catalog's fallback keeps showing fixtures.
+ * GET `path` (a same-origin `/ui-server/*` route) and return the decoded body.
+ * The `/ui-server` read broker ({@link brokerGet}) has already flattened the
+ * JSON:API envelope, so this transport returns the body as-is without unwrapping.
+ * Sends the session cookie via `credentials:"include"`. Rejects on a non-2xx
+ * response so the catalog's fallback keeps showing fixtures.
  */
 export async function gatewayGet<T>(path: string): Promise<T> {
   const response = await fetch(path, {
@@ -69,15 +59,7 @@ export async function gatewayGet<T>(path: string): Promise<T> {
     );
   }
 
-  const json = await response.json();
-  if (json && typeof json === "object" && "data" in json) {
-    const data = (json as { data: unknown }).data;
-    const result = Array.isArray(data)
-      ? data.map(unwrapResource)
-      : unwrapResource(data);
-    return result as T;
-  }
-  return json as T;
+  return response.json() as Promise<T>;
 }
 
 /**

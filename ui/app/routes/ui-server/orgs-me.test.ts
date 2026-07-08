@@ -52,9 +52,12 @@ describe("/ui-server/orgs/me resource route (org probe)", () => {
     );
   });
 
-  it("forwards the upstream 2xx status AND body through (the driver reads the org snapshot)", async () => {
+  it("flattens the JSON:API envelope on a 2xx (the broker owns the unwrap; the driver reads a flat org snapshot)", async () => {
     stubFetch(
-      new Response('{"data":{"type":"orgs","id":"org-7"}}', { status: 200 }),
+      new Response(
+        '{"data":{"type":"orgs","id":"org-7","attributes":{"name":"Acme"}}}',
+        { status: 200 },
+      ),
     );
 
     const res = await loader({
@@ -64,7 +67,7 @@ describe("/ui-server/orgs/me resource route (org probe)", () => {
     } as never);
 
     expect(res.status).toBe(200);
-    expect(await res.text()).toBe('{"data":{"type":"orgs","id":"org-7"}}');
+    expect(JSON.parse(await res.text())).toEqual({ id: "org-7", name: "Acme" });
   });
 
   it("passes a definitive 404 (org_not_found) through unchanged WITHOUT redirecting", async () => {

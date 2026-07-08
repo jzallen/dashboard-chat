@@ -30,7 +30,9 @@ Labels do double duty — human filtering **and** cyrus behavior (`labelPrompts`
 | `wave:refactor` | `/nw-refactor` | `safe`/`all` |
 
 Read-only waves are safe to fire liberally — they cannot touch production code.
-`wave:deliver|bugfix|refactor` are the gated ones (they open PRs).
+`wave:deliver|bugfix|refactor` are the gated ones (they open PRs). For **which** wave a
+given task wants — especially **`wave:deliver` (behaviour-adding) vs `wave:refactor`
+(behaviour-preserving, RPP level + scope targeted)** — see `choosing-waves.md`.
 
 **On a story, the `wave:*` label is a phase flag:** `wave:distill` (awaiting breakdown,
 orchestrator) → relabel `wave:deliver` (approved, builder). Mode is read from the story's
@@ -60,7 +62,9 @@ contains (handy for filtering). No longer a separate issue level.
   scope varies by label.)
 - The issue **description is the agent's task prompt**. Use per-wave issue templates
   whose body is already a good brief and opens with the matching `/nw-*` command, so
-  "good issue hygiene" and "good agent prompt" are the same habit.
+  "good issue hygiene" and "good agent prompt" are the same habit. Structure it per
+  `issue-authoring.md`: human-readable title + summary, an `## AGENT NOTES` section for
+  the agent-facing instructions, `## References` at the bottom for doc/issue pointers.
 
 ## Suggested views
 

@@ -18,6 +18,7 @@
  * routes/onboarding.tsx.
  */
 import { gatewayGet, gatewayPost } from "./gateway-client";
+import { unwrapEnvelope } from "./jsonapi";
 import type { OnboardingClient } from "./onboarding-driver";
 
 /** The auth-proxy `/api` prefix the driver hands us, swapped for the same-origin
@@ -39,36 +40,12 @@ function toUiServerPath(apiPath: string): string {
   return `${UI_SERVER_PREFIX}${apiPath.slice(API_PREFIX.length)}`;
 }
 
-/** Flatten a JSON:API resource `{ type, id, attributes }` into `{ id, ...attributes }`. */
-function unwrapResource(item: unknown): unknown {
-  if (
-    item &&
-    typeof item === "object" &&
-    "attributes" in (item as Record<string, unknown>)
-  ) {
-    const record = item as Record<string, unknown>;
-    return { id: record.id, ...(record.attributes as object) };
-  }
-  return item;
-}
-
-/**
- * Flatten a JSON:API envelope (`{ data: … }`) to the unwrapped payload — a single
- * `{ id, ...attributes }`, or a list mapped the same way. {@link gatewayGet}
- * already does this for the read legs; {@link gatewayPost} returns the raw body,
- * so the write legs flatten here too — the driver reads a flat `{ id, name }`
- * snapshot off a 2xx create.
- */
-function unwrapEnvelope(json: unknown): unknown {
-  if (json && typeof json === "object" && "data" in (json as object)) {
-    const data = (json as { data: unknown }).data;
-    return Array.isArray(data) ? data.map(unwrapResource) : unwrapResource(data);
-  }
-  return json;
-}
-
 export const onboardingClient: OnboardingClient = {
+  // READ leg: the `/ui-server` broker ({@link brokerGet}) has already flattened the
+  // envelope, so the read passes straight through {@link gatewayGet}.
   get: (path) => gatewayGet(toUiServerPath(path)),
+  // WRITE leg: {@link gatewayPost} returns the raw 2xx body, so the driver's flat
+  // `{ id, name }` create snapshot is unwrapped here via the shared transform.
   post: async (path, body) =>
     unwrapEnvelope(await gatewayPost(toUiServerPath(path), body)),
 };
