@@ -13,7 +13,8 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { LineageNode } from "../../catalog";
+import type { LineageNode, ModelKind } from "../../catalog";
+import { modelKindForLayer } from "../../catalog";
 import {
   type ChatStreamEvent,
   isCatalogMutatingEvent,
@@ -30,26 +31,14 @@ let messageSeq = 0;
 const nextMessageId = () => `m${++messageSeq}`;
 
 /** Best-effort agent context from the open lineage node — the agent reads
- *  contextType/contextId to scope its tools.
- *
- *  ModelRef is heterogeneous and the backend vets it so exactly one shape key is
- *  populated: datasets carry `fields`, views `columns`, reports
- *  `columns_metadata`. The probe order below encodes that mutual exclusivity; it
- *  is not a fallback chain. */
+ *  contextType/contextId to scope its tools. contextType derives from the
+ *  node's pipeline layer (the domain 1:1), not the loose ModelRef bag. */
 export function agentContext(node: LineageNode | null): {
-  contextType: "dataset" | "view" | "report" | null;
+  contextType: ModelKind | null;
   contextId: string | null;
 } {
   if (!node) return { contextType: null, contextId: null };
-  const ref = node.ref;
-  const contextType = ref?.fields
-    ? "dataset"
-    : ref?.columns
-      ? "view"
-      : ref?.columns_metadata
-        ? "report"
-        : null;
-  return { contextType, contextId: node.id };
+  return { contextType: modelKindForLayer(node.layer) ?? null, contextId: node.id };
 }
 
 /** Fire the framework revalidation on the first dataset-mutating event of a turn;
