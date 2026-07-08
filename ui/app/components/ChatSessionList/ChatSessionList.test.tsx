@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { fixtureFallback } from "../../../app/routes/_fixtureCatalog";
 import type { ChatHistoryItem, PartialCatalogSource } from "../../catalog";
+import { renderInShell } from "../../lib/testRouter";
 import { installCatalogForTest, seedProjectScoped } from "../useCatalog";
 import { ChatSessionList } from "./ChatSessionList";
 
@@ -35,7 +36,7 @@ describe("ChatSessionList — reactivity to backend session commits", () => {
 
     await installCatalogForTest(primary, fallbackWithChat());
 
-    render(<ChatSessionList go={vi.fn()} />);
+    renderInShell(<ChatSessionList />);
 
     // Seeded fixture chat paints first…
     expect(screen.getByText("Fixture Session")).toBeTruthy();

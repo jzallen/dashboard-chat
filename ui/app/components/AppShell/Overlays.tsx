@@ -5,9 +5,8 @@
 import { useLocation, useParams } from "react-router";
 
 import { useChat } from "../../../app/lib/chatContext";
-import { useNavIntents } from "../../../app/lib/nav";
 import type { Edge, LineageNode } from "../../catalog";
-import { AssistantOverlay } from "../Chat";
+import { ChatOverlay } from "../Chat";
 import chat from "../Chat/Chat.module.css";
 import type { ColdStorageApi } from "../ColdStorage";
 import { ColdStorageModal } from "../ColdStorage";
@@ -48,7 +47,6 @@ export function Overlays({
   onOpenNode: (node: LineageNode) => void;
 }) {
   const { chatOpen, openChat, closeChat } = useChat();
-  const intents = useNavIntents();
   const location = useLocation();
   const params = useParams();
   const onOrg = location.pathname === "/org";
@@ -57,21 +55,20 @@ export function Overlays({
     <>
       {!chatOpen && !onOrg && (
         <button
-          className={chat.assistantFab}
+          className={chat.launcher}
           onClick={openChat}
           aria-label="Assistant"
         >
           <Icon name="sparkle" size={23} />
         </button>
       )}
-      {chatOpen && <div className={chat.aoScrim} onClick={closeChat} />}
+      {chatOpen && <div className={chat.scrim} onClick={closeChat} />}
       {chatOpen && (
-        <AssistantOverlay
+        <ChatOverlay
           context={chatContext}
           onCreate={createModel}
           onClose={closeChat}
           onOpenNode={onOpenNode}
-          go={intents.go}
         />
       )}
       {exporter.open && <ExportDrawer onClose={exporter.closeExport} />}

@@ -6,7 +6,7 @@
  *
  * Port-to-port proof of the FIRST slice of the SSR-as-ui-server progression:
  *
- *   AssistantOverlay submit        (client driving port — the user)
+ *   ChatOverlay submit        (client driving port — the user)
  *     -> POST /ui-server/chat            (the ui/ SERVER broker: a REAL RRv7 resource
  *                                    route action, NOT a network stub)
  *       -> POST /worker/chat       (the SOLE mocked downstream port: auth-proxy's
@@ -20,7 +20,7 @@
  * reached through auth-proxy at AUTH_PROXY_URL + /worker/chat) is faked; the broker
  * hop and the client are both real. See distill/wave-decisions.md (DWD-5, DWD-6).
  */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import {
   afterAll,
   afterEach,
@@ -33,8 +33,9 @@ import {
 } from "vitest";
 
 import { fixtureSource } from "../catalog";
-import { AssistantOverlay } from "../components/Chat/Chat";
+import { ChatOverlay } from "../components/Chat/ChatOverlay";
 import { installCatalogForTest } from "../components/useCatalog";
+import { renderInShell } from "../lib/testRouter";
 import { action as uiServerChatAction } from "../routes/ui-server/chat";
 
 // Intercept useRevalidator so the overlay's revalidate call is observable
@@ -124,13 +125,12 @@ describe("SSR ui-server gateway · slice 1 · live assistant chat wire", () => {
     mockRevalidate.mockClear();
 
     const noop = () => {};
-    render(
-      <AssistantOverlay
+    renderInShell(
+      <ChatOverlay
         context={null}
         onCreate={noop}
         onClose={noop}
         onOpenNode={noop}
-        go={noop}
       />,
     );
 
