@@ -81,12 +81,12 @@ export function useChatTurn(
   const [busy, setBusy] = useState(false);
   const [typing, setTyping] = useState(false);
 
-  const mounted = useRef(true);
+  const isMounted = useRef(true);
   const abort = useRef<AbortController | null>(null);
   useEffect(() => {
-    mounted.current = true;
+    isMounted.current = true;
     return () => {
-      mounted.current = false;
+      isMounted.current = false;
       abort.current?.abort();
     };
   }, []);
@@ -109,11 +109,13 @@ export function useChatTurn(
       const botId = nextMessageId();
       let started = false;
 
-      // Late-arriving stream callbacks must not touch a torn-down tree.
-      const guard =
+      // isMounted flips to false in the unmount cleanup; ifMounted(fn) runs fn
+      // only while mounted, so a frame arriving after the dock closes can't
+      // setState/revalidate a torn-down tree.
+      const ifMounted =
         <A extends unknown[]>(fn: (...a: A) => void) =>
         (...a: A) => {
-          if (mounted.current) fn(...a);
+          if (isMounted.current) fn(...a);
         };
 
       try {
@@ -131,7 +133,7 @@ export function useChatTurn(
         if (!res.ok || !res.body) throw new Error(`chat ${res.status}`);
 
         await readChatStream(res.body, {
-          onText: guard((accumulated) => {
+          onText: ifMounted((accumulated) => {
             setTyping(false);
             const isFirst = !started;
             started = true;
@@ -144,10 +146,10 @@ export function useChatTurn(
                   ],
             );
           }),
-          onEvent: guard((event) =>
+          onEvent: ifMounted((event) =>
             revalidateOnMutation(event, fired, revalidate),
           ),
-          onError: guard((message) => {
+          onError: ifMounted((message) => {
             setTyping(false);
             setMsgs((m) => [
               ...m,
@@ -157,7 +159,7 @@ export function useChatTurn(
         });
       } catch (err) {
         if ((err as Error)?.name === "AbortError") return;
-        if (!mounted.current) return;
+        if (!isMounted.current) return;
         setTyping(false);
         setMsgs((m) => [
           ...m,
@@ -168,7 +170,7 @@ export function useChatTurn(
           },
         ]);
       } finally {
-        if (mounted.current) {
+        if (isMounted.current) {
           setTyping(false);
           setBusy(false);
         }
