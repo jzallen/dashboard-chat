@@ -9,7 +9,7 @@ import type {
   Model,
 } from "../../catalog";
 import { Icon, LayerBadge, LayerDot, SqlBlock, TAG_ICON } from "../primitives";
-import { useCatalogContext, useCatalogWithSelector } from "../useCatalog";
+import { useCatalogFromContext, useCatalogWithSelector } from "../useCatalog";
 import { InlineEditLabel } from "./InlineEditLabel";
 import styles from "./ModelDetail.module.css";
 import { narrowModel } from "./narrowModel";
@@ -498,7 +498,7 @@ export function ModelDetail({
   node: LineageNode;
   onOpen: (node: LineageNode) => void;
 }) {
-  const catalog = useCatalogContext();
+  const catalog = useCatalogFromContext();
   // Re-render when the graph mutates (audit lands, dependency added) or the
   // scope's current project changes.
   useCatalogWithSelector((s) => s.graph);

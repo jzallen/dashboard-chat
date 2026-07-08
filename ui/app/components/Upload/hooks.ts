@@ -6,7 +6,7 @@ import { useFetcher, useRevalidator } from "react-router";
 import type { LineageNode } from "../../catalog";
 import { createLogger } from "../../lib/log";
 import { useStateProxy } from "../../lib/StateProxyProvider";
-import { useCatalogContext } from "../useCatalog";
+import { useCatalogFromContext } from "../useCatalog";
 
 const log = createLogger("upload");
 
@@ -52,7 +52,7 @@ export function parseSchemaMismatch(
 
 /** @param flash - mark a freshly created node so the canvas can pop it. */
 export function useUpload(flash: (id: string) => void) {
-  const catalog = useCatalogContext();
+  const catalog = useCatalogFromContext();
   // The StateProxy.postEvent is the saga's report sink — the browser narrates
   // each past-tense Source-creation outcome to ui-state (zero-egress model).
   const { proxy } = useStateProxy();

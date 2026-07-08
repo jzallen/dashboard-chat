@@ -4,13 +4,13 @@ import { useState } from "react";
 
 import { useNavIntents } from "../../lib/nav";
 import { Icon } from "../primitives";
-import { useCatalogContext, useCatalogWithSelector } from "../useCatalog";
+import { useCatalogFromContext, useCatalogWithSelector } from "../useCatalog";
 import styles from "./ChatSessionList.module.css";
 
 export function ChatSessionList() {
   const { navigateTo } = useNavIntents();
   const [q, setQ] = useState("");
-  const catalog = useCatalogContext();
+  const catalog = useCatalogFromContext();
   // Re-render when backend sessions land (getAllChats resolves a beat after
   // first paint), or when the graph mutates — each row reads its backing node's
   // label off the graph.

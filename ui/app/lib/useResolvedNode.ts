@@ -9,7 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import type { LineageNode } from "../catalog";
 import {
-  useCatalogContext,
+  useCatalogFromContext,
   useCatalogWithSelector,
 } from "../components/useCatalog";
 
@@ -27,7 +27,7 @@ export type ResolvedNode =
  * bounded timer elapses, then `missing`.
  */
 export function useResolvedNode(id: string): ResolvedNode {
-  const catalog = useCatalogContext();
+  const catalog = useCatalogFromContext();
   // Re-resolve whenever the graph mutates (a scoped-payload commit lands the
   // deep-linked node); the graph reference is the memo dependency.
   const graph = useCatalogWithSelector((s) => s.graph);

@@ -14,7 +14,7 @@ import type { ColdStorageApi } from "../ColdStorage";
 import type { ExportApi } from "../Export";
 import { Icon } from "../primitives";
 import type { UploadApi } from "../Upload";
-import { useCatalogContext } from "../useCatalog";
+import { useCatalogFromContext } from "../useCatalog";
 
 /** The resource id when the pathname is one of the nested resource-detail
  *  routes (/project/:projectId/{dataset|view|report}/:id), else undefined. */
@@ -44,7 +44,7 @@ export function Topbar({
   const navigate = useNavigate();
   const intents = useNavIntents();
   const projectId = useProjectId();
-  const catalog = useCatalogContext();
+  const catalog = useCatalogFromContext();
 
   const projects = catalog.listProjects();
   const projectName = (projects.find((p) => p.id === projectId) ?? projects[0])

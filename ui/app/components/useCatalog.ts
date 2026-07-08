@@ -14,7 +14,7 @@
  *     version, re-rendering on EVERY commit. Read lineage data off the catalog
  *     methods and use the version as a memo/effect dependency.
  *
- * Components reach the catalog instance through useCatalogContext() (an injected
+ * Components reach the catalog instance through useCatalogFromContext() (an injected
  * abstraction) rather than the raw `catalog` binding; CatalogProvider mounts the
  * module singleton as its default so migration is incremental. The catalog owns
  * the rename/archive/restore/live-add working state and bumps a version counter
@@ -237,7 +237,7 @@ export async function loadTestScope(projectId: string): Promise<void> {
 
 /** Subscribe a component to catalog mutations; returns the store version. */
 export function useCatalog(): number {
-  const instance = useCatalogContext();
+  const instance = useCatalogFromContext();
   return useSyncExternalStore(
     instance.subscribe,
     instance.getSnapshot,
@@ -264,7 +264,7 @@ function resolveCatalog(provided: DataCatalog | null): DataCatalog {
 /**
  * Provide a catalog instance to the subtree. Mounted high in the app tree with
  * the module singleton as its default value, so components depend on the
- * injected {@link useCatalogContext} abstraction rather than the raw `catalog`
+ * injected {@link useCatalogFromContext} abstraction rather than the raw `catalog`
  * binding. Tests can wrap a subtree to inject an explicit instance.
  */
 export function CatalogProvider({
@@ -284,7 +284,7 @@ export function CatalogProvider({
 /** The catalog instance for the current subtree — the injected abstraction the
  *  presentation depends on instead of the raw `catalog` binding. Falls back to
  *  the module singleton when no provider is mounted. */
-export function useCatalogContext(): DataCatalog {
+export function useCatalogFromContext(): DataCatalog {
   return resolveCatalog(useContext(CatalogContext));
 }
 
@@ -301,7 +301,7 @@ export function useCatalogWithSelector<T>(
   selector: (state: CatalogState) => T,
   isEqual?: (a: T, b: T) => boolean,
 ): T {
-  const instance = useCatalogContext();
+  const instance = useCatalogFromContext();
   return useSyncExternalStoreWithSelector(
     instance.subscribe,
     instance.getStateSnapshot,

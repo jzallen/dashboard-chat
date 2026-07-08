@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 
 import { Icon } from "../primitives";
-import { useCatalogContext } from "../useCatalog";
+import { useCatalogFromContext } from "../useCatalog";
 import styles from "./OrgSettings.module.css";
 
 function Field({ l, v, mono }: { l: ReactNode; v: ReactNode; mono?: boolean }) {
@@ -22,7 +22,7 @@ export function OrgSettings({
   dark: boolean;
   onToggleDark: () => void;
 }) {
-  const catalog = useCatalogContext();
+  const catalog = useCatalogFromContext();
   const o = catalog.getOrg();
   const initials = (n: string) =>
     n

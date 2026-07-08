@@ -15,7 +15,7 @@ import { ExportDrawer } from "../Export";
 import { Icon } from "../primitives";
 import type { UploadApi } from "../Upload";
 import { ConfirmArchive, UploadModal } from "../Upload";
-import { catalog, useCatalogContext } from "../useCatalog";
+import { catalog, useCatalogFromContext } from "../useCatalog";
 
 /**
  * The resolved deep-linked model for the chat context, or null off a model route.
@@ -50,7 +50,7 @@ export function Overlays({
   const { chatOpen, openChat, closeChat } = useChat();
   const location = useLocation();
   const params = useParams();
-  const catalog = useCatalogContext();
+  const catalog = useCatalogFromContext();
   const onOrg = location.pathname === "/org";
   const chatContext = chatContextNode(params, catalog);
   return (

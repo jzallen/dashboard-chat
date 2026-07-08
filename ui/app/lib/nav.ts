@@ -9,7 +9,7 @@ import { useLocation, useNavigate, useParams } from "react-router";
 
 import type { LineageNode, ProjectSummary } from "../catalog";
 import { modelKindForLayer } from "../catalog";
-import { useCatalogContext } from "../components/useCatalog";
+import { useCatalogFromContext } from "../components/useCatalog";
 import { useChat } from "./chatContext";
 
 /**
@@ -62,7 +62,7 @@ export type NodeResolver = (nodeId: string) => LineageNode | undefined;
  * making it a parameter keeps that store dependency explicit and swappable.
  */
 export function useNavIntents(resolveNode?: NodeResolver) {
-  const catalog = useCatalogContext();
+  const catalog = useCatalogFromContext();
   const resolve = resolveNode ?? catalog.getNode;
   const navigate = useNavigate();
   const location = useLocation();

@@ -29,7 +29,7 @@ import {
   isCatalogMutatingEvent,
   readChatStream,
 } from "../../lib/chat-stream";
-import { useCatalogContext } from "../useCatalog";
+import { useCatalogFromContext } from "../useCatalog";
 
 /** A message in a chat transcript: prose bubbles from the user or the assistant.
  *  `id` is stamped at insertion so lists key by identity, not array position (the
@@ -94,7 +94,7 @@ export function useChatTurn(
   context: LineageNode | null,
   revalidate: () => void,
 ): ChatTurn {
-  const catalog = useCatalogContext();
+  const catalog = useCatalogFromContext();
   const [msgs, setMsgs] = useState<TurnMessage[]>([]);
   const [busy, setBusy] = useState(false);
   const [typing, setTyping] = useState(false);

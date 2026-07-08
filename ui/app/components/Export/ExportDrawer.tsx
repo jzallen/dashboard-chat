@@ -2,14 +2,14 @@
    live-created marts injected. */
 import type { DbtFile, Layer } from "../../catalog";
 import { Icon, LayerDot } from "../primitives";
-import { useCatalogContext } from "../useCatalog";
+import { useCatalogFromContext } from "../useCatalog";
 import styles from "./Export.module.css";
 
 /** A dbt file, plus a flag marking marts created live in this session. */
 type ExportFile = DbtFile & { live?: boolean };
 
 export function ExportDrawer({ onClose }: { onClose: () => void }) {
-  const catalog = useCatalogContext();
+  const catalog = useCatalogFromContext();
   const files: ExportFile[] = catalog.listDbtFiles().slice();
   // inject any live-created marts
   catalog.listAddedNodes().forEach((n) => {
