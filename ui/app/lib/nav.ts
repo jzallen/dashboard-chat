@@ -1,7 +1,7 @@
 /* Navigation intents — the URL-emitting layer. nodeToPath maps a lineage node
    to its project-scoped resource URL (the kind derives from the node's layer);
    useNavIntents wraps useNavigate/useParams so leaf views call openNode /
-   selectProject / toggleOrg / openRecent / go, resolved against the
+   selectProject / toggleOrg / openRecent / navigateTo, resolved against the
    project-in-path URL. Chat-open intents reach the useChat() context, never
    navigation. */
 import { useCallback } from "react";
@@ -35,8 +35,8 @@ export function nodeToPath(node: LineageNode, projectId: string): string {
 
 /**
  * A nav request handed back from leaf views (Chat / ChatSessionList). A closed
- * union of the four real intents so the {@link useNavIntents} `go` dispatch is
- * exhaustive and call sites can only name an intent that exists:
+ * union of the four real intents so the {@link useNavIntents} `navigateTo`
+ * dispatch is exhaustive and call sites can only name an intent that exists:
  *   - `openRecent` re-opens a recent session, optionally on its backing node;
  *   - `assistant` opens the transient chat dock;
  *   - `chats` routes to the project session list;
@@ -109,8 +109,9 @@ export function useNavIntents(resolveNode: NodeResolver = catalog.getNode) {
     [navigate, openChat, projectId, resolveNode],
   );
 
-  /** Compatibility shim for the existing Chat / ChatSessionList call sites. */
-  const go = useCallback(
+  /** Dispatches a {@link NavIntent} from the Chat / ChatSessionList call sites
+   *  to its concrete effect — a URL change or a chat-open. */
+  const navigateTo = useCallback(
     (intent: NavIntent) => {
       switch (intent.name) {
         case "openRecent":
@@ -134,5 +135,5 @@ export function useNavIntents(resolveNode: NodeResolver = catalog.getNode) {
     [navigate, openChat, openRecent, projectId],
   );
 
-  return { openNode, selectProject, toggleOrg, openRecent, go };
+  return { openNode, selectProject, toggleOrg, openRecent, navigateTo };
 }

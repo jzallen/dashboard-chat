@@ -8,7 +8,7 @@ import { catalog, useCatalog } from "../useCatalog";
 import styles from "./ChatSessionList.module.css";
 
 export function ChatSessionList() {
-  const { go } = useNavIntents();
+  const { navigateTo } = useNavIntents();
   const [q, setQ] = useState("");
   // Subscribe to catalog commits so the list re-renders when sessions land from
   // the backend (getAllChats resolves a beat after first paint).
@@ -43,7 +43,7 @@ export function ChatSessionList() {
               key={`${c.nodeId ?? c.title}-${c.when ?? ""}`}
               className={`${styles.chatRow}${node ? " layer-" + node.layer : ""}`}
               onClick={() =>
-                go(
+                navigateTo(
                   c.nodeId
                     ? { name: "openRecent", nodeId: c.nodeId }
                     : { name: "chat" },

@@ -20,7 +20,7 @@ type ChatDockProps = {
 export function AssistantOverlay({ context, onClose }: ChatDockProps) {
   // Re-render the recents list when backend sessions land (catalog commit).
   useCatalog();
-  const { go } = useNavIntents();
+  const { navigateTo } = useNavIntents();
   const { revalidate } = useRevalidator();
   const { msgs, typing, busy, send, reset } = useChatTurn(context, revalidate);
   const [input, setInput] = useState("");
@@ -73,7 +73,7 @@ export function AssistantOverlay({ context, onClose }: ChatDockProps) {
           </button>
           <button
             className={styles.aoIconbtn}
-            onClick={() => closeWith(() => go({ name: "chats" }))}
+            onClick={() => closeWith(() => navigateTo({ name: "chats" }))}
           >
             <Icon name="clock" size={16} />
             <span className={styles.tip}>History &amp; search</span>
@@ -97,7 +97,9 @@ export function AssistantOverlay({ context, onClose }: ChatDockProps) {
                   <button
                     key={r.nodeId ?? r.title}
                     className={`${styles.aoRecent}${node ? " layer-" + node.layer : ""}`}
-                    onClick={() => go({ name: "openRecent", nodeId: r.nodeId })}
+                    onClick={() =>
+                      navigateTo({ name: "openRecent", nodeId: r.nodeId })
+                    }
                   >
                     <span className={styles.aoRecDot}>
                       {node ? (
