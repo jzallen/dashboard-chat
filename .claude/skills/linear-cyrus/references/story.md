@@ -43,23 +43,25 @@ the sub-tasks — skeleton (RED tests land) then implementation (RED → green, 
 commit per AC checkbox**), marking each sub-issue Done — and opens **one story PR** into
 the Release branch. Sub-issues are the **plan**, never individually delegated.
 
-## Every story body ends with an `AGENT INSTRUCTION:` section (required)
+## Every story body ends with an `## AGENT NOTES` section (required)
 
 **The issue body IS the agent's prompt.** A cyrus session keys off the description; if it
 doesn't name the skill/wave, the agent just presses straight to implementation (observed
-on DC-8 — it skipped distill and opened a PR). So every story description ends with a
-short block like:
+on DC-8 — it skipped distill and opened a PR). So every story description keeps its
+human-readable summary on top and ends with an `## AGENT NOTES` block like:
 
 ```
----
-**AGENT INSTRUCTION:** Reference the `linear-cyrus` skill for the workflow. While labeled
-`wave:distill`, run `nw-distill` to DECOMPOSE this into a Skeleton task + implementation
-sub-issues — create issues only, do NOT implement. When relabeled `wave:deliver`, run
-`nw-deliver` to implement the AC checklist test-first and open ONE story PR into the
-Release branch. Do not skip distill and jump straight to implementation.
+## AGENT NOTES
+Reference the `linear-cyrus` skill for the workflow. While labeled `wave:distill`, run
+`nw-distill` to DECOMPOSE this into a Skeleton task + implementation sub-issues — create
+issues only, do NOT implement. When relabeled `wave:deliver`, run `nw-deliver` to
+implement the AC checklist test-first and open ONE story PR into the Release branch. Do
+not skip distill and jump straight to implementation.
 ```
 
-The main session adds this when it materializes stories at promotion (see
+Keep the **title human-readable** (no wave/tier/relationship tags) and put any doc/issue
+pointers in a `## References` block below AGENT NOTES — see `issue-authoring.md`. The main
+session adds all of this when it materializes stories at promotion (see
 `intake-and-promotion.md`).
 
 ## Iron Rule
