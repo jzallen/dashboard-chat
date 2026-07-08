@@ -11,8 +11,8 @@
  */
 import { apiFetch } from "./api-client";
 
-/** Options for the internal proxy helper — the body is BodyInit when present. */
-interface BrokerProxyOptions {
+/** Options for the internal request helper — the body is BodyInit when present. */
+interface BrokerRequestOptions {
   method: string;
   body?: BodyInit;
   headers?: Record<string, string>;
@@ -30,10 +30,10 @@ interface BrokerProxyOptions {
  * {@link brokerPost}) are thin wrappers over this helper, each carrying
  * per-method call-site documentation.
  */
-async function brokerProxy(
+async function brokerRequest(
   request: Request,
   backendPath: string,
-  opts: BrokerProxyOptions,
+  opts: BrokerRequestOptions,
 ): Promise<Response> {
   const upstream = await apiFetch(request, backendPath, {
     method: opts.method,
@@ -75,7 +75,7 @@ export async function brokerGet(
   request: Request,
   backendPath: string,
 ): Promise<Response> {
-  return brokerProxy(request, backendPath, { method: "GET" });
+  return brokerRequest(request, backendPath, { method: "GET" });
 }
 
 /**
@@ -101,7 +101,7 @@ export async function brokerPatch(
   backendPath: string,
 ): Promise<Response> {
   const contentType = request.headers.get("content-type") ?? "application/json";
-  return brokerProxy(request, backendPath, {
+  return brokerRequest(request, backendPath, {
     method: "PATCH",
     body: await request.text(),
     headers: { "content-type": contentType },
@@ -133,7 +133,7 @@ export async function brokerPost(
   backendPath: string,
 ): Promise<Response> {
   const contentType = request.headers.get("content-type") ?? "application/json";
-  return brokerProxy(request, backendPath, {
+  return brokerRequest(request, backendPath, {
     method: "POST",
     body: await request.text(),
     headers: { "content-type": contentType },
@@ -159,7 +159,7 @@ export async function brokerUpload(
 ): Promise<Response> {
   const contentType =
     request.headers.get("content-type") ?? "application/octet-stream";
-  return brokerProxy(request, backendPath, {
+  return brokerRequest(request, backendPath, {
     method: "POST",
     body: await request.arrayBuffer(),
     headers: { "content-type": contentType },
