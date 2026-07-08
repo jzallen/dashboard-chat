@@ -1,15 +1,24 @@
 /**
- * The live assistant turn as a cancellable hook. `send(prompt)` POSTs the
- * message to the ui/ server broker (`/ui-server/chat`), which relays the agent
- * SSE straight back, and streams the assistant's reply into `msgs`. A
- * dataset-mutating domain event (transform_applied, column_renamed, row_*)
- * triggers one framework revalidation per turn — via the injected `revalidate`
- * (the caller's useRevalidator) — so the lineage reflects the change.
+ * useChatTurn — owns the state of a single assistant chat conversation: the
+ * transcript (`msgs`) plus the `typing`/`busy` status flags.
  *
- * Cancellation is the point of the hook: each turn runs under an AbortController
- * whose signal is handed to fetch and aborted on unmount, and a mounted ref gates
- * the streaming callbacks so a turn that outlives the component never writes state
- * into — or revalidates against — a torn-down tree.
+ * A "turn" is one round trip with the assistant: the user sends a prompt, the
+ * assistant streams a reply back token-by-token into one bot bubble, and — if
+ * that reply mutated the dataset — the lineage is revalidated once. `send()`
+ * runs that round trip against the ui/ server broker (`/ui-server/chat`, which
+ * relays the agent's SSE straight back); `reset()` clears the transcript to
+ * start a fresh session.
+ *
+ * THE HAZARD this hook exists to handle: the SSE turn is asynchronous and
+ * long-lived (a reply can stream for many seconds), but the dock that renders it
+ * can be closed by the user mid-stream. Any frame that arrives after that close
+ * must NOT touch React — the component is gone, so a `setState` or a revalidate
+ * would either warn or act on a torn-down tree. Two guards, set up together in
+ * `send`, drop those late frames:
+ *   - an `AbortController`, aborted in the unmount cleanup, cancels the fetch;
+ *   - an `isMounted` ref gates every deferred stream callback (see `ifMounted`),
+ *     covering the microtask race where a frame is already in flight when the
+ *     abort lands.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -29,6 +38,22 @@ export type TurnMessage = { id: string; role: "user" | "bot"; text: string };
 
 let messageSeq = 0;
 const nextMessageId = () => `m${++messageSeq}`;
+
+/** Fold a streamed text-delta into this turn's single bot bubble: create it on
+ *  the first delta, replace its text on every delta after. Keyed by the turn's
+ *  `botId` so the growing reply stays one bubble rather than appending a new one
+ *  per token. A pure `msgs → msgs` transition so `send` reads as intent. */
+function streamedInto(
+  msgs: TurnMessage[],
+  botId: string,
+  text: string,
+): TurnMessage[] {
+  const bubble: TurnMessage = { id: botId, role: "bot", text };
+  const last = msgs[msgs.length - 1];
+  return last?.id === botId
+    ? [...msgs.slice(0, -1), bubble]
+    : [...msgs, bubble];
+}
 
 /** Best-effort agent context from the open lineage node — the agent reads
  *  contextType/contextId to scope its tools. contextType derives from the
@@ -70,6 +95,8 @@ export function useChatTurn(
   const [busy, setBusy] = useState(false);
   const [typing, setTyping] = useState(false);
 
+  // Tracks whether the dock is still mounted; the unmount cleanup flips it false
+  // and aborts any in-flight turn. See the module docstring (THE HAZARD).
   const isMounted = useRef(true);
   const abort = useRef<AbortController | null>(null);
   useEffect(() => {
@@ -83,24 +110,27 @@ export function useChatTurn(
   const send = useCallback(
     async (promptText: string) => {
       if (busy) return;
+
+      // Phase 1 — optimistically show the prompt and the typing indicator.
       setBusy(true);
+      setTyping(true);
       setMsgs((m) => [
         ...m,
         { id: nextMessageId(), role: "user", text: promptText },
       ]);
-      setTyping(true);
 
+      // Phase 2 — set up the cancellable turn: a fresh controller (aborted on
+      // unmount), the id the streamed reply will accrue into, and a once-latch
+      // for the per-turn revalidation.
       const controller = new AbortController();
       abort.current = controller;
+      const botId = nextMessageId();
+      const fired = { done: false };
       const { contextType, contextId } = agentContext(context);
       const projectId = catalog.getCurrentProject()?.id ?? null;
-      const fired = { done: false };
-      const botId = nextMessageId();
-      let started = false;
 
-      // isMounted flips to false in the unmount cleanup; ifMounted(fn) runs fn
-      // only while mounted, so a frame arriving after the dock closes can't
-      // setState/revalidate a torn-down tree.
+      // Runs a stream callback only while still mounted, so a frame that lands
+      // after the dock closes can't setState/revalidate a torn-down tree.
       const ifMounted =
         <A extends unknown[]>(fn: (...a: A) => void) =>
         (...a: A) => {
@@ -121,19 +151,12 @@ export function useChatTurn(
         });
         if (!res.ok || !res.body) throw new Error(`chat ${res.status}`);
 
+        // Phase 3 — stream the reply into the bot bubble; revalidate once on the
+        // first dataset-mutating event; surface a stream-level error inline.
         await readChatStream(res.body, {
           onText: ifMounted((accumulated) => {
             setTyping(false);
-            const isFirst = !started;
-            started = true;
-            setMsgs((m) =>
-              isFirst
-                ? [...m, { id: botId, role: "bot", text: accumulated }]
-                : [
-                    ...m.slice(0, -1),
-                    { id: botId, role: "bot", text: accumulated },
-                  ],
-            );
+            setMsgs((m) => streamedInto(m, botId, accumulated));
           }),
           onEvent: ifMounted((event) =>
             revalidateOnMutation(event, fired, revalidate),
@@ -147,6 +170,8 @@ export function useChatTurn(
           }),
         });
       } catch (err) {
+        // An abort is the expected unmount path — nothing to show. Any other
+        // failure (broker down, non-2xx) surfaces as an unavailable notice.
         if ((err as Error)?.name === "AbortError") return;
         if (!isMounted.current) return;
         setTyping(false);
@@ -159,6 +184,7 @@ export function useChatTurn(
           },
         ]);
       } finally {
+        // Phase 4 — clear the status flags, but only if the dock is still here.
         if (isMounted.current) {
           setTyping(false);
           setBusy(false);
