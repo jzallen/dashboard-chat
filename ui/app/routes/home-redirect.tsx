@@ -4,18 +4,20 @@
    to /login, and must NOT navigate to /project/undefined. */
 import { Navigate } from "react-router";
 
-import { catalog, useCatalog } from "../components/useCatalog";
+import { useCatalogSelector } from "../components/useCatalog";
 
 export default function HomeRedirect() {
-  // Re-read after every catalog commit (backend projects revalidate a beat
-  // after the instant fixture seed).
-  useCatalog();
-  const projects = catalog.listProjects();
+  // Re-render only when the project list changes (backend projects revalidate a
+  // beat after the instant fixture seed).
+  const projects = useCatalogSelector((s) => s.projects);
 
   if (projects.length === 0) {
     return (
       <div style={{ padding: 40 }} data-testid="no-projects">
-        <h1 className="serif" style={{ fontSize: 22, color: "var(--text-900)" }}>
+        <h1
+          className="serif"
+          style={{ fontSize: 22, color: "var(--text-900)" }}
+        >
           No projects yet
         </h1>
         <p style={{ color: "var(--text-500)" }}>

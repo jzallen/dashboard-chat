@@ -5,7 +5,7 @@
 import { useLocation, useParams } from "react-router";
 
 import { useChat } from "../../../app/lib/chatContext";
-import type { Edge, LineageNode } from "../../catalog";
+import type { DataCatalog, Edge, LineageNode } from "../../catalog";
 import { ChatOverlay } from "../Chat";
 import chat from "../Chat/Chat.module.css";
 import type { ColdStorageApi } from "../ColdStorage";
@@ -15,7 +15,7 @@ import { ExportDrawer } from "../Export";
 import { Icon } from "../primitives";
 import type { UploadApi } from "../Upload";
 import { ConfirmArchive, UploadModal } from "../Upload";
-import { catalog } from "../useCatalog";
+import { catalog, useCatalogContext } from "../useCatalog";
 
 /**
  * The resolved deep-linked model for the chat context, or null off a model route.
@@ -27,10 +27,11 @@ import { catalog } from "../useCatalog";
  */
 export function chatContextNode(
   params: Record<string, string | undefined>,
+  source: DataCatalog = catalog,
 ): LineageNode | null {
   const id = params.datasetId ?? params.viewId ?? params.reportId;
   if (!id) return null;
-  return catalog.getNode(id) ?? null;
+  return source.getNode(id) ?? null;
 }
 
 export function Overlays({
@@ -49,8 +50,9 @@ export function Overlays({
   const { chatOpen, openChat, closeChat } = useChat();
   const location = useLocation();
   const params = useParams();
+  const catalog = useCatalogContext();
   const onOrg = location.pathname === "/org";
-  const chatContext = chatContextNode(params);
+  const chatContext = chatContextNode(params, catalog);
   return (
     <>
       {!chatOpen && !onOrg && (

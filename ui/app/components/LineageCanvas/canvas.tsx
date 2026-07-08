@@ -4,7 +4,7 @@
    the presentational views take the `catalog` from — the leaf cards read plain
    data props and the open callback from context, never the store directly. */
 import type { LineageNode } from "../../catalog";
-import { catalog, useCatalog } from "../useCatalog";
+import { useCatalog, useCatalogContext } from "../useCatalog";
 import { AuditLogView } from "./auditLogView";
 import { DagView } from "./dagView";
 import styles from "./lineageCanvas.module.css";
@@ -22,7 +22,9 @@ export function LineageCanvas({
   sel: string | null;
   flashedNodeId: string | null;
 }) {
-  // Subscribe to catalog mutations; the version is a re-render / memo token.
+  const catalog = useCatalogContext();
+  // Subscribe to catalog mutations; the version is a re-render / memo token the
+  // presentational views take as a prop.
   const version = useCatalog();
   return (
     <OpenNodeProvider onOpen={onOpen}>

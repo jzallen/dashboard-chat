@@ -8,7 +8,10 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { LineageNode } from "../catalog";
-import { catalog, useCatalog } from "../components/useCatalog";
+import {
+  useCatalogContext,
+  useCatalogSelector,
+} from "../components/useCatalog";
 
 /** How long to wait for a node to resolve before declaring it missing. */
 const RESOLVE_TIMEOUT_MS = 8000;
@@ -24,8 +27,11 @@ export type ResolvedNode =
  * bounded timer elapses, then `missing`.
  */
 export function useResolvedNode(id: string): ResolvedNode {
-  const version = useCatalog();
-  const node = useMemo(() => catalog.getNode(id), [id, version]);
+  const catalog = useCatalogContext();
+  // Re-resolve whenever the graph mutates (a scoped-payload commit lands the
+  // deep-linked node); the graph reference is the memo dependency.
+  const graph = useCatalogSelector((s) => s.graph);
+  const node = useMemo(() => catalog.getNode(id), [catalog, id, graph]);
   const [timedOut, setTimedOut] = useState(false);
 
   // Each id gets exactly one bounded window: on an id change the cleanup clears

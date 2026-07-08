@@ -68,6 +68,18 @@ interface CatalogSnapshot {
   dbtFiles: DbtFile[];
 }
 
+/**
+ * The immutable state the reactive store hands to a selector-based subscription
+ * (`useCatalogSelector`). It is the {@link CatalogSnapshot} narrowed to a
+ * read-only projection: every commit replaces the snapshot object wholesale, so
+ * the reference is stable between mutations and changes on every mutation —
+ * exactly the identity a `useSyncExternalStoreWithSelector` selector memoizes
+ * against. The {@link LineageGraph} aggregate is exposed by reference (it is
+ * itself immutable), keeping its encapsulation; a selector reads through its
+ * query methods rather than any mutable internals.
+ */
+export type CatalogState = Readonly<CatalogSnapshot>;
+
 export async function createDataCatalog(
   primary: PartialCatalogSource,
   fallback: CatalogSource,
@@ -439,6 +451,14 @@ export async function createDataCatalog(
     },
     /** Opaque store version — bumps on every commit; a memo/dep token. */
     getSnapshot: (): number => version,
+    /**
+     * The immutable store state for a selector-based subscription. Every commit
+     * replaces the snapshot object, so this reference is stable between
+     * mutations and fresh on each — the store-state a
+     * `useSyncExternalStoreWithSelector` selector projects a slice off. Kept
+     * alongside {@link getSnapshot} (the opaque version) for back-compat.
+     */
+    getStateSnapshot: (): CatalogState => snapshot,
   };
 }
 

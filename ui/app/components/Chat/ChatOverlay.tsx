@@ -7,7 +7,7 @@ import { useRevalidator } from "react-router";
 import type { Edge, LineageNode } from "../../catalog";
 import { useNavIntents } from "../../lib/nav";
 import { Icon, type IconName, LayerDot } from "../primitives";
-import { catalog, useCatalog } from "../useCatalog";
+import { useCatalogContext, useCatalogSelector } from "../useCatalog";
 import styles from "./Chat.module.css";
 import { ChatBubble } from "./ChatBubble";
 import { useChatTurn } from "./useChatTurn";
@@ -20,8 +20,12 @@ type ChatOverlayProps = {
 };
 
 export function ChatOverlay({ context, onClose }: ChatOverlayProps) {
-  // Re-render the recents list when backend sessions land (catalog commit).
-  useCatalog();
+  const catalog = useCatalogContext();
+  // Re-render the recents list when backend sessions land, and pick up the
+  // revalidated chat-script prompt — the graph feeds each recent's node label.
+  useCatalogSelector((s) => s.recents);
+  useCatalogSelector((s) => s.chatScript);
+  useCatalogSelector((s) => s.graph);
   const { navigateTo } = useNavIntents();
   const { revalidate } = useRevalidator();
   const { msgs, typing, busy, send, reset } = useChatTurn(context, revalidate);
@@ -51,9 +55,7 @@ export function ChatOverlay({ context, onClose }: ChatOverlayProps) {
   ];
 
   return (
-    <div
-      className={`${styles.overlay}${closing ? " " + styles.closing : ""}`}
-    >
+    <div className={`${styles.overlay}${closing ? " " + styles.closing : ""}`}>
       <div className={styles.header}>
         <span className={styles.mark}>
           <Icon name="sparkle" size={15} />
