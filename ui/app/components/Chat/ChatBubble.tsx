@@ -1,6 +1,11 @@
+/* A single chat transcript row: the role-aligned message wrapper and its
+   rendered prose bubble. */
+import styles from "./Chat.module.css";
+import type { TurnMessage } from "./useChatTurn";
+
 /**
  * Minimal, self-contained markdown → HTML for chat bubbles, rendered via
- * `dangerouslySetInnerHTML` at the call sites.
+ * `dangerouslySetInnerHTML` at the call site.
  *
  * SECURITY — the escape MUST come first. HTML metacharacters (`& < >`) are
  * neutralised before the bold/code regexes run, so no user-supplied text can
@@ -16,4 +21,17 @@ export function fmt(text: string): string {
   s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
   return s;
+}
+
+export function ChatBubble({ m }: { m: TurnMessage }) {
+  return (
+    <div
+      className={`${styles.msg} ${m.role === "user" ? styles.user : styles.bot}`}
+    >
+      <div
+        className={styles.bubble}
+        dangerouslySetInnerHTML={{ __html: fmt(m.text) }}
+      />
+    </div>
+  );
 }

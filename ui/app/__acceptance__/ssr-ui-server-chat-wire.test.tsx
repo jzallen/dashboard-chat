@@ -33,7 +33,7 @@ import {
 } from "vitest";
 
 import { fixtureSource } from "../catalog";
-import { AssistantOverlay } from "../components/Chat/Chat";
+import { AssistantOverlay } from "../components/Chat/AssistantOverlay";
 import { installCatalogForTest } from "../components/useCatalog";
 import { renderInShell } from "../lib/testRouter";
 import { action as uiServerChatAction } from "../routes/ui-server/chat";

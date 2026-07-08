@@ -3,11 +3,11 @@ import { useEffect, useRef, useState } from "react";
 import { useRevalidator } from "react-router";
 
 import type { Edge, LineageNode } from "../../catalog";
-import { fmt } from "../../lib/fmt";
 import { useNavIntents } from "../../lib/nav";
 import { Icon, type IconName, LayerDot } from "../primitives";
 import { catalog, useCatalog } from "../useCatalog";
 import styles from "./Chat.module.css";
+import { ChatBubble } from "./ChatBubble";
 import { useChatTurn } from "./useChatTurn";
 
 type ChatDockProps = {
@@ -132,15 +132,7 @@ export function AssistantOverlay({ context, onClose }: ChatDockProps) {
           </>
         )}
         {msgs.map((m) => (
-          <div
-            className={`${styles.msg} ${m.role === "user" ? styles.user : styles.bot}`}
-            key={m.id}
-          >
-            <div
-              className={styles.bubble}
-              dangerouslySetInnerHTML={{ __html: fmt(m.text) }}
-            />
-          </div>
+          <ChatBubble key={m.id} m={m} />
         ))}
         {typing && (
           <div className={`${styles.msg} ${styles.bot}`}>

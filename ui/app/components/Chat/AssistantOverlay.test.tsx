@@ -6,7 +6,7 @@ import type { LineageNode } from "../../catalog";
 import { fixtureSource } from "../../catalog";
 import { renderInShell } from "../../lib/testRouter";
 import { installCatalogForTest } from "../useCatalog";
-import { AssistantOverlay } from "./Chat";
+import { AssistantOverlay } from "./AssistantOverlay";
 
 /**
  * A stream whose frames are pushed one at a time under test control, so a turn
