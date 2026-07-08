@@ -26,7 +26,7 @@ export function fmt(text: string): string {
 export function ChatBubble({ m }: { m: TurnMessage }) {
   return (
     <div
-      className={`${styles.msg} ${m.role === "user" ? styles.user : styles.bot}`}
+      className={`${styles.message} ${m.role === "user" ? styles.user : styles.bot}`}
     >
       <div
         className={styles.bubble}

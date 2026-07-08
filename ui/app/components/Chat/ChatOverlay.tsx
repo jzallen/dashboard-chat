@@ -52,65 +52,65 @@ export function ChatOverlay({ context, onClose }: ChatOverlayProps) {
 
   return (
     <div
-      className={`${styles.assistantOverlay}${closing ? " " + styles.aoOut : ""}`}
+      className={`${styles.overlay}${closing ? " " + styles.closing : ""}`}
     >
-      <div className={styles.aoHead}>
-        <span className={styles.aoMark}>
+      <div className={styles.header}>
+        <span className={styles.mark}>
           <Icon name="sparkle" size={15} />
         </span>
-        <span className={styles.ct}>Assistant</span>
+        <span className={styles.title}>Assistant</span>
         {context ? (
-          <span className={styles.chatCtx}>
+          <span className={styles.context}>
             <LayerDot layer={context.layer} size={6} />
             {context.label}
-            <span className={styles.chatCtxLayer}>{context.layer}</span>
+            <span className={styles.contextLayer}>{context.layer}</span>
           </span>
         ) : (
-          <span className={styles.chatCtx}>No dataset in context</span>
+          <span className={styles.context}>No dataset in context</span>
         )}
-        <div className={styles.aoActions}>
-          <button className={styles.aoIconbtn} onClick={newSession}>
+        <div className={styles.actions}>
+          <button className={styles.iconButton} onClick={newSession}>
             <Icon name="plus" size={16} />
-            <span className={styles.tip}>New session</span>
+            <span className={styles.tooltip}>New session</span>
           </button>
           <button
-            className={styles.aoIconbtn}
+            className={styles.iconButton}
             onClick={() => closeWith(() => navigateTo({ name: "chats" }))}
           >
             <Icon name="clock" size={16} />
-            <span className={styles.tip}>History &amp; search</span>
+            <span className={styles.tooltip}>History &amp; search</span>
           </button>
-          <button className={styles.aoIconbtn} onClick={() => closeWith()}>
+          <button className={styles.iconButton} onClick={() => closeWith()}>
             <Icon name="x" size={16} />
-            <span className={styles.tip}>Close</span>
+            <span className={styles.tooltip}>Close</span>
           </button>
         </div>
       </div>
-      <div className={styles.aoBody} ref={bodyRef}>
+      <div className={styles.body} ref={bodyRef}>
         {msgs.length === 0 && (
           <>
-            <div className={styles.aoSection}>
-              <span className={styles.aoSecLabel}>Recent</span>
+            <div className={styles.section}>
+              <span className={styles.sectionLabel}>Recent</span>
             </div>
-            <div className={styles.aoRecents}>
+            <div className={styles.recents}>
               {catalog.listRecents().map((r) => {
                 const node = r.nodeId ? catalog.getNode(r.nodeId) : null;
                 return (
                   <button
                     key={r.nodeId ?? r.title}
-                    className={`${styles.aoRecent}${node ? " layer-" + node.layer : ""}`}
+                    className={`${styles.recent}${node ? " layer-" + node.layer : ""}`}
                     onClick={() =>
                       navigateTo({ name: "openRecent", nodeId: r.nodeId })
                     }
                   >
-                    <span className={styles.aoRecDot}>
+                    <span className={styles.recentDot}>
                       {node ? (
                         <LayerDot layer={node.layer} size={7} />
                       ) : (
                         <Icon name="chat" size={13} />
                       )}
                     </span>
-                    <span className={styles.aoRecTitle}>{r.title}</span>
+                    <span className={styles.recentTitle}>{r.title}</span>
                     <Icon
                       name="arrow"
                       size={14}
@@ -120,10 +120,10 @@ export function ChatOverlay({ context, onClose }: ChatOverlayProps) {
                 );
               })}
             </div>
-            <div className={styles.aoDivider}>
+            <div className={styles.divider}>
               <span>or start something new</span>
             </div>
-            <div className={styles.suggest}>
+            <div className={styles.suggestions}>
               {suggestions.map((s) => (
                 <button key={s.t} onClick={() => send(s.t)}>
                   <Icon name={s.ic} size={16} />
@@ -137,7 +137,7 @@ export function ChatOverlay({ context, onClose }: ChatOverlayProps) {
           <ChatBubble key={m.id} m={m} />
         ))}
         {typing && (
-          <div className={`${styles.msg} ${styles.bot}`}>
+          <div className={`${styles.message} ${styles.bot}`}>
             <div className={styles.bubble} style={{ padding: 0 }}>
               <div className={styles.typing}>
                 <span />
@@ -148,7 +148,7 @@ export function ChatOverlay({ context, onClose }: ChatOverlayProps) {
           </div>
         )}
       </div>
-      <div className={styles.aoInput}>
+      <div className={styles.composer}>
         <textarea
           placeholder="Describe a transform, join or metric…"
           value={input}
@@ -164,7 +164,7 @@ export function ChatOverlay({ context, onClose }: ChatOverlayProps) {
           }}
         />
         <button
-          className={styles.sendBtn}
+          className={styles.sendButton}
           disabled={busy || !input.trim()}
           onClick={() => {
             if (input.trim()) {

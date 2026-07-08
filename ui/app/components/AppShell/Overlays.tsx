@@ -55,14 +55,14 @@ export function Overlays({
     <>
       {!chatOpen && !onOrg && (
         <button
-          className={chat.assistantFab}
+          className={chat.launcher}
           onClick={openChat}
           aria-label="Assistant"
         >
           <Icon name="sparkle" size={23} />
         </button>
       )}
-      {chatOpen && <div className={chat.aoScrim} onClick={closeChat} />}
+      {chatOpen && <div className={chat.scrim} onClick={closeChat} />}
       {chatOpen && (
         <ChatOverlay
           context={chatContext}
