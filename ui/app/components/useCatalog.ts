@@ -10,7 +10,7 @@
  *   - useCatalogWithSelector(selector) — the granular path: projects a SLICE off the
  *     immutable CatalogState and re-renders only when that slice changes, so an
  *     unrelated commit (e.g. a single audit toggle) skips the component.
- *   - useCatalog() — the coarse back-compat path: returns the opaque store
+ *   - useCatalogVersion() — the coarse back-compat path: returns the opaque store
  *     version, re-rendering on EVERY commit. Read lineage data off the catalog
  *     methods and use the version as a memo/effect dependency.
  *
@@ -236,7 +236,7 @@ export async function loadTestScope(projectId: string): Promise<void> {
 }
 
 /** Subscribe a component to catalog mutations; returns the store version. */
-export function useCatalog(): number {
+export function useCatalogVersion(): number {
   const instance = useCatalogFromContext();
   return useSyncExternalStore(
     instance.subscribe,
@@ -295,7 +295,7 @@ export function useCatalogFromContext(): DataCatalog {
  * reads, and `isEqual` (defaulting to `Object.is`) decides whether a commit
  * that produced a new state actually changed this slice — so toggling one audit
  * entry no longer re-renders every subscriber. Replaces the opaque-`version`
- * {@link useCatalog} for granular reads.
+ * {@link useCatalogVersion} for granular reads.
  */
 export function useCatalogWithSelector<T>(
   selector: (state: CatalogState) => T,
