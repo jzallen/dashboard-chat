@@ -16,6 +16,13 @@
  * the envelope-unwrapped payload; a 2xx POST/upload returns the RAW decoded body
  * (callers that need a JSON:API `data.id` read it themselves); a non-2xx throws
  * {@link ApiError}(status, body); a 401 also trips {@link handleUnauthorized}.
+ *
+ * Auth-transport contract: this module is the BROWSER leg of a two-transport
+ * split. It relies on `credentials:"include"` to send the session cookie to the
+ * same-origin `/ui-server` route. The SERVER leg is {@link apiFetch} in
+ * `api-client.ts`, which runs inside RRv7 server loaders/actions and uses
+ * {@link proxyFetch} to forward the cookie as a downstream Bearer token. The
+ * two transports serve different runtimes and must not be mixed.
  */
 import { handleUnauthorized } from "../auth/unauthorized";
 import { ApiError } from "./api-error";
