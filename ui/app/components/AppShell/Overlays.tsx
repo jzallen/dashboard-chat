@@ -84,7 +84,6 @@ export function Overlays({
           onArchive={upload.requestArchive}
           mismatch={upload.mismatch}
           onRetry={upload.clearMismatch}
-          onLoadUploads={(sourceId) => catalog.getSourceUploads(sourceId)}
         />
       )}
       {upload.confirmArchive && (

@@ -37,7 +37,6 @@ import {
 import type {
   CatalogSource,
   PartialCatalogSource,
-  SourceUpload,
 } from "./dataSources/source";
 import type { AuditEntry, Edge, Layer, LineageNode } from "./lineage";
 import { type ColdStorageRecord, LineageGraph } from "./lineageGraph";
@@ -398,17 +397,6 @@ export async function createDataCatalog(
         sourceId,
         projectId: built.requestedPid ?? "",
       });
-    },
-
-    /**
-     * List an existing source's uploaded files (backs the upload modal's Files
-     * list). Delegates to the backend source's getSourceUploads; resolves `[]`
-     * when no backend source backs the port (the fixture fallback), so the modal
-     * simply shows an empty list rather than crashing.
-     */
-    getSourceUploads: async (sourceId: string): Promise<SourceUpload[]> => {
-      if (!primary.getSourceUploads) return [];
-      return primary.getSourceUploads(sourceId);
     },
 
     /**

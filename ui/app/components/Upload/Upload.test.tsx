@@ -1,9 +1,8 @@
 // @vitest-environment happy-dom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { LineageNode } from "../../catalog";
-import type { SourceUpload } from "../../catalog/dataSources/source";
 import { UploadModal } from "./Upload";
 
 const existingSource: LineageNode = {
@@ -58,42 +57,11 @@ describe("UploadModal — schema-mismatch recovery UX (slice 5)", () => {
   });
 });
 
-describe("UploadModal — backend-loaded Files list + section ordering", () => {
-  const uploads: SourceUpload[] = [
-    { name: "patients.csv", rows: 42, when: "just now", status: "ingested" },
-    { name: "more.csv", rows: 7, when: "3d ago", status: "ingested" },
-  ];
-
-  it("populates the Files list from onLoadUploads when an existing source opens", async () => {
-    const onLoadUploads = vi.fn(async () => uploads);
-    render(
-      <UploadModal
-        {...noopProps}
-        source={existingSource}
-        onLoadUploads={onLoadUploads}
-      />,
-    );
-
-    expect(onLoadUploads).toHaveBeenCalledWith("src.real");
-    await waitFor(() => {
-      expect(screen.getByText("patients.csv")).toBeTruthy();
-    });
-    expect(screen.getByText("more.csv")).toBeTruthy();
-  });
-
-  it("renders the Schema section BEFORE the Files section in the DOM", async () => {
-    const onLoadUploads = vi.fn(async () => uploads);
+describe("UploadModal — section ordering", () => {
+  it("renders the Schema section BEFORE the Files section in the DOM", () => {
     const { container } = render(
-      <UploadModal
-        {...noopProps}
-        source={existingSource}
-        onLoadUploads={onLoadUploads}
-      />,
+      <UploadModal {...noopProps} source={existingSource} />,
     );
-
-    await waitFor(() => {
-      expect(screen.getByText("patients.csv")).toBeTruthy();
-    });
 
     const body = container.textContent ?? "";
     const schemaIdx = body.indexOf("Schema");
