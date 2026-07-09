@@ -1,9 +1,10 @@
 # Issue authoring — titles, descriptions, linking
 
-How every Linear issue we create (proposal, story, task) should read. **The description
-is the agent's prompt** *and* a human's briefing, so it has to serve both without one
-leaking into the other. Applies to the main session materializing stories at promotion
-and to dc-cyrus creating task sub-issues during distill.
+How every Linear **issue and project** we create (proposal, feature/refactor project,
+story, task) should read. **The description is the agent's prompt** *and* a human's
+briefing, so it has to serve both without one leaking into the other. Applies to the main
+session materializing projects + stories at promotion and to dc-cyrus creating task
+sub-issues during distill.
 
 ## Titles are human-readable, self-contained
 
@@ -37,6 +38,13 @@ Top-to-bottom, human-readable first, machine notes fenced off, pointers last:
 
 - **Human-readable body on top.** Someone who doesn't know nwave should understand the
   issue from the summary alone.
+- **Synthesize, don't quote.** For a promoted project or story, the summary *synthesizes*
+  the outcome of the preceding waves (the goal, the shape of the work) in fresh prose — it
+  is **not** a verbatim copy of the discuss/design analysis. Those artifacts live in the
+  codebase; point at them from `## References`, don't paste them in.
+- **nwave artifacts stay in the codebase.** Never attach JTBD/journey/ADR/roadmap files to
+  a Linear issue as comments or Linear documents — they're already in the repo. A
+  `## References` pointer is how the description names them.
 - **`## AGENT NOTES`** holds everything addressed to the agent — the required
   wave-instruction (name the skill + `/nw-*` command + guardrails; see `story.md`),
   plus any "do X not Y" for the session. This is the one place process/nwave vocabulary

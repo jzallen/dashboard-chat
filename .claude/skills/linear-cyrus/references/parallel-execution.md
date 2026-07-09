@@ -10,13 +10,13 @@ independent unit is the **story**.
 
 Both must hold:
 
-1. **Disjoint code surface.** They don't edit the same files/modules. Different `area:*`
-   labels are a strong proxy (`area:ui` vs `area:backend` rarely collide); two `area:ui`
-   stories need a closer look at which components/files each touches.
+1. **Disjoint code surface.** They don't edit the same files/modules. Different `area`
+   children are a strong proxy (`area › ui` vs `area › backend` rarely collide); two
+   `area › ui` stories need a closer look at which components/files each touches.
 2. **No data/contract dependency.** Neither needs the other's output — no shared new API
    contract, schema/migration, type, or fixture that one defines and the other consumes.
 
-If both hold, deliver them concurrently (relabel each `wave:deliver` + @mention). They
+If both hold, deliver them concurrently (relabel each `wave › deliver` + @mention). They
 produce independent **story PRs** into the Release branch; merge in completion order
 (later merges rebase on the advanced Release branch; CI re-runs on each story PR).
 
@@ -24,15 +24,15 @@ produce independent **story PRs** into the Release branch; merge in completion o
 
 - Use Linear **"blocked by" / "blocks"** relations for genuine ordering. Anything **not**
   in a blocking chain is a candidate for the parallel batch.
-- A clean read: open the Release milestone, group ready stories by `area:*`, drop any with
-  an open "blocked by" — what remains is your concurrent batch.
+- A clean read: open the Release milestone, group ready stories by `area` child, drop any
+  with an open "blocked by" — what remains is your concurrent batch.
 - Prefer **slicing stories along subtree/area lines** so parallel sessions touch disjoint
   files by construction. A story that spans many areas is hard to parallelize and hard to
   review — split it (often into separate per-area stories).
 
 ## Distill-first de-risks parallelism
 
-Running `wave:distill` on candidate stories **before** parallelizing reveals shared
+Running `wave › distill` on candidate stories **before** parallelizing reveals shared
 interfaces: if two stories' skeletons/AC checklists reference the same new type, contract,
 or fixture, they share a dependency — sequence them (the one defining it first) instead of
 running them together.

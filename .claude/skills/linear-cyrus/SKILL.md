@@ -34,21 +34,25 @@ gastown merge queue (retired 2026-06-15; parked in `.claude/retired-skills/gasto
 ## The levels (one file each in `references/`)
 
 ```
-Proposals project ── wave:discuss ──►  proposal enriched + stories as ANALYSIS in thread   (cyrus: nw-discuss, read-only)
-      │  [main session] PROMOTE
+Proposals project ── wave › discuss ──►  proposal enriched + stories as ANALYSIS in thread   (cyrus: nw-discuss, read-only)
+      │  [main session] PROMOTE — the seed issue MIGRATES into the project
       ▼
-Feature project   = nwave feature
-  └ Release (milestone)  → git <feature-slug>/<release> branch        (main session)
-      └ Story  (issue)  ── phase flag: wave:distill → wave:deliver
-          ·  wave:distill → cyrus decomposes into Task sub-issues + a Skeleton task first
-          ·  (you review, relabel wave:deliver, @mention a comment)
-          ·  wave:deliver → ONE builder session iterates the tasks → ONE story PR
-              into the Release branch  (skeleton RED tests → green)
+Feature project   = nwave feature   (named for the natural code feature name)
+  ├ Release (milestone)  → git <feature-slug>/<release> branch        (main session)
+  │   └ Story  (issue)  ── phase flag: wave › distill → wave › deliver
+  │       ·  wave › distill → cyrus decomposes into Task sub-issues + a Skeleton task first
+  │       ·  (you review, relabel wave › deliver, @mention a comment)
+  │       ·  wave › deliver → ONE builder session iterates the tasks → ONE story PR
+  │           into the Release branch  (skeleton RED tests → green)
+  └ Finalize (milestone) → holds the migrated seed issue = nw-finalize closeout handle
 ```
 
-- **Story label is a phase flag.** `wave:distill` (awaiting breakdown) runs the
-  orchestrator; relabel `wave:deliver` to run the builder. Mode comes from the **story's**
-  label.
+Labels are the **grouped** `wave`/`area` children — apply by child name/ID, never the
+colon-form string (`references/linear-structure.md`).
+
+- **Story label is a phase flag.** `wave › distill` (awaiting breakdown) runs the
+  orchestrator; relabel `wave › deliver` to run the builder. Mode comes from the **story's**
+  label (group exclusivity flips it in one write).
 - **One PR per story** (story branch → Release branch); **no task branches/PRs** — tasks
   are the deliver session's plan, landed as commits. RED is transient on the story branch;
   the story PR gates the green end-state. Linear auto-generates a branch name for every
@@ -62,19 +66,22 @@ Feature project   = nwave feature
 
 ## Canonical lifecycle
 
-1. Add a **proposal** issue to the **Proposals** project (`wave:discuss`).
+1. Add a **proposal** issue to the **Proposals** project (`wave › discuss`).
 2. Delegate dc-cyrus → `nw-discuss` (read-only) **produces the stories as analysis in the
    thread** — it can't create issues; the main session materializes them at promotion.
-3. **Promote** (main session): Feature project + **Release milestones + `<slug>/<release>`
-   branches**; move stories in (on their Release, `wave:distill`).
-4. Per story: assign dc-cyrus → `nw-distill` decomposes into a **Skeleton task + impl
-   tasks** with AC checklists.
-5. Review the breakdown → **relabel the story `wave:deliver`** → **@mention a story
+3. **Promote** (main session): Feature project (named for the code feature) + **Release
+   milestones + `<slug>/<release>` branches** + a **Finalize** milestone; **migrate the
+   seed issue** into Finalize; create stories in (on their Release, `wave › distill`).
+4. Per story: attach project + Release, then delegate dc-cyrus → `nw-distill` decomposes
+   into a **Skeleton task + impl tasks** with AC checklists.
+5. Review the breakdown → **relabel the story `wave › deliver`** → **@mention a story
    comment** → one builder session delivers the whole story (skeleton-first), **one PR**
    into the Release branch. As it goes, the session **moves each sub-issue's status by
    hand** (Todo → In Progress → Done) — the status automation only moves the *story*, not
    its tasks, so a delivered sub-issue left in Todo is a missed step (see `task.md`).
 6. Review + merge the story PR in Linear. Release done → merge `<slug>/<release>` → `main`.
+7. **All Releases done** → relabel the seed `wave › finalize` (manual) → delegate →
+   `nw-finalize` archives to `docs/evolution/`, seed goes Done (see `intake-and-promotion.md`).
 
 Parallelize **across stories** (each its own session into the Release branch), not
 tasks-within-a-story — tasks share the skeleton (see `parallel-execution.md`).
@@ -87,13 +94,14 @@ tasks-within-a-story — tasks share the skeleton (see `parallel-execution.md`).
 | `references/issue-authoring.md` | titles/descriptions: human-readable name, `## AGENT NOTES`, `## References`, issue linking |
 | `references/intake-and-promotion.md` | Proposals→feature funnel, cyrus-vs-main-session split, promotion mechanics |
 | `references/project.md` | Proposals vs Feature projects; who creates them; `nw-discuss` |
-| `references/milestone.md` | Milestone = Release; owns a git branch; 1:many stories; →main no-PR; escape hatch |
-| `references/story.md` | Story label as **phase flag** (`wave:distill`→`wave:deliver`); distill→review→deliver-via-comment |
+| `references/milestone.md` | Milestone = Release; owns a git branch; 1:many stories; →main no-PR; **Finalize lifecycle milestone**; escape hatch |
+| `references/story.md` | Story label as **phase flag** (`wave › distill`→`deliver`); **create-a-story runbook** (attach project+Release, delegate last); distill→review→deliver-via-comment |
 | `references/skeleton-task.md` | the Skeleton task — scaffold + signatures + honest RED tests, per story, first |
 | `references/task.md` | Task = the plan (no branches/PRs); skeleton vs implementation; atomic commits; **driving each sub-issue's status by hand (Todo→In Progress→Done)** |
 | `references/branching-and-merge.md` | Release branches, **story-level PRs**, where the gate runs, →main no-PR, `baseBranch` caveat |
 | `references/parallel-execution.md` | parallelize across stories; judging independence; conflict avoidance |
-| `references/linear-structure.md` | label taxonomy, routing (`teamKeys` + `labelPrompts`/orchestrator), views |
+| `references/linear-structure.md` | **grouped-label** taxonomy (child name/ID, not colon-form), routing (`teamKeys` + `labelPrompts`/orchestrator), views |
+| `references/templates.md` | canonical body shapes: **native templates** for human-authored primitives + reference shapes for agent-built ones; authoring loop; project-template specs; one-time Settings checklist |
 | `references/triggering-sessions.md` | how a session fires: agent-enabled app, delegate + comment-@mention, daemon+pump, skills allowlist |
 
 ## Prerequisites (ops)

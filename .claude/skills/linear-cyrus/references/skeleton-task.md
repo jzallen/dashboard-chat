@@ -41,4 +41,4 @@ exactly like a single-session TDD flow has a transient RED phase before green.
 
 A Skeleton task sub-issue describes: the files/dirs to scaffold, the interfaces/signatures
 to stub (with the not-implemented placeholder), and the AC tests to land RED (referencing
-the story's AC checklist). Labels `wave:deliver` + the story's `area:*`, like any task.
+the story's AC checklist). Labels `wave › deliver` + the story's `area` child, like any task.
