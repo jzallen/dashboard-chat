@@ -6,7 +6,7 @@ import { useFetcher, useRevalidator } from "react-router";
 import type { LineageNode } from "../../catalog";
 import { createLogger } from "../../lib/log";
 import { useStateProxy } from "../../lib/StateProxyProvider";
-import { catalog } from "../useCatalog";
+import { useCatalogFromContext } from "../useCatalog";
 
 const log = createLogger("upload");
 
@@ -29,7 +29,9 @@ export type SchemaMismatchDetail = {
  *  when it is not a 422 schema-mismatch (a network/auth/other failure). The
  *  gateway client throws an `ApiError` whose `body` is the JSON:API error
  *  envelope `{ errors: [{ detail: {missing, extra, type_mismatch} }] }`. */
-export function parseSchemaMismatch(error: unknown): SchemaMismatchDetail | null {
+export function parseSchemaMismatch(
+  error: unknown,
+): SchemaMismatchDetail | null {
   if (!error || typeof error !== "object") return null;
   const status = (error as { status?: unknown }).status;
   if (status !== 422) return null;
@@ -50,6 +52,7 @@ export function parseSchemaMismatch(error: unknown): SchemaMismatchDetail | null
 
 /** @param flash - mark a freshly created node so the canvas can pop it. */
 export function useUpload(flash: (id: string) => void) {
+  const catalog = useCatalogFromContext();
   // The StateProxy.postEvent is the saga's report sink — the browser narrates
   // each past-tense Source-creation outcome to ui-state (zero-egress model).
   const { proxy } = useStateProxy();
@@ -96,7 +99,7 @@ export function useUpload(flash: (id: string) => void) {
   );
   const renameSource = useCallback(
     (id: string, name: string) => catalog.renameSource(id, name),
-    [],
+    [catalog],
   );
   const existingSource = modal.source;
   const createSource = useCallback(
@@ -135,7 +138,7 @@ export function useUpload(flash: (id: string) => void) {
         if (detail) setMismatch(detail);
       }
     },
-    [flash, proxy, existingSource, revalidate],
+    [catalog, flash, proxy, existingSource, revalidate],
   );
 
   return {

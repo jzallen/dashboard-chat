@@ -2,13 +2,16 @@
 import { Fragment, type ReactNode, useState } from "react";
 import { useFetcher } from "react-router";
 
-import type { AuditEntry, LineageNode, Model } from "../../catalog";
+import type {
+  AuditEntry,
+  DataCatalog,
+  LineageNode,
+  Model,
+} from "../../catalog";
 import { Icon, LayerBadge, LayerDot, SqlBlock, TAG_ICON } from "../primitives";
-import { catalog } from "../useCatalog";
-import { useCatalog } from "../useCatalog";
+import { useCatalogFromContext, useCatalogWithSelector } from "../useCatalog";
 import { InlineEditLabel } from "./InlineEditLabel";
 import styles from "./ModelDetail.module.css";
-import { narrowModel } from "./narrowModel";
 import { useInlineEdit } from "./useInlineEdit";
 
 function MatBadge({ m }: { m?: string }) {
@@ -18,9 +21,11 @@ function MatBadge({ m }: { m?: string }) {
 function DepStrip({
   node,
   onOpen,
+  catalog,
 }: {
   node: LineageNode;
   onOpen: (node: LineageNode) => void;
+  catalog: DataCatalog;
 }) {
   const parents = catalog.parentsOf(node.id);
   return (
@@ -388,16 +393,16 @@ function ConfirmModelName({
       <div className={styles.confirmDialog} role="dialog">
         <div className={styles.cdTitle}>Update the machine name?</div>
         <div className={styles.cdBody}>
-          <b>{oldName}</b> → <b>{newName}</b>. The app takes care of this for you
-          everywhere it manages — your data here and the dbt project you can
+          <b>{oldName}</b> → <b>{newName}</b>. The app takes care of this for
+          you everywhere it manages — your data here and the dbt project you can
           export both stay in sync. The one thing to know: anything outside the
           app that points to <b>{oldName}</b>, like an external database or BI
           tool, you&rsquo;ll need to update yourself.
           <span className={styles.cdNote}>
             Not ready to commit? You can rename the display name,{" "}
-            <b>{displayName}</b>, instead — that&rsquo;s a soft, in-app label, so
-            the machine name and everything built from it stay exactly as they
-            are.
+            <b>{displayName}</b>, instead — that&rsquo;s a soft, in-app label,
+            so the machine name and everything built from it stay exactly as
+            they are.
           </span>
         </div>
         <div className={styles.cdActions}>
@@ -492,8 +497,12 @@ export function ModelDetail({
   node: LineageNode;
   onOpen: (node: LineageNode) => void;
 }) {
-  useCatalog(); // subscribe: re-render when the catalog mutates
-  const m = narrowModel(node);
+  const catalog = useCatalogFromContext();
+  // Re-render when the graph mutates (audit lands, dependency added) or the
+  // scope's current project changes.
+  useCatalogWithSelector((s) => s.graph);
+  useCatalogWithSelector((s) => s.currentProject);
+  const m = catalog.getModel(node.id);
   if (!m) return null; // unknown/absent model kind — degrade rather than crash
   const audit = catalog.auditFor(node.id);
   const projectId = catalog.getCurrentProject()?.id ?? "";
@@ -512,7 +521,7 @@ export function ModelDetail({
           />
         </div>
       </div>
-      <DepStrip node={node} onOpen={onOpen} />
+      <DepStrip node={node} onOpen={onOpen} catalog={catalog} />
       <SummaryRow m={m} />
       <div className={styles.detGrid} style={{ marginTop: 16 }}>
         <DataPreview m={m} />

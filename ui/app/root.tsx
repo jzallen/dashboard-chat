@@ -15,7 +15,7 @@ import { Links, Meta, Outlet, Scripts, ScrollRestoration } from "react-router";
 
 import { ThemeProvider } from "./components/AppShell";
 import { FlashedNodeProvider } from "./components/FlashedNodeProvider";
-import { initCatalog } from "./components/useCatalog";
+import { CatalogProvider, initCatalog } from "./components/useCatalog";
 import { SessionLifecycleProvider } from "./lib/SessionLifecycleProvider";
 import { StateProxyProvider } from "./lib/StateProxyProvider";
 
@@ -71,13 +71,15 @@ export function HydrateFallback() {
 export default function Root() {
   return (
     <ThemeProvider>
-      <FlashedNodeProvider>
-        <StateProxyProvider>
-          <SessionLifecycleProvider>
-            <Outlet />
-          </SessionLifecycleProvider>
-        </StateProxyProvider>
-      </FlashedNodeProvider>
+      <CatalogProvider>
+        <FlashedNodeProvider>
+          <StateProxyProvider>
+            <SessionLifecycleProvider>
+              <Outlet />
+            </SessionLifecycleProvider>
+          </StateProxyProvider>
+        </FlashedNodeProvider>
+      </CatalogProvider>
     </ThemeProvider>
   );
 }
