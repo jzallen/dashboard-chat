@@ -1,0 +1,133 @@
+{
+  "feature": "source-detail-upload-loader",
+  "issue": "DC-184",
+  "slice": "slice-1-source-detail-loader",
+  "wave": "DELIVER",
+  "target_tree": "ui/",
+  "outside_in": true,
+  "acceptance_test": "ui/app/routes/source-detail.test.tsx",
+  "acceptance_gate": "cd ui && npx vitest run app/routes/source-detail.test.tsx app/catalog/dataSources/uploadMappers.test.ts app/components/Upload/Upload.test.tsx app/__tests__/boundary/no-direct-backend.test.ts",
+  "walking_skeleton_scenario": "opening an existing source's upload modal invokes the source/:sourceId route loader, which fetches the source's uploads server-side (through apiFetch, not a browser-direct /api call), maps them via the shared pure mapper, and the modal's Files list renders the persisted history (ingested + pending) oldest-first",
+  "decisions_ref": "docs/feature/source-detail-upload-loader/distill/source-detail-loader.feature",
+  "wave_decisions_ref": "docs/feature/source-detail-upload-loader/distill/wave-decisions.md",
+  "context": "Surfaced by the DC-155 catalog design review. The upload WRITE saga (createSource -> requestUpload -> putToStorage -> processUpload) is fully behind the BFF, but nothing reads the uploaded-files history back: the inert getSourceUploads read port was removed (commit ae2e641d), and the modal's Files list only ever shows fresh in-session optimistic rows. This slice adds the READ path only.",
+  "backend_contract": {
+    "endpoint": "GET /api/sources/{source_id}/uploads (already exists — backend/app/routers/sources.py, source_controller.list_source_uploads)",
+    "envelope": "JSON:API list of `uploads`; each resource id is the upload_id; attributes: original_filename, file_size, status ('ingested' | 'pending'), row_count (null when pending), created_at (ISO-UTC ms with 'Z')",
+    "ordering": "oldest-first (list_uploads_for_source), spans ingested + pending",
+    "no_backend_change": true
+  },
+  "acceptance_criteria": [
+    {
+      "id": "AC1",
+      "statement": "Opening an existing source's upload modal invokes the source/:sourceId route loader; the modal's Files list renders the source's persisted uploads (ingested + pending) oldest-first, each ingested row showing its row count and a short upload date, each pending row showing no row count.",
+      "driving_port": "source/:sourceId RRv7 server route loader",
+      "guard": "source-detail.test.tsx :: AC1 (walking skeleton — router navigation renders persisted history) + uploadMappers.test.ts (mapping)",
+      "state_at_skeleton": "RED — no source/:sourceId route or loader exists; toSourceUploads mapper does not exist; UploadModal.files starts [] and only grows from optimistic uploads",
+      "state_final": "GREEN — loader fetches via apiFetch, unwrapList + toSourceUploads map the envelope, useLoaderData/useFetcher seeds the modal's Files list"
+    },
+    {
+      "id": "AC2",
+      "statement": "A source with no recorded uploads renders the existing 'No files yet' empty state (an empty-but-OK list is not a failure).",
+      "driving_port": "source/:sourceId route loader",
+      "guard": "source-detail.test.tsx :: AC2 (empty list)",
+      "state_at_skeleton": "RED",
+      "state_final": "GREEN — loader resolves [] and the modal keeps its No-files-yet branch"
+    },
+    {
+      "id": "AC3",
+      "statement": "A non-401 upstream read failure degrades gracefully: the modal still opens and the Files list shows no persisted rows (optimistic-only) rather than throwing to an ErrorBoundary; a fresh upload still appears. A 401 redirects to /login (mirrors the app-shell/project loaders).",
+      "driving_port": "source/:sourceId route loader",
+      "guard": "source-detail.test.tsx :: AC3 (loader read failure -> empty, no throw) + (401 -> redirect)",
+      "state_at_skeleton": "RED",
+      "state_final": "GREEN — loader catches the non-401 read failure and returns { uploads: [] }; the modal is unaffected"
+    },
+    {
+      "id": "AC4",
+      "statement": "After the persisted history is seeded, a fresh in-session upload appends AFTER the persisted rows and the earlier rows keep their order (persisted-first ordering).",
+      "driving_port": "UploadModal Files list (seeded via loader data)",
+      "guard": "Upload.test.tsx :: AC4 (seeded files + optimistic append order)",
+      "state_at_skeleton": "RED — modal has no seed prop; files initializes to []",
+      "state_final": "GREEN — modal initializes files from the seeded SourceUpload[] and appends fresh rows after"
+    },
+    {
+      "id": "AC5",
+      "statement": "The upload-history read introduces no browser-direct /api call: the browser reaches the history only through the same-origin RRv7 loader path; the existing no-direct-backend boundary guard stays green.",
+      "driving_port": "same-origin RRv7 route loader (server-side apiFetch hop)",
+      "guard": "no-direct-backend.test.ts (boundary guard remains green with the new read path)",
+      "state_at_skeleton": "RED if wired browser-side; GREEN once read is server-loader-only",
+      "state_final": "GREEN — read lands only on the same-origin loader; no credentials:'include' browser fetch to /api"
+    }
+  ],
+  "error_path_ratio": "3/5 scenarios are error/edge (empty, read-failure, 401) — meets the >=40% error-coverage bar",
+  "steps": [
+    {
+      "id": 0,
+      "title": "Skeleton — walking-skeleton acceptance test (RED) + RED scaffolds + roadmap SSOT",
+      "intent": "Land the walking-skeleton scenario as an honest RED router test and scaffold the two new production modules so imports resolve (RED, not BROKEN): the toSourceUploads mapper and the source-detail loader. Write this DISTILL SSOT + the .feature + wave-decisions. Done-state: ui/ compiles, the acceptance test exists and is RED.",
+      "files": [
+        "ui/app/catalog/dataSources/uploadMappers.ts (scaffold: toSourceUploads throws)",
+        "ui/app/routes/source-detail.tsx (scaffold: loader throws)",
+        "ui/app/routes/source-detail.test.tsx (walking-skeleton test, RED)",
+        "docs/feature/source-detail-upload-loader/distill/roadmap.json",
+        "docs/feature/source-detail-upload-loader/distill/source-detail-loader.feature",
+        "docs/feature/source-detail-upload-loader/distill/wave-decisions.md"
+      ],
+      "verify": "cd ui && npx tsc --noEmit; cd ui && npx vitest run app/routes/source-detail.test.tsx (expect RED)",
+      "blocks": [1, 2, 3, 4]
+    },
+    {
+      "id": 1,
+      "title": "toSourceUploads pure mapper",
+      "intent": "Add the shared pure mapper JSON:API `uploads` -> SourceUpload[]: name<-original_filename, rows<-row_count (number|null), when<-created_at (short display date), status passthrough ('ingested'|'pending'); preserves oldest-first order. Lives in dataSources/ next to the other mappers so the loader (and any future browser source) map identically.",
+      "files": [
+        "ui/app/catalog/dataSources/uploadMappers.ts",
+        "ui/app/catalog/dataSources/uploadMappers.test.ts"
+      ],
+      "verify": "cd ui && npx vitest run app/catalog/dataSources/uploadMappers.test.ts",
+      "blocked_by": [0]
+    },
+    {
+      "id": 2,
+      "title": "source/:sourceId route + server loader",
+      "intent": "Add the project-nested route project/:projectId/source/:sourceId with a server loader that fetches GET /sources/{id}/uploads through apiFetch (cookie->Bearer), unwrapList + toSourceUploads. 401 -> redirect('/login'); any other non-2xx is caught and degrades to { uploads: [] } (graceful — NOT an ErrorBoundary throw, unlike the project loader). Register in routes.ts under the project-layout children.",
+      "files": [
+        "ui/app/routes/source-detail.tsx",
+        "ui/app/routes/source-detail.test.tsx",
+        "ui/app/routes.ts"
+      ],
+      "verify": "cd ui && npx vitest run app/routes/source-detail.test.tsx",
+      "blocked_by": [0, 1]
+    },
+    {
+      "id": 3,
+      "title": "Wire the loader data into the upload modal's Files list",
+      "intent": "On openUpload(existingSource), load the source-detail route via useFetcher().load(`/project/:pid/source/:sourceId`) (keeps the imperative overlay — no modal-routing refactor) and pass the resulting SourceUpload[] into UploadModal. Seed the modal's `files` state from it (persisted-first); widen UploadFile.rows to number|null and render a pending row with no count; keep fresh optimistic rows appending after.",
+      "files": [
+        "ui/app/components/Upload/hooks.ts",
+        "ui/app/components/Upload/Upload.tsx",
+        "ui/app/components/Upload/Upload.test.tsx",
+        "ui/app/components/AppShell/Overlays.tsx"
+      ],
+      "verify": "cd ui && npx vitest run app/components/Upload app/routes/source-detail.test.tsx",
+      "blocked_by": [0, 2]
+    },
+    {
+      "id": 4,
+      "title": "Boundary + convergence gate",
+      "intent": "Confirm the new read path lands only on the same-origin loader (no browser-direct /api) — reconcile the no-direct-backend guard if needed — and turn on the empty + read-failure scenarios. Run the full ui/ suite as the convergence gate. Zero __SCAFFOLD__ markers remain.",
+      "files": [
+        "ui/app/__tests__/boundary/no-direct-backend.test.ts",
+        "ui/app/routes/source-detail.test.tsx"
+      ],
+      "verify": "cd ui && npx tsc --noEmit; cd ui && npx vitest run; grep -r \"__SCAFFOLD__\" ui/app (expect none)",
+      "blocked_by": [1, 2, 3]
+    }
+  ],
+  "final_gate": [
+    "cd ui && npx tsc --noEmit",
+    "cd ui && npx vitest run",
+    "./tools/test/test.sh --auto",
+    "commit per step; PR into catalog-behind-bff/release-6"
+  ]
+}
