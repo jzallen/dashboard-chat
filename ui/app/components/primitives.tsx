@@ -182,12 +182,12 @@ function ConfirmDialog({
     <>
       <div className="up-scrim" style={{ zIndex: 46 }} onClick={onCancel} />
       <div className={styles.confirmDialog} role="dialog">
-        <div className={styles.cdIc}>
+        <div className={styles.confirmMedallion}>
           <Icon name={icon} size={24} />
         </div>
-        <div className={styles.cdTitle}>{title}</div>
-        <div className={styles.cdBody}>{body}</div>
-        <div className={styles.cdActions}>
+        <div className={styles.confirmTitle}>{title}</div>
+        <div className={styles.confirmBody}>{body}</div>
+        <div className={styles.confirmActions}>
           <button className="btn sq" onClick={onCancel}>
             Cancel
           </button>
