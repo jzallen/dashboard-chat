@@ -10,7 +10,7 @@ import {
 
 import type { FieldDef, LineageNode } from "../../catalog";
 import type { SourceUpload } from "../../catalog/dataSources/source";
-import { Icon } from "../primitives";
+import { ConfirmDialog, Icon } from "../primitives";
 import styles from "./Upload.module.css";
 
 type UploadView = "browse" | "uploading" | "schema";
@@ -474,29 +474,22 @@ export function ConfirmArchive({
 }) {
   const n = (source.files || []).length;
   return (
-    <>
-      <div className="up-scrim" style={{ zIndex: 46 }} onClick={onCancel} />
-      <div className={styles.confirmDialog} role="dialog">
-        <div className={styles.cdIc}>
-          <Icon name="snow" size={24} />
-        </div>
-        <div className={styles.cdTitle}>Move to cold storage?</div>
-        <div className={styles.cdBody}>
+    <ConfirmDialog
+      icon="snow"
+      title="Move to cold storage?"
+      tone="cold"
+      confirmIcon="snow"
+      confirmLabel="Move to cold storage"
+      onCancel={onCancel}
+      onConfirm={() => onConfirm(source)}
+      body={
+        <>
           <b>{source.label}</b>
           {n ? ` and its ${n} file${n > 1 ? "s" : ""}` : ""} will be moved to
           cold storage and kept for <b>90 days</b> before permanent deletion.
           You can restore it any time before then.
-        </div>
-        <div className={styles.cdActions}>
-          <button className="btn sq" onClick={onCancel}>
-            Cancel
-          </button>
-          <button className="btn sq cold-btn" onClick={() => onConfirm(source)}>
-            <Icon name="snow" size={15} />
-            Move to cold storage
-          </button>
-        </div>
-      </div>
-    </>
+        </>
+      }
+    />
   );
 }

@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 import type { ColdStorageItem } from "../../catalog";
-import { Icon, type IconName } from "../primitives";
+import { ConfirmDialog, Icon, type IconName } from "../primitives";
 import styles from "./ColdStorage.module.css";
 
 const DAY_MS = 86400000;
@@ -36,6 +36,10 @@ export function ColdStorageModal({
   const [food] = useState(
     () => FOODS[Math.floor(Math.random() * FOODS.length)],
   );
+  // Restore is confirmed the same way archiving is (see ConfirmArchive) — pulling
+  // a source back out of cold storage rewires the lineage, so it shouldn't fire on
+  // a single stray click. The pending item drives the confirmation dialog.
+  const [pending, setPending] = useState<ColdStorageItem | null>(null);
   return (
     <>
       <div className="up-scrim" onClick={onClose} />
@@ -101,7 +105,7 @@ export function ColdStorageModal({
                   <b>{daysLeft}</b>
                   <span>days left</span>
                 </div>
-                <button className="btn sq" onClick={() => onRestore(it.id)}>
+                <button className="btn sq" onClick={() => setPending(it)}>
                   <Icon name="refresh" size={14} />
                   Restore
                 </button>
@@ -110,6 +114,25 @@ export function ColdStorageModal({
           })}
         </div>
       </div>
+      {pending && (
+        <ConfirmDialog
+          icon="refresh"
+          title="Restore this source?"
+          confirmIcon="refresh"
+          confirmLabel={`Restore ${pending.name}`}
+          onCancel={() => setPending(null)}
+          onConfirm={() => {
+            onRestore(pending.id);
+            setPending(null);
+          }}
+          body={
+            <>
+              <b>{pending.name}</b> will be pulled back out of cold storage and
+              returned to your workspace, with its schema and lineage restored.
+            </>
+          }
+        />
+      )}
     </>
   );
 }
