@@ -83,16 +83,16 @@ export function ColdStorageModal({
             );
             return (
               <div className={styles.coldRow} key={it.id}>
-                <span className={styles.coldIc}>
+                <span className={styles.coldIcon}>
                   <Icon name="database" size={15} />
                 </span>
                 <div className={styles.coldMain}>
                   <div className={styles.coldName}>{it.name}</div>
                   <div className={styles.coldMeta}>
                     <span>Retired {fmtDate(it.retiredAt)}</span>
-                    <span className={styles.cdot}>·</span>
+                    <span className={styles.metaDot}>·</span>
                     <span>Deletes {fmtDate(end)}</span>
-                    <span className={styles.cdot}>·</span>
+                    <span className={styles.metaDot}>·</span>
                     <span>
                       {(it.files || []).length} file
                       {(it.files || []).length !== 1 ? "s" : ""}
