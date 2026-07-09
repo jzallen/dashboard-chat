@@ -1,12 +1,11 @@
 /* Cold-storage drawer open/close + restore. */
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 
+import { useDisclosure } from "../../lib/useDisclosure";
 import { catalog } from "../useCatalog";
 
 export function useColdStorage() {
-  const [open, setOpen] = useState(false);
-  const openCold = useCallback(() => setOpen(true), []);
-  const closeCold = useCallback(() => setOpen(false), []);
+  const { open, show: openCold, hide: closeCold } = useDisclosure();
   const restore = useCallback((id: string) => catalog.restoreSource(id), []);
   return { open, openCold, closeCold, restore };
 }
