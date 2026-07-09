@@ -6,17 +6,21 @@ deliberately. This mirrors CLAUDE.md's routing table, framed for the Linear+cyru
 
 ## Decision heuristics
 
+Labels are the **grouped** `wave` children — apply by child name (validated per `linear-structure.md`), never the colon-form
+string (`linear-structure.md`).
+
 | The issue is about… | Wave label | Agent | Notes |
 |---|---|---|---|
-| A new feature — stories/AC don't exist yet | `wave:discuss` | `/nw-discuss` | read-only; produces stories+AC as thread analysis, then promote |
-| Architecture / component boundaries / tech selection | `wave:design` | `/nw-design` | read-only; C4 + ADRs. Precedes a boundary-moving refactor |
-| A story that's broken down and ready to build | `wave:distill`→`wave:deliver` | orchestrator → `/nw-deliver` | the normal build path (skeleton-first, one story PR) |
-| **Adding or changing behaviour** on brownfield code | `wave:deliver` | `/nw-deliver` | AC checklist = the spec; RED→green |
-| **Restructuring existing code with no behaviour change** | `wave:refactor` | `/nw-refactor` | behaviour-preserving; targeted by RPP level + scope |
-| A bug with a known cause | `wave:distill` | `/nw-distill` first | write the regression test, then fix |
-| A bug with an unknown cause | `wave:bugfix` | `/nw-bugfix` → `/nw-root-why` | RCA → regression test → fix |
-| Investigating a technology/pattern before deciding | `wave:research` | `/nw-research` | read-only; cited research doc |
-| Docs | `wave:document` | `/nw-document` | read-only; DIVIO/Diátaxis |
+| A new feature — stories/AC don't exist yet | `wave › discuss` | `/nw-discuss` | read-only; produces stories+AC as thread analysis, then promote |
+| Architecture / component boundaries / tech selection | `wave › design` | `/nw-design` | read-only; C4 + ADRs. Precedes a boundary-moving refactor |
+| A story that's broken down and ready to build | `wave › distill`→`deliver` | orchestrator → `/nw-deliver` | the normal build path (skeleton-first, one story PR) |
+| **Adding or changing behaviour** on brownfield code | `wave › deliver` | `/nw-deliver` | AC checklist = the spec; RED→green |
+| **Restructuring existing code with no behaviour change** | `wave › refactor` | `/nw-refactor` | behaviour-preserving; targeted by RPP level + scope; modeled as a **Refactor issue**, not a Story (below) |
+| A bug with a known cause | `wave › distill` | `/nw-distill` first | write the regression test, then fix |
+| A bug with an unknown cause | `wave › bugfix` | `/nw-bugfix` → `/nw-root-why` | RCA → regression test → fix |
+| Investigating a technology/pattern before deciding | `wave › research` | `/nw-research` | read-only; cited research doc |
+| Docs | `wave › document` | `/nw-document` | read-only; DIVIO/Diátaxis |
+| Closing out a finished project | `wave › finalize` | `/nw-finalize` | write-capable; on the migrated seed under the Finalize milestone; assigned manually (`milestone.md`) |
 
 ## nw-deliver vs nw-refactor — the key split
 
@@ -33,7 +37,17 @@ change?*
 
 **Most brownfield cleanup is `nw-refactor`, not `nw-deliver`.** If you catch yourself
 opening a deliver session whose AC is "same behaviour, cleaner code / clearer boundary,"
-it's a refactor — reach for `wave:refactor` and pick a level.
+it's a refactor — reach for `wave › refactor` and pick a level.
+
+### Refactor work is its own issue type, not a Story
+
+A refactor is targeted by **`--level` (RPP L1–L6) + `--scope`/module**, not an AC checklist,
+and it has no skeleton/RED-test frame — so it does **not** fit the Story shape. Model it as
+a **Refactor issue** whose body carries the level + scope and opens `## AGENT NOTES` with
+`/nw-refactor …` (see the Refactor template in `templates.md`). Small actionable debt is a
+single Refactor issue; debt that earns its own project gets a **Refactor project that holds
+Refactor issues** (not Stories), sliced with Release milestones only if the RPP cascade or
+Mikado phases warrant it (`intake-and-promotion.md` § Tech Debt).
 
 ### Preconditions for nw-refactor (hard gates)
 
@@ -72,7 +86,7 @@ it's a refactor — reach for `wave:refactor` and pick a level.
 ## Scope + flags
 
 - `--scope=file | module | package` — the blast radius. Keep it as small as the change
-  honestly needs; a `wave:refactor` issue should carry the same `area:*` label as the
+  honestly needs; a `wave › refactor` issue should carry the same `area` child label as the
   subtree it touches (parallel-safety, `parallel-execution.md`).
 - `--level=N` — the RPP ceiling (see above).
 - `--mikado_planning=true` — add this when the change is multi-class / cross-module and a
@@ -84,7 +98,7 @@ it's a refactor — reach for `wave:refactor` and pick a level.
 
 **Code quality / churn / tech-debt / boundary-tidy** (behaviour stays put):
 `/nw-hotspot --top=10` → confirm/write characterization tests + green suite →
-`wave:refactor` issue → `/nw-refactor <path> --level=2 --scope=module` (add
+`wave › refactor` issue → `/nw-refactor <path> --level=2 --scope=module` (add
 `--mikado_planning=true` if it turns out to cross modules).
 
 **Legacy code needing DDD extraction** (heavier):
