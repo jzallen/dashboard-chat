@@ -175,6 +175,11 @@ export async function createDataCatalog(
           .catch((err) => log.warn("read.org.failed", { err: String(err) })),
       );
     }
+    // TODO: no backend source implements getChatScript, so this branch is
+    // currently dead and chatScript stays the fixture seed — the scripted
+    // dependency-graph demo behind the chat-overlay pills. Backing it for real
+    // needs the agent to iteratively build the graph in a loop, and may be
+    // subsumed by the ghost-nodes work; deferred until then.
     if (primary.getChatScript) {
       tasks.push(
         primary
