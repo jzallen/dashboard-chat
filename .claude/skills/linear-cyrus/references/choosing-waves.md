@@ -6,7 +6,7 @@ deliberately. This mirrors CLAUDE.md's routing table, framed for the Linear+cyru
 
 ## Decision heuristics
 
-Labels are the **grouped** `wave` children — apply by child name/ID, never the colon-form
+Labels are the **grouped** `wave` children — apply by child name (validated per `linear-structure.md`), never the colon-form
 string (`linear-structure.md`).
 
 | The issue is about… | Wave label | Agent | Notes |

@@ -29,7 +29,7 @@ created by hand in Settings.
 ## Authoring loop (how these templates get made)
 
 1. The main session **creates a canonical example issue** via `save_issue` (labels applied
-   by grouped child ID — `linear-structure.md`).
+   by validated grouped child name — `linear-structure.md`).
 2. A human **promotes it to a team template** in Linear (⋯ → Save as template), then
    deletes/archives the example.
 3. **Project templates** (Feature, Refactor) are created by hand in Settings from the specs
@@ -50,7 +50,7 @@ created by hand in Settings.
 
 Placeholders: `{{token}}` = mechanical substitution (`{{feature-slug}}`, `{{area}}`,
 `{{release-n}}`); `<free prose>` = author writes it. Labels are grouped `wave`/`area`
-**children** applied by name/ID, never the colon-form.
+**children** applied by validated child name, never the colon-form (`linear-structure.md`).
 
 ---
 

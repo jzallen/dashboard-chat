@@ -9,7 +9,7 @@ assigned to a **Release** milestone. Its `wave` child label is a **phase flag**:
 | `wave › deliver` | breakdown approved, building | **builder** (`all` tools — implements) |
 
 The session mode comes from the **story's** label, *not* the sub-issues' — so the label
-**is** how you move the story from planning to building. Apply it by grouped child name/ID,
+**is** how you move the story from planning to building. Apply it by grouped child name (validated),
 never the colon-form string (`linear-structure.md`); group exclusivity flips the flag in a
 single write.
 

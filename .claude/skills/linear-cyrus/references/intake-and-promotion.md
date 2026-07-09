@@ -45,7 +45,7 @@ those never block on it.
 There's no single "convert issue → project" API call, so the main session **replicates**
 it via the full Linear MCP. Fill each primitive from its shape (native template for the
 human-authored ones, the per-level reference for the agent-built ones — see `templates.md`),
-and apply labels by **grouped child name/ID, never the colon-form** (`linear-structure.md`):
+and apply labels by the **validated grouped child name, never the colon-form** (`linear-structure.md`):
 
 1. `save_project` — create the Feature project. **Name it for the natural feature name from
    the code** (a plain product name; no wave/artifact/ticket vocabulary), team = DC. The

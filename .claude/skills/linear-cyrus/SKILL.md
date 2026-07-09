@@ -47,7 +47,7 @@ Feature project   = nwave feature   (named for the natural code feature name)
   └ Finalize (milestone) → holds the migrated seed issue = nw-finalize closeout handle
 ```
 
-Labels are the **grouped** `wave`/`area` children — apply by child name/ID, never the
+Labels are the **grouped** `wave`/`area` children — apply by child name (validated per `linear-structure.md`), never the
 colon-form string (`references/linear-structure.md`).
 
 - **Story label is a phase flag.** `wave › distill` (awaiting breakdown) runs the
@@ -100,7 +100,7 @@ tasks-within-a-story — tasks share the skeleton (see `parallel-execution.md`).
 | `references/task.md` | Task = the plan (no branches/PRs); skeleton vs implementation; atomic commits; **driving each sub-issue's status by hand (Todo→In Progress→Done)** |
 | `references/branching-and-merge.md` | Release branches, **story-level PRs**, where the gate runs, →main no-PR, `baseBranch` caveat |
 | `references/parallel-execution.md` | parallelize across stories; judging independence; conflict avoidance |
-| `references/linear-structure.md` | **grouped-label** taxonomy (child name/ID, not colon-form), routing (`teamKeys` + `labelPrompts`/orchestrator), views |
+| `references/linear-structure.md` | **grouped-label** taxonomy (child name not colon-form, id only as fallback), routing (`teamKeys` + `labelPrompts`/orchestrator), views |
 | `references/templates.md` | canonical body shapes: **native templates** for human-authored primitives + reference shapes for agent-built ones; authoring loop; project-template specs; one-time Settings checklist |
 | `references/triggering-sessions.md` | how a session fires: agent-enabled app, delegate + comment-@mention, daemon+pump, skills allowlist |
 

@@ -24,25 +24,24 @@ its members (`discuss`, `distill`, `backend`, …) are child labels with the gro
 `parentLabel`. **You apply a grouped label by applying the child — there is no separate
 group field.** Applying the `discuss` child *is* "wave › discuss".
 
-- **Never pass the colon-form string** (`"wave:discuss"`) to `save_issue` / `create_issue`.
-  A flat, ungrouped label literally named `wave:discuss` may also exist; passing the string
-  matches *that* footgun instead of the grouped child, which is why wave labels have been
-  landing outside the group. Pass the **child label's ID** (unambiguous) or the **bare
-  child name** (`"discuss"`, `"distill"`, `"backend"`) — never `"wave:discuss"`.
+- **Pass the bare child name** (`"discuss"`, `"distill"`, `"backend"`, …) to `save_issue` /
+  `create_issue`. **Never pass the colon-form string** (`"wave:discuss"`): a flat, ungrouped
+  label literally named `wave:discuss` may also exist, and the string matches *that* footgun
+  instead of the grouped child — which is why wave labels have been landing outside the group.
+- **Validate before trusting the name.** `list_issue_labels(name: "<child>")` should return
+  a single label whose `parent` is the expected group (`wave` for `distill`, `area` for
+  `backend`, …). If it does, the bare name is safe. **Only if** the name is missing,
+  duplicated, or resolves without the right parent, look up that label's surrogate id and
+  pass the **id** instead — don't hard-code ids in prose or templates, they rot.
 - Groups are **exclusive**: an issue holds at most one child per group. Applying `deliver`
   auto-removes `distill`, so the story phase-flag flips cleanly with a single label write.
 - Written in prose as `wave › discuss` (or shorthand `wave/discuss`); the colon-form is
   reserved for the flat labels we are retiring (see the deletion caveat below).
 
-**Child-label IDs** (the unambiguous form for `save_issue.labels`):
-
-| Group | Child → ID |
-|---|---|
-| `wave` | `discuss` `fc52db45-fb20-40e4-933f-2ebe537a1f2c` · plus `design` `research` `document` `distill` `deliver` `bugfix` `refactor` `finalize` |
-| `area` | `ui` `303e96a4-c364-4533-80ee-be43adbc1fce` · `backend` `011b77b3-b324-4a7c-a1e0-266005ff5131` · `agent` `a7e794b3-4e71-4cba-ad5e-03e7315f7d10` · `ui-state` `c8b58096-ce9f-4988-9519-e72097a49bb9` · `auth-proxy` `b6cf512a-d4b7-4d03-a412-e12023d677b1` · `infra` `b8203301-d7e0-43c7-9dea-ea228d933c3f` |
-
-Look the rest up with `list_issue_labels(name: "<child>")` (returns the child with its
-`parent`), not from memory.
+The children: `wave` → `discuss` `design` `research` `document` `distill` `deliver`
+`bugfix` `refactor` `finalize`; `area` → `ui` `backend` `agent` `ui-state` `auth-proxy`
+`infra`. Confirm each resolves under its group with `list_issue_labels` rather than
+trusting this list from memory.
 
 > **Deletion caveat.** A redundant *flat* set (`wave:discuss`, `area:ui`, …) still exists
 > alongside the groups and is the source of the mis-grouping. Delete the flat set in Linear
