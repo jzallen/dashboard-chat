@@ -40,9 +40,9 @@ It shipped in two merge requests:
 Both merged on 2026-06-10 with the `@walking_skeleton` scenario GREEN
 ([`deliver/wave-decisions.md`](deliver/wave-decisions.md) DLV-14). FINALIZE was
 **deliberately deferred** at the time (DLV-8: "Finalize … is deliberately deferred until
-this MR merges"). Before it happened, the initiative broadened into the client-reported
-model and CDO absorbed the onboarding layer — hence this precursor archive rather than a
-standalone finalize.
+this MR merges"). Before that archive could be authored, the initiative broadened into the
+client-reported model and CDO absorbed the onboarding layer — hence this precursor archive
+rather than a standalone finalize.
 
 ## 2. What `org-onboarding` durably contributed (still live on `main`)
 
