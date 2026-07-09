@@ -110,6 +110,23 @@ export function createSourceUploadDriver(
   const { catalog, report, addOptimistic, removeOptimistic, log, newTempId } =
     deps;
 
+  // Narration is a side-channel: the saga reports each past-tense outcome to
+  // ui-state so the canvas can advance the optimistic node, but a broken report
+  // path (StateProxy.postEvent rejecting) must NEVER abort the real create→
+  // upload→process work or trip the failure rollback. A failed narration is
+  // logged and swallowed; revalidateScope() still heals the node into the real
+  // source. Only genuine catalog failures roll the optimistic node back.
+  const safeReport = async (event: ChatAppWireEvent): Promise<void> => {
+    try {
+      await report(event);
+    } catch (error) {
+      log.warn("source-upload.report.dropped", {
+        event: event.type,
+        reason: reasonOf(error),
+      });
+    }
+  };
+
   const optimisticNode = (id: string, label: string): LineageNode => ({
     id,
     label,
@@ -132,13 +149,13 @@ export function createSourceUploadDriver(
     addOptimistic(optimisticNode(tempNodeId, label));
 
     try {
-      await report({
+      await safeReport({
         type: "source_create_requested",
         payload: { temp_node_id: tempNodeId, project_id: projectId },
       });
 
       const { id: sourceId } = await catalog.createSource(label);
-      await report({ type: "source_created", payload: { source_id: sourceId } });
+      await safeReport({ type: "source_created", payload: { source_id: sourceId } });
 
       const datasetId = await runUpload(sourceId, file);
 
@@ -148,7 +165,7 @@ export function createSourceUploadDriver(
     } catch (error) {
       log.warn("source-upload.failed", { tempNodeId, reason: reasonOf(error) });
       removeOptimistic(tempNodeId);
-      await report({
+      await safeReport({
         type: "source_upload_failed",
         payload: { reason: reasonOf(error) },
       });
@@ -161,13 +178,13 @@ export function createSourceUploadDriver(
   const runUpload = async (sourceId: string, file: File): Promise<string> => {
     const { uploadId, putUrl } = await catalog.requestUpload(sourceId, file);
     await catalog.putToStorage(putUrl, file);
-    await report({
+    await safeReport({
       type: "source_upload_started",
       payload: { upload_id: uploadId },
     });
 
     const { datasetId } = await catalog.processUpload(sourceId, uploadId);
-    await report({
+    await safeReport({
       type: "source_upload_processed",
       payload: { dataset_id: datasetId },
     });
@@ -188,7 +205,7 @@ export function createSourceUploadDriver(
       // failure (the canvas error_recoverable phase) and re-throw the ORIGINAL
       // error so the surface can read a 422 schema-mismatch body for its UX.
       log.warn("source-upload.append.failed", { sourceId, reason: reasonOf(error) });
-      await report({
+      await safeReport({
         type: "source_upload_failed",
         payload: { reason: reasonOf(error) },
       });

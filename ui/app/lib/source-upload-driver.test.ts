@@ -231,6 +231,70 @@ describe("sourceUploadDriver — add to an existing source (slice 5)", () => {
   });
 });
 
+describe("sourceUploadDriver — narration is best-effort", () => {
+  // A broken state-report path (StateProxy.postEvent rejecting) must NOT be able
+  // to freeze the canvas by aborting the real saga: the backend create→upload→
+  // process still runs to completion and revalidateScope() heals the optimistic
+  // node into the real source. Narration is a side-channel, not a control path.
+  it("completes the saga and does not roll back when a report leg rejects", async () => {
+    const catalog = happyCatalog();
+    const addOptimistic = vi.fn();
+    const removeOptimistic = vi.fn();
+    // Every narration attempt fails — the worst case of a broken report path.
+    const report = vi.fn(async () => {
+      throw new Error("state-proxy unreachable");
+    });
+
+    const driver = createSourceUploadDriver({
+      catalog,
+      report,
+      addOptimistic,
+      removeOptimistic,
+      log: noopLog,
+      newTempId: () => "tmp.abc",
+    });
+
+    const result = await driver.createSourceFromUpload({
+      file,
+      name: "orders_csv",
+      projectId: "p1",
+    });
+
+    // The real saga still ran end to end.
+    expect(catalog.processUpload).toHaveBeenCalled();
+    expect(catalog.revalidateScope).toHaveBeenCalled();
+    expect(result).toEqual({ datasetId: "ds.1", tempNodeId: "tmp.abc" });
+    // The optimistic node is NOT torn down over a mere narration failure.
+    expect(removeOptimistic).not.toHaveBeenCalled();
+  });
+
+  it("still rolls back on a real catalog failure even if narration is broken", async () => {
+    const catalog = happyCatalog();
+    catalog.processUpload = vi.fn(async () => {
+      throw new Error("500 process failed");
+    });
+    const removeOptimistic = vi.fn();
+    const report = vi.fn(async () => {
+      throw new Error("state-proxy unreachable");
+    });
+
+    const driver = createSourceUploadDriver({
+      catalog,
+      report,
+      addOptimistic: vi.fn(),
+      removeOptimistic,
+      log: noopLog,
+      newTempId: () => "tmp.abc",
+    });
+
+    await expect(
+      driver.createSourceFromUpload({ file, name: "x", projectId: "p1" }),
+    ).rejects.toThrow("500 process failed");
+    // A genuine backend failure still tears the optimistic node down.
+    expect(removeOptimistic).toHaveBeenCalledWith("tmp.abc");
+  });
+});
+
 describe("sourceUploadDriver — failure rollback", () => {
   it("rolls back the optimistic node and reports source_upload_failed when process 409s", async () => {
     const catalog = happyCatalog();
