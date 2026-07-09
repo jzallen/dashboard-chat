@@ -36,20 +36,22 @@ those never block on it.
 ## Promotion mechanics (main session)
 
 There's no single "convert issue → project" API call, so the main session **replicates**
-it via the full Linear MCP:
+it via the full Linear MCP. Each step fills in its template under `templates/` — the
+frontmatter is the call's arguments, the body is the description:
 
-1. `save_project` — create the Feature project (name = feature slug, team = DC), seed
-   the description from the proposal.
-2. `save_milestone` (×N) — create the Release milestones from the discuss release-slicing
-   (`Release 1` = the first / thinnest increment — NOT a "walking skeleton"; that's the
-   per-story Skeleton task).
-3. `save_issue` (per story) — **create** the story issues in the Feature project from the
-   discuss analysis (the thread is read-only output, so there are no story sub-issues to
-   move): `team` = DC, `project`, `milestone` = its Release, `wave:distill` + `area:*`.
-   Give each a **human-readable title** (no wave/tier/relationship tags) and body per
-   `issue-authoring.md`: summary on top, an **`## AGENT NOTES`** section (see `story.md`)
-   — the issue body is the agent's prompt; without it the deliver agent skips distill and
-   implements directly — and any doc/issue pointers in a bottom **`## References`** block.
+1. `save_project` (`templates/project.md`) — create the Feature project (name = feature
+   slug, team = DC), seed the description from the proposal.
+2. `save_milestone` (×N) (`templates/milestone.md`) — create the Release milestones from
+   the discuss release-slicing (`Release 1` = the first / thinnest increment — NOT a
+   "walking skeleton"; that's the per-story Skeleton task).
+3. `save_issue` (per story) (`templates/story.md`) — **create** the story issues in the
+   Feature project from the discuss analysis (the thread is read-only output, so there are
+   no story sub-issues to move): `team` = DC, `project`, `milestone` = its Release,
+   `wave:distill` + `area:*`. The template gives each a **human-readable title** (no
+   wave/tier/relationship tags) and a body per `issue-authoring.md`: summary on top, an
+   **`## AGENT NOTES`** section (see `story.md`) — the issue body is the agent's prompt;
+   without it the deliver agent skips distill and implements directly — and any doc/issue
+   pointers in a bottom **`## References`** block.
 4. Cut a git branch **per Release**: `git branch <slug>/release-1 main && git push -u
    origin <slug>/release-1` (story PRs target it; later Releases rebase on `main` after
    the prior one merges — see `branching-and-merge.md`).

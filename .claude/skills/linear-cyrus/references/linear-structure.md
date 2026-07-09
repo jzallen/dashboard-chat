@@ -60,11 +60,13 @@ contains (handy for filtering). No longer a separate issue level.
   (`readOnly` / `safe` / `all`). This is the lever that makes a label mean "run this
   wave under these guardrails." (cyrus has no per-label *model* selection — only tool
   scope varies by label.)
-- The issue **description is the agent's task prompt**. Use per-wave issue templates
-  whose body is already a good brief and opens with the matching `/nw-*` command, so
-  "good issue hygiene" and "good agent prompt" are the same habit. Structure it per
-  `issue-authoring.md`: human-readable title + summary, an `## AGENT NOTES` section for
-  the agent-facing instructions, `## References` at the bottom for doc/issue pointers.
+- The issue **description is the agent's task prompt**. Fill in the matching template
+  under `templates/` — each body is already a good brief, names the `/nw-*` wave in its
+  `## AGENT NOTES`, and carries the required `wave:*`/`area:*` labels in frontmatter — so
+  "good issue hygiene" and "good agent prompt" are the same habit. The templates codify
+  `issue-authoring.md`'s anatomy: human-readable title + summary, an `## AGENT NOTES`
+  section for the agent-facing instructions, `## References` at the bottom for doc/issue
+  pointers.
 
 ## Suggested views
 

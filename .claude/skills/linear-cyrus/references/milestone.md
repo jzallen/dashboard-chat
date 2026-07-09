@@ -6,8 +6,8 @@ Milestones live **only in Feature projects**, never in Proposals.
 ## Owns a branch; no agent action
 
 At promotion the **main session** creates, per Release, both the Linear milestone
-(`save_milestone`) and a git **`<feature-slug>/<release>` integration branch** (`git
-branch`, cut from `main`). A milestone is not delegatable — it's a grouping + progress
+(`save_milestone`, filling in `templates/milestone.md`) and a git
+**`<feature-slug>/<release>` integration branch** (`git branch`, cut from `main`). A milestone is not delegatable — it's a grouping + progress
 container + the integration branch that story PRs land on (see `branching-and-merge.md`).
 
 ## Relationships

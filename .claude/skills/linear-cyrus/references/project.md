@@ -7,7 +7,8 @@ Two kinds of Linear project exist in this workflow.
 One long-lived **Proposals** project holds **discussion-topic issues** (proposals),
 each labeled `wave:discuss`. No milestones live here.
 
-- **You** add a proposal issue (the topic / problem to explore).
+- **You** add a proposal issue (the topic / problem to explore) — fill in
+  `templates/proposal.md`.
 - **Delegate dc-cyrus** → it runs `nw-discuss` (read-only) and **produces** the JTBD /
   user stories / acceptance criteria **as analysis in the issue thread**. It does NOT
   create issues (readOnly mode has no `create_issue`) — the main session materializes the
@@ -24,7 +25,8 @@ A **Feature project** = one nwave **feature**. Created at **promotion** time, it
 - the promoted **stories** (created at promotion from the discuss analysis, labeled
   `wave:distill`, assigned to a Release).
 
-The project description holds the brief; the stories carry the detail.
+The project description holds the brief; the stories carry the detail. Seed it from
+`templates/project.md`.
 
 ## Who creates what
 

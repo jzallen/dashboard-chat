@@ -95,6 +95,7 @@ tasks-within-a-story — tasks share the skeleton (see `parallel-execution.md`).
 | `references/parallel-execution.md` | parallelize across stories; judging independence; conflict avoidance |
 | `references/linear-structure.md` | label taxonomy, routing (`teamKeys` + `labelPrompts`/orchestrator), views |
 | `references/triggering-sessions.md` | how a session fires: agent-enabled app, delegate + comment-@mention, daemon+pump, skills allowlist |
+| `templates/` | **fill-in-the-blank bodies for each primitive** (proposal, project, milestone, story, skeleton/impl task, tech-debt) — frontmatter = the `save_*` args, body = the description; the canonical *shape*, while the per-level files above cover the *workflow* (`templates/README.md`) |
 
 ## Prerequisites (ops)
 

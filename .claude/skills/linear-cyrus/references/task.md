@@ -1,7 +1,8 @@
 # Task level
 
 A **task** = an nwave deliver step. In Linear it's a **sub-issue of a story**, labeled
-`wave:deliver` + the story's `area:*`, with an **AC checklist** in its description. It is
+`wave:deliver` + the story's `area:*`, with an **AC checklist** in its description
+(fill in `templates/task.md`; the first one uses `templates/skeleton-task.md`). It is
 **the plan**, not a separately-delegated unit: the story's single deliver session iterates
 the tasks and marks each Done as it goes.
 

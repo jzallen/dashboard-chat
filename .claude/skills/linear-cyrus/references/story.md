@@ -45,7 +45,8 @@ the Release branch. Sub-issues are the **plan**, never individually delegated.
 
 ## Every story body ends with an `## AGENT NOTES` section (required)
 
-**The issue body IS the agent's prompt.** A cyrus session keys off the description; if it
+The canonical body shape is `templates/story.md` — fill it in rather than re-deriving the
+sections here. **The issue body IS the agent's prompt.** A cyrus session keys off the description; if it
 doesn't name the skill/wave, the agent just presses straight to implementation (observed
 on DC-8 — it skipped distill and opened a PR). So every story description keeps its
 human-readable summary on top and ends with an `## AGENT NOTES` block like:
