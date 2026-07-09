@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createDataCatalog } from "./client";
+import { assertKnownSnapshotKeys, createDataCatalog } from "./client";
 import type {
   CatalogSource,
   PartialCatalogSource,
@@ -61,6 +61,47 @@ function fallbackWithProjects(): CatalogSource {
   const base = makeSource();
   return { ...base, getProjects: () => Promise.resolve(FIXTURE_PROJECTS) };
 }
+
+describe("commit key allowlist (assertKnownSnapshotKeys)", () => {
+  const KNOWN: string[] = [
+    "graph",
+    "projects",
+    "currentProject",
+    "org",
+    "recents",
+    "chats",
+    "chatScript",
+    "dbtFiles",
+  ];
+
+  it("accepts every key of the snapshot and any subset of them", () => {
+    for (const key of KNOWN) {
+      expect(() => assertKnownSnapshotKeys({ [key]: undefined })).not.toThrow();
+    }
+    const all = Object.fromEntries(KNOWN.map((k) => [k, undefined]));
+    expect(() => assertKnownSnapshotKeys(all)).not.toThrow();
+    expect(() => assertKnownSnapshotKeys({})).not.toThrow();
+  });
+
+  it("throws naming the offending key when a partial carries an unknown key", () => {
+    expect(() => assertKnownSnapshotKeys({ recentz: [] })).toThrow(/recentz/);
+  });
+
+  it("guards the store's real commit path: a valid public mutation still merges + bumps + notifies", async () => {
+    // In dev the guard runs on every commit; renameSource commits { graph } — a
+    // known key — so the observable merge/version/notify contract is unchanged.
+    const catalog = await createDataCatalog({}, makeSource());
+    const fired = vi.fn();
+    catalog.subscribe(fired);
+    const before = catalog.getSnapshot();
+
+    catalog.renameSource("src.orders", "raw_orders");
+
+    expect(catalog.getNode("src.orders")?.label).toBe("raw_orders");
+    expect(catalog.getSnapshot()).not.toBe(before);
+    expect(fired).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("createDataCatalog — write side", () => {
   let catalog: Awaited<ReturnType<typeof createDataCatalog>>;
