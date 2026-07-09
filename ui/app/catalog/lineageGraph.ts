@@ -31,7 +31,15 @@ import type {
   Edge,
   Layer,
   LineageNode,
+  ModelKind,
 } from "./lineage";
+import type { Model } from "./models";
+
+const MODEL_KINDS: readonly ModelKind[] = ["dataset", "view", "report"];
+
+function isModelKind(kind: unknown): kind is ModelKind {
+  return typeof kind === "string" && MODEL_KINDS.includes(kind as ModelKind);
+}
 
 /**
  * An archived source set aside in cold storage: the retired node plus the
@@ -155,6 +163,23 @@ export class LineageGraph {
   /** The node for `id`, or undefined if absent/archived. */
   getNode(id: string): LineageNode | undefined {
     return this.nodes.get(id);
+  }
+
+  /**
+   * The typed {@link Model} projection of a node's `ref`, or `undefined` when
+   * the node is absent/archived, carries no model ref, or bears an unrecognised
+   * `kind`. The domain owns this node→`Model` narrowing so presentation receives
+   * a discriminated `Model` and never casts off a loose node: a runtime check on
+   * `ref.kind` gates the projection, and every non-narrowable case degrades to
+   * `undefined` rather than a mis-typed dereference.
+   *
+   * Deliberately lightweight — a discriminant check, not full schema validation
+   * (no Zod in this layer). It trusts the field set behind a recognised `kind`.
+   */
+  getModel(id: string): Model | undefined {
+    const ref = this.nodes.get(id)?.ref;
+    if (!ref || !isModelKind(ref.kind)) return undefined;
+    return ref as unknown as Model;
   }
 
   /** All active nodes, for iteration (e.g. the DAG render). */

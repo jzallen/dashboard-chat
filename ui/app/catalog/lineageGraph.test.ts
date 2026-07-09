@@ -154,6 +154,40 @@ describe("LineageGraph — topology + audit", () => {
   });
 });
 
+describe("LineageGraph — getModel (typed node→Model projection)", () => {
+  const withRef = (id: string, ref: LineageNode["ref"]): LineageGraph =>
+    LineageGraph.from(
+      {
+        [id]: { id, label: id, sub: "mart", layer: "mart", ref },
+      },
+      [],
+      {},
+    );
+
+  it.each(["dataset", "view", "report"] as const)(
+    "narrows a node whose ref carries the recognised kind %s",
+    (kind) => {
+      const model = withRef("mart.m", { kind }).getModel("mart.m");
+      expect(model?.kind).toBe(kind);
+    },
+  );
+
+  it("returns undefined for an absent/archived node", () => {
+    expect(makeGraph().getModel("nope")).toBeUndefined();
+  });
+
+  it("returns undefined when the node carries no model ref", () => {
+    // src.orders is a source node — no ref.
+    expect(makeGraph().getModel("src.orders")).toBeUndefined();
+  });
+
+  it("returns undefined when the ref bears an unrecognised kind", () => {
+    expect(withRef("mart.m", { kind: "mystery" }).getModel("mart.m")).toBe(
+      undefined,
+    );
+  });
+});
+
 describe("LineageGraph — archive / restore", () => {
   it("archive moves the node + its edges into cold storage; the active DAG drops them", () => {
     const graph = makeGraph().archive("src.orders", 1000);

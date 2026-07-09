@@ -12,7 +12,6 @@ import { Icon, LayerBadge, LayerDot, SqlBlock, TAG_ICON } from "../primitives";
 import { useCatalogFromContext, useCatalogWithSelector } from "../useCatalog";
 import { InlineEditLabel } from "./InlineEditLabel";
 import styles from "./ModelDetail.module.css";
-import { narrowModel } from "./narrowModel";
 import { useInlineEdit } from "./useInlineEdit";
 
 function MatBadge({ m }: { m?: string }) {
@@ -503,7 +502,7 @@ export function ModelDetail({
   // scope's current project changes.
   useCatalogWithSelector((s) => s.graph);
   useCatalogWithSelector((s) => s.currentProject);
-  const m = narrowModel(node);
+  const m = catalog.getModel(node.id);
   if (!m) return null; // unknown/absent model kind — degrade rather than crash
   const audit = catalog.auditFor(node.id);
   const projectId = catalog.getCurrentProject()?.id ?? "";

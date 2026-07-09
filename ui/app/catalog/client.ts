@@ -46,6 +46,7 @@ import type {
   ChatScript,
   CurrentProject,
   DbtFile,
+  Model,
   OrgSettings,
   ProjectSummary,
 } from "./models";
@@ -256,6 +257,13 @@ export async function createDataCatalog(
     /* ─── lineage reads (delegated to the snapshot's graph) ──────────────── */
     /** A node by id from the visible graph, or undefined if absent/archived. */
     getNode: (id: string) => snapshot.graph.getNode(id),
+    /**
+     * The typed {@link Model} projection of a node by id, or undefined when the
+     * node is absent/archived, carries no model ref, or bears an unrecognised
+     * `kind`. Presentation reads a discriminated `Model` here rather than
+     * narrowing a loose node itself.
+     */
+    getModel: (id: string): Model | undefined => snapshot.graph.getModel(id),
     /** All active nodes. */
     listNodes: () => snapshot.graph.allNodes(),
     /** All active edges. */
