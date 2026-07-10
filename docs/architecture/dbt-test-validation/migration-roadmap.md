@@ -1,8 +1,8 @@
 # Migration Roadmap — Rebalance `dbt-test-validation`
 
 > **Feature**: rebalance-dbt-test-validation
-> **ADR**: [ADR-024 — Rebalance dbt-test-validation](../../../decisions/adr-024-rebalance-dbt-test-validation.md) (Proposed, 2026-05-11)
-> **Status**: Plan (no code changes yet)
+> **ADR**: [ADR-024 — Rebalance dbt-test-validation](../../decisions/adr-024-rebalance-dbt-test-validation.md) (Accepted, 2026-05-11 — partially supersedes ADR-019)
+> **Status**: Shipped — all 6 phases (0–5) merged on `main`. This document is retained as the durable design record of the migration; the shipped-lifecycle narrative lives in [docs/evolution/2026-05-11-dbt-test-validation.md §Migration to dbt-test driver (ADR-024)](../../evolution/2026-05-11-dbt-test-validation.md#migration-to-dbt-test-driver-adr-024), which is the single source of truth for the rebalance outcome.
 > **Spike evidence base**: branch `spike/dbt-test-driver-simplification`, commits `f846d7d` + `b2c0c9f`
 
 ## Summary
@@ -476,7 +476,7 @@ atomic sub-MRs by file family.
 - Acceptance: backend gate green; v2 suite still green; M2.1 lives at its
   new home and passes.
 
-**Sub-MR 4c — Delete eject infrastructure + structural unit tests + protocol-invariant coupling** (EXPANDED 2026-05-11 per [adr-024-phase-4-blocker.md](../../../research/adr-024-phase-4-blocker.md)):
+**Sub-MR 4c — Delete eject infrastructure + structural unit tests + protocol-invariant coupling** (EXPANDED 2026-05-11 per [adr-024-phase-4-blocker.md](../../research/adr-024-phase-4-blocker.md)):
 - Delete: `backend/tests/integration/dataset_layer/eject/` entire package
   (`__init__.py`, `protocols.py`, `parser.py`, `orchestrator.py`,
   `probe.py`, `seeder.py`, `runner.py`) — 1,445 LOC.
@@ -516,7 +516,7 @@ atomic sub-MRs by file family.
 -5,200 to -5,400 deletion, +30-50 addition (M2.1 port) → net ~-5,150 to
 -5,350 deletion. (Pre-expansion estimate was -3,200 to -3,400 deletion;
 the expansion added ~1,886 LOC from six structural unit tests and
-108 LOC from the ingress invariant test — see [adr-024-phase-4-blocker.md](../../../research/adr-024-phase-4-blocker.md).)
+108 LOC from the ingress invariant test — see [adr-024-phase-4-blocker.md](../../research/adr-024-phase-4-blocker.md).)
 
 **Net migration LOC** (after Phases 1-4): -5,000 to -5,300 (revised; the
 spike's "~3,000 LOC net deletion" claim measured only the integration-
@@ -557,7 +557,7 @@ coverage after Phases 1-3 moved everything), then the eject infrastructure
 
 ### Why the original scope was off — note for future reclassifications
 
-The pre-flight grep that produced [adr-024-phase-4-blocker.md](../../../research/adr-024-phase-4-blocker.md)
+The pre-flight grep that produced [adr-024-phase-4-blocker.md](../../research/adr-024-phase-4-blocker.md)
 surfaced ~2,000 LOC the roadmap did not enumerate. Two distinct gaps:
 
 1. **The path drift**: The roadmap referenced `backend/tests/unit/dataset_layer/test_eject_protocol.py` as a possible structural test. The actual unit tests live at `backend/tests/unit/test_*.py` (flat), and there are six of them (not one), totalling ~1,886 LOC. The original survey scoped only the integration-test layer.
@@ -634,8 +634,8 @@ and the evolution doc before Phase 4 is done would make the docs lie.
 | Test infra LOC carrying customer-fidelity acceptance | ~3,850 | ~545 (v2 driver) |
 | Customer-fidelity scenarios | 5 (WS + M1 + M5.1) via BDD-facade | 5 via procedure-driver at `tests/acceptance/dbt-test-validation-v2/` |
 | Pandera per-turn scenarios | 1 (M2.1) via BDD-facade | 1 via integration-test in `validation/` |
-| Chat-protocol invariants | 2 (M4) via BDD-facade | 1 in `protocol_invariants/` (raw-tool-call leak guard); ingress URL invariant retired with orchestrator per [phase-4-blocker.md](../../../research/adr-024-phase-4-blocker.md) — coupling was the invariant |
-| Retry semantics | 3 (M2.2 + M2.3 + M5.2) via BDD-facade | 3 unit tests in `backend/tests/unit/test_retry_semantics.py` (flat path — see [phase-4-blocker.md](../../../research/adr-024-phase-4-blocker.md)) |
+| Chat-protocol invariants | 2 (M4) via BDD-facade | 1 in `protocol_invariants/` (raw-tool-call leak guard); ingress URL invariant retired with orchestrator per [phase-4-blocker.md](../../research/adr-024-phase-4-blocker.md) — coupling was the invariant |
+| Retry semantics | 3 (M2.2 + M2.3 + M5.2) via BDD-facade | 3 unit tests in `backend/tests/unit/test_retry_semantics.py` (flat path — see [phase-4-blocker.md](../../research/adr-024-phase-4-blocker.md)) |
 | Earned-Trust probe scenarios | 5 (M3) via BDD-facade | 0 (substrate lies surface inline at point of use) |
 | Behavioral-enforcement gold-test | 1 file (136 LOC) | 0 (no orchestrator to enforce) |
 | `EjectAndTestOrchestrator` family | 1,445 LOC | 0 |
@@ -643,7 +643,7 @@ and the evolution doc before Phase 4 is done would make the docs lie.
 | Harness `validate_with` hook | preserved (per DR-5) | preserved |
 | Harness `StructuredRetryExhaustion` | preserved (per DR-5) | preserved |
 | Exported `profiles.yml` `s3_use_ssl` support | absent (customer workaround) | native (Phase 0) |
-| Net test infra LOC delta | — | **~-5,000 to -5,300 LOC** (revised post-Phase-4-blocker — see [phase-4-blocker.md](../../../research/adr-024-phase-4-blocker.md)) |
+| Net test infra LOC delta | — | **~-5,000 to -5,300 LOC** (revised post-Phase-4-blocker — see [phase-4-blocker.md](../../research/adr-024-phase-4-blocker.md)) |
 | JOB-001 / O4 strategic level | satisfied | satisfied |
 | AC1.6 wall-clock | ~85-105 s | improved (no probe phase at session start) |
 | ADR-016 compose-stack fidelity | preserved | preserved |

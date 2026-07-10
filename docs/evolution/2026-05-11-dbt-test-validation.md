@@ -211,7 +211,7 @@ The architecture ratified in this evolution doc was rebalanced shortly after fin
 
 **Cross-references**:
 * [ADR-024 — Rebalance dbt-test-validation](../decisions/adr-024-rebalance-dbt-test-validation.md) (Accepted 2026-05-11; all 5 phases merged).
-* [Migration roadmap](../feature/rebalance-dbt-test-validation/design/migration-roadmap.md) — phase order, sub-MR plan, decision records, and outcomes table.
+* [Migration roadmap](../architecture/dbt-test-validation/migration-roadmap.md) — phase order, sub-MR plan, decision records, and outcomes table.
 * [Phase 4 blocker research](../research/adr-024-phase-4-blocker.md) — pre-flight grep that surfaced ~1,886 LOC of structural unit tests plus the ingress-invariant coupling not enumerated in the original roadmap.
 * [Deterministic SQL construction architecture](../research/deterministic-sql-construction-architecture.md) — parallel discovery during this work surveying SQL-emission determinism across staging/view/report tiers; emerged as a follow-up rather than a blocker for the rebalance.
 
