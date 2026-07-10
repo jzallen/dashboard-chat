@@ -1,0 +1,116 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@npm//:defs.bzl", "npm_link_all_packages")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("//tools:version_layer.bzl", "version_layer")
+
+npm_link_all_packages()
+
+# ─── Sources ─────────────────────────────────────────────────────────────────
+#
+# The RRv7 framework-mode tree (root.tsx, routes.ts, the per-route modules under
+# app/routes/ incl. the server-only app/routes/ui-server/* resource routes), the
+# Node SSR entry (server.ts), and the build config the RRv7/Vite plugin needs.
+# Test files are excluded — the image build only needs production sources.
+js_library(
+    name = "sources",
+    srcs = glob(
+        [
+            "app/**/*.ts",
+            "app/**/*.tsx",
+            "app/**/*.css",
+        ],
+        exclude = [
+            "app/**/*.test.ts",
+            "app/**/*.test.tsx",
+        ],
+    ) + [
+        "server.ts",
+        "package.json",
+        "tsconfig.json",
+        "vite.config.ts",
+        "react-router.config.ts",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":node_modules",
+        "//shared/logging:lib",
+        "//shared/ui-state-wire:lib",
+    ],
+)
+
+# ─── SSR OCI Image (web-ssr) ─────────────────────────────────────────────────
+#
+# Hono-free Node SSR runtime. Mirrors agent/BUILD.bazel's pattern: `vite build`
+# (via `react-router build`) emits the RRv7 SSR server bundle + the content-
+# hashed client bundle, then esbuild bundles `server.ts` to a single self-
+# contained ESM `server.mjs` (inlining `./build/server/index.js`). oci_image
+# stacks the bundle + build/client + the stamped version layer on @node_20_slim.
+#
+# Layer layout inside ssr_dist.tar:
+#   /app/ui/server.mjs           — esbuild output (node:http entry)
+#   /app/ui/build/server/...     — RRv7 SSR server output (inlined into server.mjs;
+#                                  kept so any dynamic server chunk still resolves)
+#   /app/ui/build/client/...     — client output; web-ssr serves these statically at
+#                                  /assets/* (ADR-047, the SINGLE source of frontend assets)
+#
+# This is the ONLY `react-router build` in the repo (ADR-047). `rm -rf build`
+# runs first so the output contains EXACTLY one set of content-hashed assets:
+# the `no-sandbox` tag shares the source `ui/build/` dir across runs, so without
+# the clean it would accumulate stale hashed chunks and the tar could carry ghost
+# variants — the /assets/* 404 class (ADR-047).
+genrule(
+    name = "ssr_dist",
+    srcs = [":sources"],
+    outs = ["ssr_dist.tar"],
+    # `--banner:js` polyfills CommonJS `require` inside the ESM bundle so any
+    # transitively-bundled CJS deps can still load Node built-ins at runtime —
+    # same rationale as agent/BUILD.bazel's dist genrule.
+    #
+    # The staging tree ($$TMPDIR/app) is wiped at the top of every run: Bazel
+    # reuses $$TMPDIR across no-sandbox genrule executions, so without the clean
+    # a prior run's content-hashed assets persist alongside the new ones and the
+    # SSR HTML references client hashes the served build/client no longer
+    # contains (the /assets/* 404 class).
+    cmd = """
+        cd ui && \
+        rm -rf build && \
+        NODE_ENV=production npx react-router build && \
+        rm -rf ../$$TMPDIR/app && \
+        mkdir -p ../$$TMPDIR/app/ui/build && \
+        npx esbuild server.ts --bundle --platform=node --format=esm \
+            --banner:js="import{createRequire}from'module';const require=createRequire(import.meta.url);" \
+            --outfile=../$$TMPDIR/app/ui/server.mjs && \
+        cp -r build/server ../$$TMPDIR/app/ui/build/server && \
+        cp -r build/client ../$$TMPDIR/app/ui/build/client && \
+        tar -cf - -C ../$$TMPDIR app > ../$(OUTS)
+    """,
+    tags = ["no-sandbox", "manual"],
+    visibility = ["//visibility:public"],
+)
+
+version_layer(
+    name = "ssr_version_layer",
+    image_tag = "dashboard-chat/web-ssr:bazel",
+)
+
+oci_image(
+    name = "ssr_image",
+    base = "@node_20_slim",
+    tars = [
+        ":ssr_dist",
+        ":ssr_version_layer",
+    ],
+    workdir = "/app",
+    entrypoint = ["node", "ui/server.mjs"],
+    exposed_ports = ["3001"],
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "ssr_image_tar",
+    image = ":ssr_image",
+    repo_tags = ["dashboard-chat/web-ssr:bazel"],
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)

@@ -10,13 +10,16 @@ Dashboard Chat — full-stack web app for chat-driven data table operations. Use
 > canonical frontend source tree (RRv7 framework mode under `ui/app/`). The old
 > `frontend/` tree no longer exists in the working tree — to compare against the old
 > implementation, use git history (it was last present at the commit before its removal).
-> **When planning or doing any frontend work, read `ui/`, never `frontend/`.** Note: some
-> docker/compose/Bazel/`package.json`-workspaces wiring still names `frontend/`; that is
-> known-dangling and intentionally not yet repointed.
+> **When planning or doing any frontend work, read `ui/`, never `frontend/`.** The
+> image/compose/Bazel wiring that `frontend/BUILD.bazel` used to own is now repointed:
+> the `web-ssr` image builds from `ui/` (`//ui:ssr_image_tar`) and the `reverse-proxy`
+> image from `reverse-proxy/` (`//reverse-proxy:image_tar`). Some `package.json`-scripts,
+> eslint, and the CI/`bazel test` frontend-test wiring still name `frontend/`; that
+> lint/test-wiring class is known-dangling and not yet repointed.
 
 Source-tree directories are named for the **body of source they contain**. Docker-compose service names are named for the **runtime role of the container**. The two layers are decoupled (ADR-033). When they differ, the divergence is intentional and the source-tree name is the canonical reference.
 
-- **Frontend** (`ui/`) — React 18 + React Router v7 source tree; RRv7 framework mode lives under `ui/app/` (`root.tsx` + `routes.ts` + `lib/` + `routes/` + `catalog/` + `components/`). The old `frontend/` tree (which produced the `reverse-proxy` nginx + `web-ssr` Hono images via `frontend/BUILD.bazel`, per ADR-033/034) was removed 2026-06-15; its build/compose wiring is not yet repointed to `ui/`.
+- **Frontend** (`ui/`) — React 18 + React Router v7 source tree; RRv7 framework mode lives under `ui/app/` (`root.tsx` + `routes.ts` + `lib/` + `routes/` + `catalog/` + `components/`). The old `frontend/` tree (which produced the `reverse-proxy` nginx + `web-ssr` SSR images via `frontend/BUILD.bazel`, per ADR-033/034) was removed 2026-06-15; the `web-ssr` image now builds from `ui/` (`ui/server.ts` + `ui/BUILD.bazel`, a Hono-free `node:http` SSR runtime) and the `reverse-proxy` nginx image from the sibling `reverse-proxy/` package.
 - **UI-State** (`ui-state/`) — Hono + XState v5 actor system holding flow state across machines (ADR-027/028/030). Architecturally a **backend-for-frontend service** (Hono + Redis), sibling of `agent/` and `auth-proxy/`; named for its consumer surface rather than its layer. Redis key prefix `ui-state:`.
 - **Backend** (`backend/`) — FastAPI + SQLAlchemy (async) + DuckDB + Alembic migrations
 - **Agent** (`agent/`) — Hono (Node.js) chat API with SSE streaming via Groq
