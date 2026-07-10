@@ -3,9 +3,10 @@
 import { useCallback, useState } from "react";
 import { useFetcher, useRevalidator } from "react-router";
 
-import type { LineageNode } from "../../catalog";
+import type { LineageNode, SourceUpload } from "../../catalog";
 import { createLogger } from "../../lib/log";
 import { useStateProxy } from "../../lib/StateProxyProvider";
+import type { SourceUploadsData } from "../../routes/ui-server/upload-request";
 import { useCatalogFromContext } from "../useCatalog";
 
 const log = createLogger("upload");
@@ -57,6 +58,10 @@ export function useUpload(flash: (id: string) => void) {
   // each past-tense Source-creation outcome to ui-state (zero-egress model).
   const { proxy } = useStateProxy();
   const archiveFetcher = useFetcher();
+  // The read leg for the modal's Files list: when the modal opens for an existing
+  // source, `.load()` the same-origin source-uploads loader so the browser never
+  // hits the backend /api directly. `historyFetcher.data` seeds the modal.
+  const historyFetcher = useFetcher<SourceUploadsData>();
   const { revalidate } = useRevalidator();
   const [modal, setModal] = useState<{
     open: boolean;
@@ -71,10 +76,21 @@ export function useUpload(flash: (id: string) => void) {
   // generic "Failed" badge.
   const [mismatch, setMismatch] = useState<SchemaMismatchDetail | null>(null);
 
-  const openUpload = useCallback((source: LineageNode | null) => {
-    setMismatch(null);
-    setModal({ open: true, source });
-  }, []);
+  const openUpload = useCallback(
+    (source: LineageNode | null) => {
+      setMismatch(null);
+      setModal({ open: true, source });
+      // Load the persisted upload history only for an existing source (a brand-new
+      // upload has none). The loader runs server-side; the browser only hits the
+      // same-origin `.data` endpoint, so the no-direct-backend boundary holds.
+      if (source) {
+        historyFetcher.load(
+          `/ui-server/sources/${encodeURIComponent(source.id)}/uploads`,
+        );
+      }
+    },
+    [historyFetcher],
+  );
   const closeUpload = useCallback(() => {
     setMismatch(null);
     setModal({ open: false, source: null });
@@ -141,8 +157,14 @@ export function useUpload(flash: (id: string) => void) {
     [catalog, flash, proxy, existingSource, revalidate],
   );
 
+  // The persisted history for the open source, once its loader has resolved
+  // (undefined while in-flight, or for a brand-new upload). The modal seeds its
+  // Files list from this and appends fresh optimistic rows after.
+  const uploadFiles: SourceUpload[] | undefined = historyFetcher.data?.uploads;
+
   return {
     modal,
+    uploadFiles,
     openUpload,
     closeUpload,
     confirmArchive,

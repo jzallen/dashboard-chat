@@ -19,7 +19,8 @@ function fallback(): CatalogSource {
   const empty = [] as unknown;
   return {
     getProjects: () => Promise.resolve(empty as never),
-    getCurrentProject: () => Promise.resolve({ id: "p1", name: "P1", description: "" }),
+    getCurrentProject: () =>
+      Promise.resolve({ id: "p1", name: "P1", description: "" }),
     getOrg: () => Promise.resolve({} as never),
     getRecents: () => Promise.resolve(empty as never),
     getAllChats: () => Promise.resolve(empty as never),
@@ -70,13 +71,20 @@ function recordingProxy() {
 
 function wrapper(proxy: StateProxy) {
   return ({ children }: { children: ReactNode }) => {
-    // useUpload calls useFetcher which requires a data router context.
+    // useUpload calls useFetcher which requires a data router context. Opening the
+    // modal on an existing source also `.load()`s the source-uploads route, so the
+    // harness registers it (an empty history keeps these saga tests focused on the
+    // write path — the read path is proven in upload-request.router.test.tsx).
     const router = createMemoryRouter([
       {
         path: "/",
         element: (
           <StateProxyProvider proxy={proxy}>{children}</StateProxyProvider>
         ),
+      },
+      {
+        path: "/ui-server/sources/:sourceId/uploads",
+        loader: () => ({ uploads: [] }),
       },
     ]);
     return <RouterProvider router={router} />;
@@ -172,7 +180,11 @@ describe("useUpload — createSource (slice-4 saga)", () => {
           errors: [
             {
               title: "Schema Mismatch",
-              detail: { missing: ["active"], extra: ["email"], type_mismatch: [] },
+              detail: {
+                missing: ["active"],
+                extra: ["email"],
+                type_mismatch: [],
+              },
             },
           ],
         },

@@ -1,13 +1,26 @@
 /* Upload flow: browse → 3-leg dial-up progress → schema + name + upload-another,
    plus the archive-confirm dialog its "move to cold storage" action opens. */
-import { type ChangeEvent, type DragEvent, useRef, useState } from "react";
+import {
+  type ChangeEvent,
+  type DragEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
-import type { FieldDef, LineageNode } from "../../catalog";
+import type { FieldDef, LineageNode, SourceUpload } from "../../catalog";
 import { Icon } from "../primitives";
 import styles from "./Upload.module.css";
 
 type UploadView = "browse" | "uploading" | "schema";
-type UploadFile = { name: string; rows: number; when: string; fresh?: boolean };
+/** A Files-list row. `rows` is `null` for a still-pending upload (no count yet);
+ *  `fresh` marks an optimistic row added in the current session. */
+type UploadFile = {
+  name: string;
+  rows: number | null;
+  when: string;
+  fresh?: boolean;
+};
 type CreateSourcePayload = {
   file: File | null;
   name: string;
@@ -46,6 +59,7 @@ type MismatchDetail = {
 
 export function UploadModal({
   source,
+  files: seededFiles,
   onClose,
   onCreateSource,
   onRename,
@@ -54,6 +68,9 @@ export function UploadModal({
   onRetry,
 }: {
   source: LineageNode | null;
+  /** The source's persisted upload history, seeded from the source-uploads
+   *  loader (oldest-first). Fresh in-session uploads append after these. */
+  files?: SourceUpload[];
   onClose: () => void;
   onCreateSource: (src: CreateSourcePayload) => void | Promise<void>;
   onRename: (id: string, name: string) => void;
@@ -71,10 +88,21 @@ export function UploadModal({
   const [schema, setSchema] = useState<FieldDef[] | null>(
     source ? source.schema || [] : null,
   );
-  // The Files list. Starts empty and grows only from fresh optimistic uploads in
-  // the current session. The persisted Files history for an existing source will
-  // be seeded by a future source-detail loader.
+  // The Files list. Seeded from the source's persisted upload history (the
+  // source-uploads loader, oldest-first) and grown by fresh optimistic uploads,
+  // which append after the seeded rows (persisted-first ordering).
   const [files, setFiles] = useState<UploadFile[]>([]);
+  // The history arrives ASYNCHRONOUSLY (the loader runs after the modal opens), so
+  // seed once it resolves — a single one-shot seed that runs before the user adds
+  // any fresh row, leaving later optimistic appends untouched.
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (seededRef.current || seededFiles === undefined) return;
+    seededRef.current = true;
+    setFiles(
+      seededFiles.map((f) => ({ name: f.name, rows: f.rows, when: f.when })),
+    );
+  }, [seededFiles]);
   const [freshFile, setFreshFile] = useState<string | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [name, setName] = useState(source ? source.label : "");
@@ -375,7 +403,9 @@ export function UploadModal({
                   </span>
                   <span className={styles.frName}>{f.name}</span>
                   <span className={styles.frRows}>
-                    {(f.rows || 0).toLocaleString()} rows
+                    {f.rows === null
+                      ? "processing…"
+                      : `${f.rows.toLocaleString()} rows`}
                   </span>
                   <span className={styles.frWhen}>{f.when}</span>
                 </div>
