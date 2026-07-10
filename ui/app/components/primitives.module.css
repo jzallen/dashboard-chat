@@ -32,3 +32,70 @@
   background: var(--layer-bg);
   color: var(--layer-color);
 }
+
+/* ConfirmDialog — the shared "are you sure?" medallion + title + body + a
+   Cancel/Confirm action row, centered over a scrim. Home of the confirm-dialog
+   look that source-archive, cold-storage restore, and machine-name rename share. */
+@keyframes confirmDialogRise {
+  from {
+    transform: translate(-50%, -46%) scale(0.96);
+  }
+  to {
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+.confirmDialog {
+  position: fixed;
+  z-index: 47;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 400px;
+  max-width: calc(100vw - 32px);
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg);
+  padding: 22px;
+  text-align: center;
+  animation: confirmDialogRise 0.24s cubic-bezier(0.2, 0.85, 0.25, 1);
+}
+.confirmMedallion {
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 14px;
+  border-radius: 14px;
+  border: 2px solid var(--border);
+  background: var(--primary-light);
+  color: var(--primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.confirmTitle {
+  font-family: var(--font-serif);
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--text-900);
+  margin-bottom: 8px;
+  letter-spacing: -0.01em;
+}
+.confirmBody {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-500);
+  margin-bottom: 20px;
+}
+.confirmBody b {
+  color: var(--text-900);
+  font-weight: 600;
+}
+.confirmActions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+.confirmActions .btn {
+  flex: 1;
+  justify-content: center;
+}

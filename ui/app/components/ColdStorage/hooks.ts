@@ -1,12 +1,12 @@
 /* Cold-storage drawer open/close + restore. */
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { useFetcher } from "react-router";
 
+import { useDisclosure } from "../../lib/useDisclosure";
+
 export function useColdStorage() {
-  const [open, setOpen] = useState(false);
+  const { open, show: openCold, hide: closeCold } = useDisclosure();
   const restoreFetcher = useFetcher();
-  const openCold = useCallback(() => setOpen(true), []);
-  const closeCold = useCallback(() => setOpen(false), []);
   const restore = useCallback(
     (id: string) => {
       restoreFetcher.submit(null, {
