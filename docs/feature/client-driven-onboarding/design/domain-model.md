@@ -447,5 +447,5 @@ The client-reported model is *not* event sourcing and must not drift toward it: 
 - Seed (fixed): `docs/feature/client-driven-onboarding/design-intent.md`
 - System pass: `docs/feature/client-driven-onboarding/design/system-architecture.md`; ADR-048
 - ADRs: 016 (sole ingress), 028 (parent-ignorant children), 030 (single replica, flow identity), 039 (one bounded context), 040 (identity-derived addressing), 041 (superseded-in-part — §1.3 map), 042 (store inheritance), 043 (token lifecycle out of ui-state), 044 (ChatApp coordinator), 046 (StateProxy `/state` surface), 048 (auth-proxy WorkOS write workflow)
-- Shipped baseline: `docs/feature/org-onboarding/design/delta-and-decisions.md` (§2 region flow this reworks)
+- Shipped baseline: `docs/evolution/2026-07-09-org-onboarding/design/delta-and-decisions.md` (§2 region flow this reworks)
 - Live code (verified): `ui-state/lib/machines/onboarding/{machine.ts, setup/actors.ts}`, `ui-state/lib/machines/project-context/{machine.ts, setup/actors.ts}`, `ui-state/lib/machines/chat-app/{machine.ts, router.ts, setup/{actions,guards,types}.ts}`, `shared/ui-state-wire/{wire-event.ts, state-document.ts}`

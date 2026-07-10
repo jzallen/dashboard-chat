@@ -80,5 +80,5 @@ No new containers, no replica changes, no new ports, no new persistence. The rev
 - System-scope deliverable: `docs/feature/client-driven-onboarding/design/system-architecture.md` (estimation §0, option matrix §2, env deltas §4, observability §5, probes §7, C4 §8, reuse §9, ratification points §10)
 - ADR-016 (sole ingress), ADR-030 (topology/scaling + observability inheritance), ADR-041 (domain realignment — write model partially superseded), ADR-043 (auth-proxy owns token lifecycle), ADR-044/046 (chat-app + `/state` surface, unchanged)
 - ui-cookie-session D8: `docs/feature/ui-cookie-session/design/delta-and-decisions.md`
-- org-onboarding (shipped surfaces, write path reworked): `docs/feature/org-onboarding/design/delta-and-decisions.md`
+- org-onboarding (shipped surfaces, write path reworked): `docs/evolution/2026-07-09-org-onboarding/design/delta-and-decisions.md`
 - Live code: `auth-proxy/app.ts` (catch-all :785–826, reissue :839–885, WorkOS config :316–324), `auth-proxy/lib/post-response-reissue.ts`, `auth-proxy/lib/user-auth/{dev,workos}.ts`, `backend/app/use_cases/organization/create_organization.py`, `backend/app/config.py:74–81`, `ui-state/config.ts`, `ui-state/index.ts:109–133`, `frontend/nginx.conf`, `docker-compose.yml`, `docker-compose.override.yml`
