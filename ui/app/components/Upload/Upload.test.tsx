@@ -63,7 +63,7 @@ describe("UploadModal — schema-mismatch recovery UX (slice 5)", () => {
   });
 });
 
-describe("UploadModal — seeded persisted upload history (DC-184)", () => {
+describe("UploadModal — seeded persisted upload history", () => {
   const seeded = [
     { name: "jan.csv", rows: 100, when: "Jan 5", status: "ingested" },
     { name: "feb.csv", rows: null, when: "Feb 14", status: "pending" },

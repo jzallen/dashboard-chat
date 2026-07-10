@@ -75,8 +75,6 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("source-uploads loader — a source's persisted upload history via the server /api hop", () => {
-  // AC1 — the read reaches the backend server-side (through /api, forwarding the
-  // inbound credential), unwraps + maps to the Files-list DTOs oldest-first.
   it("fetches GET /sources/:id/uploads scoped to the sourceId, forwards the inbound credential, and returns the mapped uploads oldest-first", async () => {
     const calls = stubFetch((url) => {
       if (url.endsWith("/api/sources/s1/uploads")) {
@@ -122,8 +120,6 @@ describe("source-uploads loader — a source's persisted upload history via the 
     });
   });
 
-  // AC2 — an empty-but-OK history is not a failure: it resolves to an empty list
-  // (the modal keeps its "No files yet" branch).
   it("resolves an empty list when the source has no recorded uploads", async () => {
     stubFetch(() => uploadsEnvelope([]));
 
@@ -132,9 +128,9 @@ describe("source-uploads loader — a source's persisted upload history via the 
     expect(result).toEqual({ uploads: [] });
   });
 
-  // AC3 — a non-401 upstream failure degrades gracefully (empty list, NO throw),
-  // the OPPOSITE of the project loader: the modal must still open and accept a
-  // fresh upload rather than rendering an ErrorBoundary.
+  // Degrading to an empty list is the OPPOSITE of the project loader (which throws
+  // to its ErrorBoundary): the modal must still open and accept a fresh upload when
+  // the history can't be read.
   it("degrades a non-401 read failure to an empty list instead of throwing", async () => {
     stubFetch(() => new Response("boom", { status: 500 }));
 
@@ -143,8 +139,8 @@ describe("source-uploads loader — a source's persisted upload history via the 
     expect(result).toEqual({ uploads: [] });
   });
 
-  // AC3 — a 401 is the unauthenticated signal, turned into a /login redirect
-  // (mirroring the app-shell/project loaders), not a graceful empty.
+  // A 401 is the unauthenticated signal — a redirect to /login (mirroring the
+  // app-shell/project loaders), not a graceful empty.
   it("redirects to /login when the read returns 401", async () => {
     stubFetch(() => new Response("Unauthorized", { status: 401 }));
 

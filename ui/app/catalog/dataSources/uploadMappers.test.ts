@@ -5,7 +5,7 @@
 // fetch, no React: backend snake_case upload resource → the catalog DTO the
 // upload modal's Files list renders. The list order is the mapper's contract
 // (oldest-first, as the backend returns it); the `when` date is derived from
-// `created_at` deterministically (UTC parts, no locale/now).
+// `created_at` with a pinned locale + time zone, so it doesn't drift under test.
 import { describe, expect, it } from "vitest";
 
 import { type BackendUpload, toSourceUploads } from "./uploadMappers";

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 //
-// Walking skeleton (DC-184): opening an existing source's upload modal loads its
-// persisted history through the REAL source-uploads route loader and renders it in
+// Walking skeleton: opening an existing source's upload modal loads its persisted
+// history through the REAL source-uploads route loader and renders it in
 // the modal's Files list. The loader is driven THROUGH the router (a
 // `useFetcher().load()` against `createMemoryRouter`, never called directly), with
 // the REAL toSourceUploads mapper and a REAL UploadModal render — the only faked
