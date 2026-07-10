@@ -6,7 +6,7 @@
    - primitives/LayerBadge.tsx — <LayerDot>, <LayerBadge>
    - primitives/SqlBlock.tsx  — <SqlBlock> SQL highlighter
 */
-export { Icon, TAG_ICON } from "./primitives/Icon";
 export type { IconName } from "./primitives/Icon";
+export { Icon, TAG_ICON } from "./primitives/Icon";
 export { LayerBadge, LayerDot } from "./primitives/LayerBadge";
 export { SqlBlock } from "./primitives/SqlBlock";
