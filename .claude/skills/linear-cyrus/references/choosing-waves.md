@@ -20,7 +20,28 @@ string (`linear-structure.md`).
 | A bug with an unknown cause | `wave › bugfix` | `/nw-bugfix` → `/nw-root-why` | RCA → regression test → fix |
 | Investigating a technology/pattern before deciding | `wave › research` | `/nw-research` | read-only; cited research doc |
 | Docs | `wave › document` | `/nw-document` | read-only; DIVIO/Diátaxis |
-| Closing out a finished project | `wave › finalize` | `/nw-finalize` | write-capable; on the migrated seed under the Finalize milestone; assigned manually (`milestone.md`) |
+| Closing out a finished project | `wave › finalize` | `/nw-finalize` | write-capable; on the migrated seed under the Finalize milestone; assigned manually (`milestone.md`). **Skill body isn't installed locally — load it from GitHub (below).** |
+
+## nw-finalize — load the skill from GitHub
+
+Unlike the other `nw-*` waves, **`nw-finalize` is not registered as a loadable Skill in the
+cyrus sandbox** (it is absent from the Skill registry, and its files under
+`~/.claude/skills/` and the `nwave-ai` package path are permission-denied to `Read`). When a
+session needs the nw-finalize procedure, **fetch the canonical skill and follow it**:
+
+> https://github.com/nWave-ai/nWave/blob/main/nWave/skills/nw-finalize/SKILL.md
+> (raw: `https://raw.githubusercontent.com/nWave-ai/nWave/main/nWave/skills/nw-finalize/SKILL.md`)
+
+Two rules from that skill are load-bearing and easy to get wrong:
+
+- **Phase B copies, it does not move.** Artifacts are *copied* to their permanent homes
+  (`design/*` → `docs/architecture/{feature}/`, `adrs/ADR-*` → `docs/adrs/`, etc.); the
+  originals stay in the workspace.
+- **Phase C preserves the workspace.** `docs/feature/{feature-id}/` is **NOT deleted** — the
+  wave-status matrix (`/nw-continue`) derives feature status from that directory, so removing
+  it makes a finalized feature vanish from tooling. Only session markers
+  (`.nwave/des/deliver-session.json`, `.develop-progress.json`) are cleaned. Every already-
+  finalized feature in this repo keeps its `docs/feature/{slug}/` dir; match that.
 
 ## nw-deliver vs nw-refactor — the key split
 
