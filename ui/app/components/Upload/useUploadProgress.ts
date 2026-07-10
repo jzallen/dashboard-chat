@@ -1,18 +1,20 @@
 /* The upload modal's saga state: the browse → uploading → schema view machine,
-   the simulated three-leg "dial-up" progress animation (leg + pct), and the
-   file/schema bookkeeping that a completed upload produces. Extracted from the
-   modal so the component body stays presentational. */
-import { useRef, useState } from "react";
+   the simulated three-leg "dial-up" progress animation (leg + pct), the Files
+   list (seeded from the source's persisted upload history, grown by optimistic
+   in-session uploads), and the schema bookkeeping a completed upload produces.
+   Extracted from the modal so the component body stays presentational. */
+import { useEffect, useRef, useState } from "react";
 
-import type { FieldDef, LineageNode } from "../../catalog";
+import type { FieldDef, LineageNode, SourceUpload } from "../../catalog";
 import { type InferredSchema, inferSchema } from "./inferSchema";
 
 export type UploadView = "browse" | "uploading" | "schema";
 export type UploadFile = {
   name: string;
-  /** Data-row count from the client-side parse, or `null` when the file could
-   *  not be parsed (unreadable body or an empty CSV). `null` means "unknown" —
-   *  the presentation layer says so rather than showing a made-up count. */
+  /** Data-row count, or `null` when no count is known yet — a still-pending
+   *  backend upload, or a fresh file whose body couldn't be parsed (empty /
+   *  unreadable CSV). `null` means "unknown"; the presentation layer says so
+   *  ("processing…") rather than showing a made-up or zero count. */
   rows: number | null;
   when: string;
   fresh?: boolean;
@@ -89,11 +91,16 @@ export function useUploadProgress({
   existing,
   name,
   setName,
+  seededFiles,
 }: {
   source: LineageNode | null;
   existing: boolean;
   name: string;
   setName: (name: string) => void;
+  /** The source's persisted upload history (source-uploads loader, oldest-first),
+   *  arriving asynchronously after the modal opens. Seeded once; fresh in-session
+   *  uploads append after it. */
+  seededFiles?: SourceUpload[];
 }) {
   const [view, setView] = useState<UploadView>(existing ? "schema" : "browse");
   const [leg, setLeg] = useState(0);
@@ -101,10 +108,21 @@ export function useUploadProgress({
   const [schema, setSchema] = useState<FieldDef[] | null>(
     source ? source.schema || [] : null,
   );
-  // The Files list. Starts empty and grows only from fresh optimistic uploads in
-  // the current session. The persisted Files history for an existing source will
-  // be seeded by a future source-detail loader.
+  // The Files list. Seeded from the source's persisted upload history (the
+  // source-uploads loader, oldest-first) and grown by fresh optimistic uploads,
+  // which append after the seeded rows (persisted-first ordering).
   const [files, setFiles] = useState<UploadFile[]>([]);
+  // The history arrives ASYNCHRONOUSLY (the loader runs after the modal opens), so
+  // seed once it resolves — a single one-shot seed that runs before the user adds
+  // any fresh row, leaving later optimistic appends untouched.
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (seededRef.current || seededFiles === undefined) return;
+    seededRef.current = true;
+    setFiles(
+      seededFiles.map((f) => ({ name: f.name, rows: f.rows, when: f.when })),
+    );
+  }, [seededFiles]);
   const [freshFile, setFreshFile] = useState<string | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const runningRef = useRef(false);

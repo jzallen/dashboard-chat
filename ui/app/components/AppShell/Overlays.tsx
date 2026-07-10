@@ -78,6 +78,7 @@ export function Overlays({
         <UploadModal
           key={upload.modal.source ? upload.modal.source.id : "new-upload"}
           source={upload.modal.source}
+          files={upload.uploadFiles}
           onClose={upload.closeUpload}
           onCreateSource={upload.createSource}
           onRename={upload.renameSource}

@@ -8,7 +8,7 @@
 
 **Companions:** ADR-048 (auth-proxy owns the WorkOS write workflow — inherited: A+B layered failure strategy, zero nginx changes, env deltas, observability events, R5 timeouts), ADR-049 (client-reported outcome event model — inherited: the past-tense outcome vocabulary, INV-PCO, phase-gated vocabulary routing, no in-flight server states, the retryability constraint).
 **Un-parks (completes):** ui-cookie-session D8 (`docs/feature/ui-cookie-session/design/delta-and-decisions.md` §3/§6) — the reissue→`Set-Cookie` conversion, parked 2026-06-08, pinned here.
-**Closes:** org-onboarding upstream issue UI-1 (`docs/feature/org-onboarding/distill/upstream-issues.md`) — the `create_project_submitted` `org_name`-misnomer dies with the event.
+**Closes:** org-onboarding upstream issue UI-1 (`docs/evolution/2026-07-09-org-onboarding/distill/upstream-issues.md`) — the `create_project_submitted` `org_name`-misnomer dies with the event.
 **Honors:** ADR-016 (sole ingress / trusted-header posture — the org-id carry rides it), ADR-044/046 (the `/state` transport and StateProxy are byte-untouched; only the vocabulary inside the published language changes).
 
 ---
@@ -92,6 +92,6 @@ The client enters the app on the response document of its `project_created` (or 
 
 - Application-scope deliverable (options matrices, contracts, file-by-file map, cleanup inventory, C4 component view, reuse gate, AR-1–AR-8): `docs/feature/client-driven-onboarding/design/application-architecture.md`
 - Seed: `docs/feature/client-driven-onboarding/design-intent.md` · ADR-048 (system) · ADR-049 (domain)
-- ui-cookie-session D1–D9: `docs/feature/ui-cookie-session/design/delta-and-decisions.md` · org-onboarding bridge + upstream issues: `docs/feature/org-onboarding/design/delta-and-decisions.md`, `docs/feature/org-onboarding/distill/upstream-issues.md`
+- ui-cookie-session D1–D9: `docs/feature/ui-cookie-session/design/delta-and-decisions.md` · org-onboarding bridge + upstream issues: `docs/evolution/2026-07-09-org-onboarding/design/delta-and-decisions.md`, `docs/evolution/2026-07-09-org-onboarding/distill/upstream-issues.md`
 - ADR-016 (sole ingress), ADR-030 (observability inheritance), ADR-043 (token lifecycle), ADR-044/046 (transport unchanged)
 - Live code (verified 2026-06-10): `auth-proxy/app.ts:66–84,107–136,173–198,280–298,689–770,785–826,839–885`, `auth-proxy/lib/{post-response-reissue.ts, cookies.ts, auth.ts:60–68, user-auth/workos.ts}`, `backend/app/use_cases/organization/{create_organization.py, exceptions.py}`, `backend/app/routers/{organizations.py, deps.py:36–65}`, `backend/app/controllers/{organization_controller.py, _result_mapper.py}`, `backend/app/config.py:74–81`, `ui-state/{config.ts, lib/machines/chat-app/{machine.ts, router.ts:244–253,440–456,560–573, setup/{actions.ts, guards.ts}}, lib/machines/{onboarding,project-context,session-chat}/}`, `shared/ui-state-wire/{wire-event.ts, state-document.ts}`, `ui/app/{routes/{login,onboarding,app-shell}.tsx, lib/{state-proxy.ts, StateProxyProvider.tsx}, auth/bootstrap.ts}`, `docker-compose.override.yml:30–37`, `tests/acceptance/org-onboarding/`

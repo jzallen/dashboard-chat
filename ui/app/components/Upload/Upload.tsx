@@ -1,10 +1,11 @@
 /* Upload flow: browse → 3-leg dial-up progress → schema + name + upload-another,
    plus the archive-confirm dialog its "move to cold storage" action opens. The
-   view/leg/pct saga and CSV schema inference live in sibling units
-   (useUploadProgress, inferSchema); this component stays presentational. */
+   view/leg/pct saga, the seeded/optimistic Files list, and CSV schema inference
+   live in sibling units (useUploadProgress, inferSchema); this component stays
+   presentational. */
 import { type ChangeEvent, type DragEvent, useRef, useState } from "react";
 
-import type { LineageNode } from "../../catalog";
+import type { LineageNode, SourceUpload } from "../../catalog";
 import { ConfirmDialog, Icon } from "../primitives";
 import styles from "./Upload.module.css";
 import { UploadingView } from "./UploadingView";
@@ -24,6 +25,7 @@ type MismatchDetail = {
 
 export function UploadModal({
   source,
+  files: seededFiles,
   onClose,
   onCreateSource,
   onRename,
@@ -32,6 +34,9 @@ export function UploadModal({
   onRetry,
 }: {
   source: LineageNode | null;
+  /** The source's persisted upload history, seeded from the source-uploads
+   *  loader (oldest-first). Fresh in-session uploads append after these. */
+  files?: SourceUpload[];
   onClose: () => void;
   onCreateSource: (src: CreateSourcePayload) => void | Promise<void>;
   onRename: (id: string, name: string) => void;
@@ -58,7 +63,7 @@ export function UploadModal({
     pendingFile,
     runUpload,
     overallPct,
-  } = useUploadProgress({ source, existing, name, setName });
+  } = useUploadProgress({ source, existing, name, setName, seededFiles });
 
   function pick(e: ChangeEvent<HTMLInputElement>) {
     const f = e.target.files && e.target.files[0];
@@ -270,8 +275,8 @@ export function UploadModal({
                   </span>
                   <span className={styles.fileName}>{f.name}</span>
                   <span className={styles.fileRows}>
-                    {f.rows == null
-                      ? "row count unavailable"
+                    {f.rows === null
+                      ? "processing…"
                       : `${f.rows.toLocaleString()} rows`}
                   </span>
                   <span className={styles.fileWhen}>{f.when}</span>

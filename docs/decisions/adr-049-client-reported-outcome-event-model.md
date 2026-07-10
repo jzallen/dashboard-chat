@@ -93,5 +93,5 @@ Client reports are coordination commands, not an event source. The live actor + 
 - Seed (fixed inputs): `docs/feature/client-driven-onboarding/design-intent.md`
 - Domain-scope deliverable: `docs/feature/client-driven-onboarding/design/domain-model.md` (context-map amendment §1, INV-PCO §2, vocabulary §3, statecharts + specs §4–5, crash-class options §6, reuse §7, ratification DR-1–DR-8 §9)
 - ADR-048 (system scope, companion), ADR-041 (amended — §2 map), ADR-042/043/044/046 (honored), ADR-016/028/030/039/040 (inherited)
-- org-onboarding (shipped baseline this reworks): `docs/feature/org-onboarding/design/delta-and-decisions.md`
+- org-onboarding (shipped baseline this reworks): `docs/evolution/2026-07-09-org-onboarding/design/delta-and-decisions.md`
 - Live code: `ui-state/lib/machines/onboarding/{machine.ts, setup/actors.ts}`, `ui-state/lib/machines/project-context/{machine.ts, setup/actors.ts}`, `ui-state/lib/machines/chat-app/{machine.ts:43,72–75,147, setup/actions.ts:153–168, setup/types.ts:51–95, setup/guards.ts:26–50, router.ts:244–253,440–456,484,560–573}`, `shared/ui-state-wire/{wire-event.ts, state-document.ts}`
