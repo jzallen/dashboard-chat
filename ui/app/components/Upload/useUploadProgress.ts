@@ -24,6 +24,37 @@ export const LEG_DEFS = [
   { key: "parse", name: "Parse", ms: 18 },
 ];
 
+/** Infer a schema from a file's CSV text, tolerating a missing/unreadable body
+ *  by returning `null` (the caller then falls back to a placeholder schema). */
+async function parseUploadedCsv(file: File): Promise<InferredSchema | null> {
+  try {
+    if (file && file.text) return inferSchema(await file.text());
+  } catch {
+    /* malformed or unreadable — fall back to the placeholder schema */
+  }
+  return null;
+}
+
+/** Pick the columns to display after an upload: an existing source's schema
+ *  wins, else the freshly inferred columns, else a single placeholder column. */
+function resolveColumns(
+  existingSchema: FieldDef[] | null,
+  parsed: InferredSchema | null,
+): FieldDef[] {
+  if (existingSchema && existingSchema.length) return existingSchema;
+  if (parsed) return parsed.cols;
+  return [{ name: "column_1", type: "text" }];
+}
+
+/** Derive a human display name from a file name: drop the extension and turn
+ *  `_`/`-` separators into spaces. */
+function displayNameFromFile(fname: string): string {
+  return fname
+    .replace(/\.[^.]+$/, "")
+    .replace(/[_-]+/g, " ")
+    .trim();
+}
+
 /**
  * Drives the upload modal's view/leg/pct state machine and the file+schema
  * bookkeeping a completed upload produces.
@@ -61,14 +92,11 @@ export function useUploadProgress({
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const runningRef = useRef(false);
 
-  async function runUpload(file: File) {
-    if (runningRef.current) return;
-    runningRef.current = true;
-    setPendingFile(file);
-    setView("uploading");
-    setLeg(0);
-    setPct(0);
-    setFreshFile(null);
+  /** Play the simulated three-leg dial-up animation, ticking each leg from 0 to
+   *  100% at its own pace. The nested loop is intentional pacing, not a hot path
+   *  — both bounds are fixed (three legs × ~14 ticks) and the wall-clock is all
+   *  in the deliberate {@link uSleep} delays. Leaves `leg` at 3 (all done). */
+  async function playDialUpProgress() {
     for (let L = 0; L < LEG_DEFS.length; L++) {
       setLeg(L);
       for (let p = 0; p <= 100; p += 8) {
@@ -79,34 +107,34 @@ export function useUploadProgress({
       await uSleep(170);
     }
     setLeg(3);
-    let parsed: InferredSchema | null = null;
-    try {
-      if (file && file.text) parsed = inferSchema(await file.text());
-    } catch {
-      /* ignore */
-    }
-    const cols =
-      schema && schema.length
-        ? schema
-        : parsed
-          ? parsed.cols
-          : [{ name: "column_1", type: "text" }];
+  }
+
+  async function runUpload(file: File) {
+    if (runningRef.current) return;
+    runningRef.current = true;
+
+    setPendingFile(file);
+    setView("uploading");
+    setLeg(0);
+    setPct(0);
+    setFreshFile(null);
+
+    await playDialUpProgress();
+
+    const parsed = await parseUploadedCsv(file);
+    const cols = resolveColumns(schema, parsed);
     const rows = parsed ? parsed.rows : Math.floor(180 + Math.random() * 1600);
     const fname = file ? file.name : `upload_${files.length + 1}.csv`;
+
     setSchema(cols);
     setFreshFile(fname);
     setFiles((prev) => [
       ...prev,
       { name: fname, rows, when: "just now", fresh: true },
     ]);
-    if (!existing && !name)
-      setName(
-        fname
-          .replace(/\.[^.]+$/, "")
-          .replace(/[_-]+/g, " ")
-          .trim(),
-      );
+    if (!existing && !name) setName(displayNameFromFile(fname));
     setView("schema");
+
     runningRef.current = false;
   }
 
