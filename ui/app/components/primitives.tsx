@@ -8,7 +8,7 @@
    - primitives/ConfirmDialog.tsx — <ConfirmDialog> shared "are you sure?" dialog
 */
 export { ConfirmDialog } from "./primitives/ConfirmDialog";
-export { Icon, TAG_ICON } from "./primitives/Icon";
 export type { IconName } from "./primitives/Icon";
+export { Icon, TAG_ICON } from "./primitives/Icon";
 export { LayerBadge, LayerDot } from "./primitives/LayerBadge";
 export { SqlBlock } from "./primitives/SqlBlock";
