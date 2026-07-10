@@ -27,29 +27,20 @@ export interface BackendUpload {
   created_at: string;
 }
 
-const MONTHS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-] as const;
-
 /**
- * A short, locale-free upload date ("Jun 15") derived from an ISO-UTC timestamp.
- * Formatted from the UTC month/day so it neither depends on the runner's timezone
- * nor drifts under test, matching the modal's compact `when` column.
+ * A short upload date ("Jun 15") derived from an ISO-UTC timestamp. Pinned to a
+ * fixed `en-US` locale and `UTC` time zone so it neither depends on the runner's
+ * locale/timezone nor drifts under test, matching the modal's compact `when`
+ * column (same formatter style as ColdStorageModal).
  */
+const UPLOAD_DATE_FORMAT = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  timeZone: "UTC",
+});
+
 function formatUploadDate(iso: string): string {
-  const date = new Date(iso);
-  return `${MONTHS[date.getUTCMonth()]} ${date.getUTCDate()}`;
+  return UPLOAD_DATE_FORMAT.format(new Date(iso));
 }
 
 /**
