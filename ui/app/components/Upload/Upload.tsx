@@ -1,41 +1,19 @@
 /* Upload flow: browse → 3-leg dial-up progress → schema + name + upload-another,
-   plus the archive-confirm dialog its "move to cold storage" action opens. */
+   plus the archive-confirm dialog its "move to cold storage" action opens. The
+   view/leg/pct saga and CSV schema inference live in sibling units
+   (useUploadProgress, inferSchema); this component stays presentational. */
 import { type ChangeEvent, type DragEvent, useRef, useState } from "react";
 
-import type { FieldDef, LineageNode } from "../../catalog";
+import type { LineageNode } from "../../catalog";
 import { ConfirmDialog, Icon } from "../primitives";
 import styles from "./Upload.module.css";
+import { UploadingView } from "./UploadingView";
+import { useUploadProgress } from "./useUploadProgress";
 
-type UploadView = "browse" | "uploading" | "schema";
-type UploadFile = { name: string; rows: number; when: string; fresh?: boolean };
 type CreateSourcePayload = {
   file: File | null;
   name: string;
 };
-
-const uSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
-function inferSchema(text: string): { cols: FieldDef[]; rows: number } | null {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim().length);
-  if (!lines.length) return null;
-  const strip = (s: string) => (s || "").trim().replace(/^"|"$/g, "");
-  const headers = lines[0].split(",").map(strip);
-  const sample = lines.slice(1, 8).map((l) => l.split(","));
-  const cols = headers.map((h, i) => {
-    const vals = sample
-      .map((r) => (r[i] !== undefined ? r[i].trim() : ""))
-      .filter((v) => v !== "");
-    const numeric = vals.length > 0 && vals.every((v) => !isNaN(Number(v)));
-    return { name: h || `column_${i + 1}`, type: numeric ? "number" : "text" };
-  });
-  return { cols, rows: lines.length - 1 };
-}
-
-const LEG_DEFS = [
-  { key: "handshake", name: "Handshake", ms: 22 },
-  { key: "transfer", name: "Transfer", ms: 34 },
-  { key: "parse", name: "Parse", ms: 18 },
-];
 
 /** Schema-mismatch detail surfaced for the recovery UX (slice 5). */
 type MismatchDetail = {
@@ -65,72 +43,23 @@ export function UploadModal({
   onRetry?: () => void;
 }) {
   const existing = !!source;
-  const [view, setView] = useState<UploadView>(existing ? "schema" : "browse");
-  const [leg, setLeg] = useState(0);
-  const [pct, setPct] = useState(0);
-  const [schema, setSchema] = useState<FieldDef[] | null>(
-    source ? source.schema || [] : null,
-  );
-  // The Files list. Starts empty and grows only from fresh optimistic uploads in
-  // the current session. The persisted Files history for an existing source will
-  // be seeded by a future source-detail loader.
-  const [files, setFiles] = useState<UploadFile[]>([]);
-  const [freshFile, setFreshFile] = useState<string | null>(null);
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [name, setName] = useState(source ? source.label : "");
   const [drag, setDrag] = useState(false);
   const [committed] = useState(existing);
   const inputRef = useRef<HTMLInputElement>(null);
-  const runningRef = useRef(false);
-
-  async function runUpload(file: File) {
-    if (runningRef.current) return;
-    runningRef.current = true;
-    setPendingFile(file);
-    setView("uploading");
-    setLeg(0);
-    setPct(0);
-    setFreshFile(null);
-    for (let L = 0; L < LEG_DEFS.length; L++) {
-      setLeg(L);
-      for (let p = 0; p <= 100; p += 8) {
-        setPct(p);
-        await uSleep(LEG_DEFS[L].ms);
-      }
-      setPct(100);
-      await uSleep(170);
-    }
-    setLeg(3);
-    let parsed: { cols: FieldDef[]; rows: number } | null = null;
-    try {
-      if (file && file.text) parsed = inferSchema(await file.text());
-    } catch {
-      /* ignore */
-    }
-    const cols =
-      schema && schema.length
-        ? schema
-        : parsed
-          ? parsed.cols
-          : [{ name: "column_1", type: "text" }];
-    const rows = parsed ? parsed.rows : Math.floor(180 + Math.random() * 1600);
-    const fname = file ? file.name : `upload_${files.length + 1}.csv`;
-    setSchema(cols);
-    setFreshFile(fname);
-    setFiles((prev) => [
-      ...prev,
-      { name: fname, rows, when: "just now", fresh: true },
-    ]);
-    if (!existing && !name)
-      setName(
-        fname
-          .replace(/\.[^.]+$/, "")
-          .replace(/[_-]+/g, " ")
-          .trim(),
-      );
-    setView("schema");
-    runningRef.current = false;
-  }
+  const {
+    view,
+    setView,
+    leg,
+    pct,
+    schema,
+    files,
+    freshFile,
+    pendingFile,
+    runUpload,
+    totalRows,
+    overallPct,
+  } = useUploadProgress({ source, existing, name, setName });
 
   function pick(e: ChangeEvent<HTMLInputElement>) {
     const f = e.target.files && e.target.files[0];
@@ -152,9 +81,6 @@ export function UploadModal({
     }
     onClose();
   }
-
-  const totalRows = files.reduce((s, f) => s + (f.rows || 0), 0);
-  const overallPct = Math.round((leg * 100 + (leg < 3 ? pct : 0)) / 3);
 
   return (
     <>
@@ -271,37 +197,7 @@ export function UploadModal({
           )}
 
           {view === "uploading" && (
-            <div className={styles.legs}>
-              <div className={styles.legStatus}>
-                Connecting to query engine — <b>{overallPct}%</b>
-              </div>
-              {LEG_DEFS.map((L, i) => {
-                const state = leg > i ? "done" : leg === i ? "active" : "";
-                const w = leg > i ? 100 : leg === i ? pct : 0;
-                return (
-                  <div
-                    className={`${styles.leg} ${styles[state] ?? ""}`}
-                    key={L.key}
-                  >
-                    <span className={styles.legName}>
-                      <span className={styles.legDot} />
-                      {L.name}
-                    </span>
-                    <span className={styles.legTrack}>
-                      <span
-                        className={styles.legFill}
-                        style={{ width: w + "%" }}
-                      />
-                    </span>
-                    <span className={styles.legPercent}>{w}%</span>
-                  </div>
-                );
-              })}
-              <div className={styles.legsFooter}>
-                <Icon name="database" size={12} />
-                duckdb · local engine
-              </div>
-            </div>
+            <UploadingView leg={leg} pct={pct} overallPct={overallPct} />
           )}
 
           {view === "schema" && (
