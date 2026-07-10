@@ -10,7 +10,10 @@ import { type InferredSchema, inferSchema } from "./inferSchema";
 export type UploadView = "browse" | "uploading" | "schema";
 export type UploadFile = {
   name: string;
-  rows: number;
+  /** Data-row count from the client-side parse, or `null` when the file could
+   *  not be parsed (unreadable body or an empty CSV). `null` means "unknown" —
+   *  the presentation layer says so rather than showing a made-up count. */
+  rows: number | null;
   when: string;
   fresh?: boolean;
 };
@@ -44,6 +47,20 @@ function resolveColumns(
   if (existingSchema && existingSchema.length) return existingSchema;
   if (parsed) return parsed.cols;
   return [{ name: "column_1", type: "text" }];
+}
+
+/**
+ * Summarize the total rows across `files` for the Files-section header. Sums the
+ * known counts and stays honest about unknowns: a partial total (some file's
+ * count is `null`) gets a `+` suffix, and when nothing is known it reports the
+ * count as unavailable rather than claiming `0`.
+ */
+export function summarizeRowCount(files: UploadFile[]): string {
+  const known = files.filter((f) => f.rows != null);
+  const total = known.reduce((sum, f) => sum + (f.rows ?? 0), 0);
+  if (files.length > 0 && known.length === 0) return "row count unavailable";
+  const partial = known.length < files.length ? "+" : "";
+  return `${total.toLocaleString()}${partial} rows`;
 }
 
 /** Derive a human display name from a file name: drop the extension and turn
@@ -123,11 +140,11 @@ export function useUploadProgress({
 
     const parsed = await parseUploadedCsv(file);
     const cols = resolveColumns(schema, parsed);
-    // The row count is the client-side parse count; when the file can't be
-    // parsed (unreadable body or an empty CSV) we show 0 rather than inventing a
-    // plausible-looking number. The authoritative count arrives from the backend
-    // upload-process response in the catalog layer, not this simulated saga.
-    const rows = parsed?.rows ?? 0;
+    // Row count is the client-side parse count, or null when the file can't be
+    // parsed — the Files list then says "unknown" rather than inventing a
+    // number. The authoritative count arrives from the backend upload-process
+    // response in the catalog layer, not this simulated saga.
+    const rows = parsed ? parsed.rows : null;
     const fname = file ? file.name : `upload_${files.length + 1}.csv`;
 
     setSchema(cols);
@@ -142,7 +159,6 @@ export function useUploadProgress({
     runningRef.current = false;
   }
 
-  const totalRows = files.reduce((s, f) => s + (f.rows || 0), 0);
   const overallPct = Math.round((leg * 100 + (leg < 3 ? pct : 0)) / 3);
 
   return {
@@ -155,7 +171,6 @@ export function useUploadProgress({
     freshFile,
     pendingFile,
     runUpload,
-    totalRows,
     overallPct,
   };
 }

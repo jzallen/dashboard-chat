@@ -8,7 +8,7 @@ import type { LineageNode } from "../../catalog";
 import { ConfirmDialog, Icon } from "../primitives";
 import styles from "./Upload.module.css";
 import { UploadingView } from "./UploadingView";
-import { useUploadProgress } from "./useUploadProgress";
+import { summarizeRowCount, useUploadProgress } from "./useUploadProgress";
 
 type CreateSourcePayload = {
   file: File | null;
@@ -57,7 +57,6 @@ export function UploadModal({
     freshFile,
     pendingFile,
     runUpload,
-    totalRows,
     overallPct,
   } = useUploadProgress({ source, existing, name, setName });
 
@@ -253,7 +252,7 @@ export function UploadModal({
                 />
                 <span className={styles.sectionTitle}>Files</span>
                 <span className={styles.sectionCount}>
-                  {files.length} · {totalRows.toLocaleString()} rows
+                  {files.length} · {summarizeRowCount(files)}
                 </span>
               </div>
               {files.length === 0 && (
@@ -271,7 +270,9 @@ export function UploadModal({
                   </span>
                   <span className={styles.fileName}>{f.name}</span>
                   <span className={styles.fileRows}>
-                    {(f.rows || 0).toLocaleString()} rows
+                    {f.rows == null
+                      ? "row count unavailable"
+                      : `${f.rows.toLocaleString()} rows`}
                   </span>
                   <span className={styles.fileWhen}>{f.when}</span>
                 </div>

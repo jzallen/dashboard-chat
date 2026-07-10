@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { LineageNode } from "../../catalog";
 import { UploadModal } from "./Upload";
@@ -54,6 +54,29 @@ describe("UploadModal — schema-mismatch recovery UX (slice 5)", () => {
   it("renders no mismatch banner when there is no mismatch", () => {
     render(<UploadModal {...noopProps} source={existingSource} mismatch={null} />);
     expect(screen.queryByRole("alert")).toBe(null);
+  });
+});
+
+describe("UploadModal — unparseable row count", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("tells the user the row count is unavailable instead of showing 0 or a made-up number", async () => {
+    vi.useFakeTimers();
+    const { container } = render(<UploadModal {...noopProps} source={null} />);
+
+    const input = container.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    const file = new File([""], "empty.csv", { type: "text/csv" });
+
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [file] } });
+      await vi.runAllTimersAsync();
+    });
+
+    expect(screen.getByText("empty.csv")).toBeTruthy();
+    expect(container.textContent).toContain("row count unavailable");
+    expect(container.textContent).not.toContain("0 rows");
   });
 });
 
