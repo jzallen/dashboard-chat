@@ -8,7 +8,7 @@ import type { CatalogSource, PartialCatalogSource } from "../../catalog";
 import type { StateProxy } from "../../lib/state-proxy";
 import { StateProxyProvider } from "../../lib/StateProxyProvider";
 import { catalog, installCatalogForTest, selectProject } from "../useCatalog";
-import { useUpload } from "./hooks";
+import { parseSchemaMismatch, useUpload } from "./hooks";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -82,6 +82,53 @@ function wrapper(proxy: StateProxy) {
     return <RouterProvider router={router} />;
   };
 }
+
+describe("parseSchemaMismatch — 422 JSON:API envelope contract", () => {
+  // These pin the exact backend error shape the recovery UX depends on:
+  //   ApiError.status === 422 and body.errors[0].detail = {missing, extra,
+  //   type_mismatch}. If the backend contract drifts, the recovery affordance
+  //   silently disappears (the modal falls back to a generic failure) — so this
+  //   contract must break loudly here rather than in production.
+  const detail = {
+    missing: ["active"],
+    extra: ["email"],
+    type_mismatch: [{ column: "age", expected: "number", actual: "text" }],
+  };
+  const envelope = (d: unknown) => ({
+    status: 422,
+    body: { errors: [{ title: "Schema Mismatch", detail: d }] },
+  });
+
+  it("extracts the mismatch detail from the canonical 422 envelope", () => {
+    expect(parseSchemaMismatch(envelope(detail))).toEqual(detail);
+  });
+
+  it("returns null for a non-422 status (not a schema mismatch)", () => {
+    expect(parseSchemaMismatch({ ...envelope(detail), status: 500 })).toBeNull();
+  });
+
+  it("returns null when the envelope shape drifts (no errors[].detail)", () => {
+    expect(parseSchemaMismatch({ status: 422, body: {} })).toBeNull();
+    expect(parseSchemaMismatch({ status: 422, body: { errors: [] } })).toBeNull();
+    expect(
+      parseSchemaMismatch({ status: 422, body: { errors: [{ title: "x" }] } }),
+    ).toBeNull();
+  });
+
+  it("defaults absent detail fields to empty arrays", () => {
+    expect(parseSchemaMismatch(envelope({ missing: ["a"] }))).toEqual({
+      missing: ["a"],
+      extra: [],
+      type_mismatch: [],
+    });
+  });
+
+  it("reads the real ApiError the gateway client throws", async () => {
+    const { ApiError } = await import("../../lib/api-error");
+    const err = new ApiError(422, envelope(detail).body, "422 from /process");
+    expect(parseSchemaMismatch(err)).toEqual(detail);
+  });
+});
 
 describe("useUpload — createSource (slice-4 saga)", () => {
   it("drives catalog.createSourceFromUpload, posts ordered events, and flashes the linked dataset", async () => {

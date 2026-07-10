@@ -3,7 +3,7 @@
 import { type ChangeEvent, type DragEvent, useRef, useState } from "react";
 
 import type { FieldDef, LineageNode } from "../../catalog";
-import { Icon } from "../primitives";
+import { ConfirmDialog, Icon } from "../primitives";
 import styles from "./Upload.module.css";
 
 type UploadView = "browse" | "uploading" | "schema";
@@ -190,7 +190,7 @@ export function UploadModal({
         <div className="up-body">
           {mismatch && (
             <div className={styles.mismatch} role="alert">
-              <div className={styles.mismatchHead}>
+              <div className={styles.mismatchHeader}>
                 <Icon name="x" size={14} />
                 <span>This file doesn&apos;t match the source schema</span>
               </div>
@@ -293,11 +293,11 @@ export function UploadModal({
                         style={{ width: w + "%" }}
                       />
                     </span>
-                    <span className={styles.legPct}>{w}%</span>
+                    <span className={styles.legPercent}>{w}%</span>
                   </div>
                 );
               })}
-              <div className={styles.legsFoot}>
+              <div className={styles.legsFooter}>
                 <Icon name="database" size={12} />
                 duckdb · local engine
               </div>
@@ -306,10 +306,10 @@ export function UploadModal({
 
           {view === "schema" && (
             <>
-              <div className={styles.upNameRow}>
-                <div className={styles.upNameLabel}>Display name</div>
+              <div className={styles.nameRow}>
+                <div className={styles.nameLabel}>Display name</div>
                 <input
-                  className={styles.upNameInput}
+                  className={styles.nameInput}
                   value={name}
                   placeholder="Name this source…"
                   onChange={(e) => {
@@ -321,24 +321,24 @@ export function UploadModal({
               </div>
               {/* Schema sits ABOVE Files so adding a file grows the list at the
                   bottom and never pushes the schema down. */}
-              <div className={styles.upSectionH}>
+              <div className={styles.sectionHeader}>
                 <Icon
                   name="table"
                   size={14}
                   style={{ color: "var(--text-500)" }}
                 />
-                <span className={styles.shT}>Schema</span>
-                <span className={styles.shC}>
+                <span className={styles.sectionTitle}>Schema</span>
+                <span className={styles.sectionCount}>
                   {(schema || []).length} columns
                 </span>
               </div>
               <div className={styles.schemaGrid}>
                 {(schema || []).map((c, i) => (
                   <div className={styles.schemaCol} key={i}>
-                    <span className={styles.scIdx}>
+                    <span className={styles.columnIndex}>
                       {String(i + 1).padStart(2, "0")}
                     </span>
-                    <span className={styles.scName}>{c.name}</span>
+                    <span className={styles.columnName}>{c.name}</span>
                     <span
                       className={
                         "badge " + (c.type === "number" ? "number" : "text")
@@ -349,20 +349,20 @@ export function UploadModal({
                   </div>
                 ))}
               </div>
-              <div className={styles.upSectionH}>
+              <div className={styles.sectionHeader}>
                 <Icon
                   name="file"
                   size={14}
                   style={{ color: "var(--text-500)" }}
                 />
-                <span className={styles.shT}>Files</span>
-                <span className={styles.shC}>
+                <span className={styles.sectionTitle}>Files</span>
+                <span className={styles.sectionCount}>
                   {files.length} · {totalRows.toLocaleString()} rows
                 </span>
               </div>
               {files.length === 0 && (
                 <div className={styles.fileRow}>
-                  <span className={styles.frName}>No files yet</span>
+                  <span className={styles.fileName}>No files yet</span>
                 </div>
               )}
               {files.map((f, i) => (
@@ -370,14 +370,14 @@ export function UploadModal({
                   className={`${styles.fileRow}${f.fresh ? " " + styles.fresh : ""}`}
                   key={i}
                 >
-                  <span className={styles.frIc}>
+                  <span className={styles.fileIcon}>
                     <Icon name="file" size={14} />
                   </span>
-                  <span className={styles.frName}>{f.name}</span>
-                  <span className={styles.frRows}>
+                  <span className={styles.fileName}>{f.name}</span>
+                  <span className={styles.fileRows}>
                     {(f.rows || 0).toLocaleString()} rows
                   </span>
-                  <span className={styles.frWhen}>{f.when}</span>
+                  <span className={styles.fileWhen}>{f.when}</span>
                 </div>
               ))}
             </>
@@ -385,7 +385,7 @@ export function UploadModal({
         </div>
 
         {view === "schema" && (
-          <div className={styles.upFoot}>
+          <div className={styles.footer}>
             {source && (
               <button
                 className="btn sq cold-ghost"
@@ -425,29 +425,22 @@ export function ConfirmArchive({
 }) {
   const n = (source.files || []).length;
   return (
-    <>
-      <div className="up-scrim" style={{ zIndex: 46 }} onClick={onCancel} />
-      <div className={styles.confirmDialog} role="dialog">
-        <div className={styles.cdIc}>
-          <Icon name="snow" size={24} />
-        </div>
-        <div className={styles.cdTitle}>Move to cold storage?</div>
-        <div className={styles.cdBody}>
+    <ConfirmDialog
+      icon="snow"
+      title="Move to cold storage?"
+      tone="cold"
+      confirmIcon="snow"
+      confirmLabel="Move to cold storage"
+      onCancel={onCancel}
+      onConfirm={() => onConfirm(source)}
+      body={
+        <>
           <b>{source.label}</b>
           {n ? ` and its ${n} file${n > 1 ? "s" : ""}` : ""} will be moved to
           cold storage and kept for <b>90 days</b> before permanent deletion.
           You can restore it any time before then.
-        </div>
-        <div className={styles.cdActions}>
-          <button className="btn sq" onClick={onCancel}>
-            Cancel
-          </button>
-          <button className="btn sq cold-btn" onClick={() => onConfirm(source)}>
-            <Icon name="snow" size={15} />
-            Move to cold storage
-          </button>
-        </div>
-      </div>
-    </>
+        </>
+      }
+    />
   );
 }
