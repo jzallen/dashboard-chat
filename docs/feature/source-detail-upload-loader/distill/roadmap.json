@@ -129,6 +129,6 @@
     "cd ui && npx tsc --noEmit",
     "cd ui && npx vitest run",
     "./tools/test/test.sh --auto",
-    "commit per step; PR into catalog-behind-bff/release-6"
+    "commit per step; PR into main (the branch is cut from main, which already carries the merged catalog-behind-bff work — DC-155 #53, etc.; the catalog-behind-bff/release-6 branch is stale, diverged at DC-15 #41, and must NOT be used as the base)"
   ]
 }
