@@ -20,7 +20,7 @@
 //   → catalog.putToStorage(putUrl, file)    (direct browser → MinIO)
 //   → report source_upload_started {upload_id}
 //   → catalog.processUpload(sourceId, uploadId) → report source_upload_processed
-//   → catalog.revalidateScope()             (the real source + staging + edge appear)
+//   → catalog.revalidate()                  (framework re-runs the loader; the real source + staging + edge appear)
 // On ANY failure: remove the optimistic node + report source_upload_failed
 // {reason}, then re-throw so the surface can surface it.
 
@@ -50,8 +50,9 @@ export interface SourceUploadCatalog {
     uploadId: string,
     choices?: Record<string, unknown>,
   ): Promise<{ datasetId: string }>;
-  /** Drop the per-project cache + re-fetch so the real source/staging/edge land. */
-  revalidateScope(): Promise<void>;
+  /** Trigger a framework revalidation so the loader re-derives from server truth
+   *  and the real source/staging/edge land. */
+  revalidate(): Promise<void>;
 }
 
 /** The report sink — the StateProxy.postEvent signature. */
@@ -114,7 +115,7 @@ export function createSourceUploadDriver(
   // ui-state so the canvas can advance the optimistic node, but a broken report
   // path (StateProxy.postEvent rejecting) must NEVER abort the real create→
   // upload→process work or trip the failure rollback. A failed narration is
-  // logged and swallowed; revalidateScope() still heals the node into the real
+  // logged and swallowed; revalidate() still heals the node into the real
   // source. Only genuine catalog failures roll the optimistic node back.
   const safeReport = async (event: ChatAppWireEvent): Promise<void> => {
     try {
@@ -159,7 +160,7 @@ export function createSourceUploadDriver(
 
       const datasetId = await runUpload(sourceId, file);
 
-      await catalog.revalidateScope();
+      await catalog.revalidate();
       log.info("source-upload.linked", { sourceId, datasetId });
       return { datasetId, tempNodeId };
     } catch (error) {
@@ -197,7 +198,7 @@ export function createSourceUploadDriver(
   }: AddUploadToSourceCommand): Promise<{ datasetId: string }> => {
     try {
       const datasetId = await runUpload(sourceId, file);
-      await catalog.revalidateScope();
+      await catalog.revalidate();
       log.info("source-upload.appended", { sourceId, datasetId });
       return { datasetId };
     } catch (error) {

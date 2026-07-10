@@ -1,46 +1,69 @@
 /* Navigation intents — the URL-emitting layer. nodeToPath maps a lineage node
-   to its project-scoped resource URL (the kind lives on node.ref.kind);
+   to its project-scoped resource URL (the kind derives from the node's layer);
    useNavIntents wraps useNavigate/useParams so leaf views call openNode /
-   selectProject / toggleOrg / openRecent / go, resolved against the
+   selectProject / toggleOrg / openRecent / navigateTo, resolved against the
    project-in-path URL. Chat-open intents reach the useChat() context, never
    navigation. */
 import { useCallback } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 
 import type { LineageNode, ProjectSummary } from "../catalog";
-import { catalog } from "../components/useCatalog";
+import { modelKindForLayer } from "../catalog";
+import { useCatalogFromContext } from "../components/useCatalog";
 import { useChat } from "./chatContext";
-
-/** The node kind discriminant, read off the loose ModelRef bag. */
-function kindOf(node: LineageNode): string | undefined {
-  return node.ref?.kind as string | undefined;
-}
-
-/** The resource path segment for a node's kind (bare singular). */
-const KIND_PREFIX: Record<string, string> = {
-  dataset: "dataset",
-  view: "view",
-  report: "report",
-};
 
 /**
  * The deep-linkable URL for a lineage node, scoped to its project:
- * `/project/:projectId/{dataset|view|report}/:id`. projectId is REQUIRED —
+ * `/project/:projectId/{dataset|view|report}/:id`. The kind segment derives
+ * from the node's layer (the domain 1:1 map), not the loose ModelRef bag, so a
+ * missing/wrong `ref.kind` can't silently mis-route. projectId is REQUIRED —
  * project is part of a resource's identity at the API, so it lives in the path.
+ *
+ * Only ever called for non-source nodes (the chrome routes source-layer nodes
+ * to their upload window, never here). A source layer yields no model kind, so
+ * that is a programmer error and throws rather than mis-routing.
  */
 export function nodeToPath(node: LineageNode, projectId: string): string {
-  const prefix = KIND_PREFIX[kindOf(node) ?? ""] ?? "dataset";
-  return `/project/${projectId}/${prefix}/${node.id}`;
+  const kind = modelKindForLayer(node.layer);
+  if (kind === undefined) {
+    throw new Error(
+      `nodeToPath: node ${node.id} is layer "${node.layer}" with no model kind`,
+    );
+  }
+  return `/project/${projectId}/${kind}/${node.id}`;
 }
 
-/** A nav request handed back from leaf views (Chat / ChatSessionList). */
-export type NavIntent = { name: string; nodeId?: string | null };
+/**
+ * A nav request handed back from leaf views (Chat / ChatSessionList). A closed
+ * union of the four real intents so the {@link useNavIntents} `navigateTo`
+ * dispatch is exhaustive and call sites can only name an intent that exists:
+ *   - `openRecent` re-opens a recent session, optionally on its backing node;
+ *   - `assistant` opens the transient chat dock;
+ *   - `chats` routes to the project session list;
+ *   - `chat` routes back to the project home.
+ */
+export type NavIntent =
+  | { name: "openRecent"; nodeId?: string | null }
+  | { name: "assistant" }
+  | { name: "chats" }
+  | { name: "chat" };
+
+/** Resolves a node id to its lineage node (or undefined). The default reaches
+ *  the catalog from context; injectable so the recent→node lookup is an explicit
+ *  dependency rather than a hidden module import. */
+export type NodeResolver = (nodeId: string) => LineageNode | undefined;
 
 /**
  * The intent surface leaf views and the shell call. Navigation intents resolve
  * to URL changes (useNavigate); chat-open intents reach the useChat() setter.
+ *
+ * `resolveNode` is the seam for the openRecent lookup — it defaults to the
+ * context catalog's `getNode` so production call sites need no argument, but
+ * making it a parameter keeps that store dependency explicit and swappable.
  */
-export function useNavIntents() {
+export function useNavIntents(resolveNode?: NodeResolver) {
+  const catalog = useCatalogFromContext();
+  const resolve = resolveNode ?? catalog.getNode;
   const navigate = useNavigate();
   const location = useLocation();
   const { projectId } = useParams();
@@ -76,7 +99,7 @@ export function useNavIntents() {
 
   const openRecent = useCallback(
     (nodeId: string | null) => {
-      const node = nodeId ? catalog.getNode(nodeId) : undefined;
+      const node = nodeId ? resolve(nodeId) : undefined;
       if (node && node.ref && projectId) {
         navigate(nodeToPath(node, projectId));
         openChat();
@@ -85,32 +108,34 @@ export function useNavIntents() {
       navigate(projectId ? "/project/" + projectId : "/");
       openChat();
     },
-    [navigate, openChat, projectId],
+    [navigate, openChat, projectId, resolve],
   );
 
-  /** Compatibility shim for the existing Chat / ChatSessionList call sites. */
-  const go = useCallback(
+  /** Dispatches a {@link NavIntent} from the Chat / ChatSessionList call sites
+   *  to its concrete effect — a URL change or a chat-open. */
+  const navigateTo = useCallback(
     (intent: NavIntent) => {
-      if (intent.name === "openRecent") {
-        openRecent(intent.nodeId ?? null);
-        return;
+      switch (intent.name) {
+        case "openRecent":
+          openRecent(intent.nodeId ?? null);
+          return;
+        case "assistant":
+          openChat();
+          return;
+        case "chats":
+          navigate(projectId ? "/project/" + projectId + "/chats" : "/");
+          return;
+        case "chat":
+          navigate(projectId ? "/project/" + projectId : "/");
+          return;
+        default: {
+          const _exhaustive: never = intent;
+          return _exhaustive;
+        }
       }
-      if (intent.name === "assistant") {
-        openChat();
-        return;
-      }
-      if (intent.name === "chats") {
-        navigate(projectId ? "/project/" + projectId + "/chats" : "/");
-        return;
-      }
-      if (intent.name === "chat") {
-        navigate(projectId ? "/project/" + projectId : "/");
-        return;
-      }
-      navigate(projectId ? "/project/" + projectId : "/");
     },
     [navigate, openChat, openRecent, projectId],
   );
 
-  return { openNode, selectProject, toggleOrg, openRecent, go };
+  return { openNode, selectProject, toggleOrg, openRecent, navigateTo };
 }

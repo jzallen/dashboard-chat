@@ -5,10 +5,70 @@
  * on) and {@link agentFetch} (the `/worker` hop): the route-action plumbing lives
  * here once rather than copied across each resource route. {@link brokerPatch}
  * (PATCH) serves the catalog renames; {@link brokerPost} (POST) serves the
- * upload / source-creation saga writes; {@link brokerGet} (GET) serves the
+ * upload / source-creation saga writes; {@link brokerUpload} (multipart POST)
+ * serves the one-step dataset upload; {@link brokerGet} (GET) serves the
  * onboarding driver's read legs (org probe, project list / scope resolution).
  */
 import { apiFetch } from "./api-client";
+import { unwrapEnvelope } from "./jsonapi";
+
+/** Options for the internal request helper — the body is BodyInit when present. */
+interface BrokerRequestOptions {
+  method: string;
+  body?: BodyInit;
+  headers?: Record<string, string>;
+  /** When set, a 2xx JSON body is flattened from its JSON:API envelope to the
+   *  SPA-facing flat shape before it leaves the broker (see {@link brokerGet}). */
+  flattenEnvelope?: boolean;
+}
+
+/**
+ * Core forwarding primitive — calls {@link apiFetch} with the given HTTP method
+ * and optional body, then re-shapes the upstream `Response` into the standard
+ * broker envelope: content-type forwarded from upstream (defaulting to
+ * `application/json`) and a body-less 2xx defaulted to `"{}"` so every caller
+ * can safely parse the response as JSON. Non-2xx status codes are forwarded
+ * byte-intact; the broker never turns them into redirects.
+ *
+ * When `opts.flattenEnvelope` is set, a 2xx JSON body additionally has its
+ * JSON:API envelope unwrapped ({@link unwrapEnvelope}) so the response leaves the
+ * broker already flat. This applies to 2xx only: a non-2xx body stays byte-intact
+ * (callers reconstruct `ApiError(status, body)` from the raw error shape), and a
+ * body that does not parse as JSON is left untouched.
+ *
+ * The four exported brokers ({@link brokerGet}, {@link brokerPatch},
+ * {@link brokerPost}, {@link brokerUpload}) are thin wrappers over this helper,
+ * each carrying per-method call-site documentation.
+ */
+async function brokerRequest(
+  request: Request,
+  backendPath: string,
+  opts: BrokerRequestOptions,
+): Promise<Response> {
+  const upstream = await apiFetch(request, backendPath, {
+    method: opts.method,
+    ...(opts.body !== undefined ? { body: opts.body } : {}),
+    ...(opts.headers !== undefined ? { headers: opts.headers } : {}),
+  });
+
+  const headers = new Headers();
+  headers.set(
+    "content-type",
+    upstream.headers.get("content-type") ?? "application/json",
+  );
+  let body = await upstream.text();
+  if (opts.flattenEnvelope && upstream.ok && body !== "") {
+    try {
+      body = JSON.stringify(unwrapEnvelope(JSON.parse(body)));
+    } catch {
+      // A non-JSON 2xx body is not an envelope; forward it byte-intact.
+    }
+  }
+  return new Response(body === "" ? "{}" : body, {
+    status: upstream.status,
+    headers,
+  });
+}
 
 /**
  * Forward a `/ui-server/*` GET resource-route loader to the backend `/api`
@@ -21,30 +81,24 @@ import { apiFetch } from "./api-client";
  * {@link apiFetch}, which re-verifies the session and injects the identity
  * headers downstream.
  *
- * The upstream status + body pass straight through with the body BYTE-INTACT — a
- * non-2xx (e.g. a 404 `org_not_found`, or a 401) is NOT turned into a `/login`
- * redirect: these are fetch targets, not navigations, and the onboarding driver
- * relies on the status + body to reconstruct `ApiError(status, body)` and map a
- * DEFINITIVE answer to a closed-union outcome cause. Only the empty body of a
- * body-less 2xx is defaulted to `{}` so a caller reading JSON still parses.
+ * This read leg OWNS the JSON:API envelope→flat transform for the `/ui-server`
+ * boundary: a 2xx body is unwrapped ({@link unwrapEnvelope}) here, so the response
+ * reaches the browser already flat (`{ id, ...attributes }`) and the browser
+ * transport ({@link gatewayGet}) passes it through without unwrapping. A non-2xx
+ * (e.g. a 404 `org_not_found`, or a 401) is forwarded BYTE-INTACT and NOT turned
+ * into a `/login` redirect: these are fetch targets, not navigations, and the
+ * onboarding driver relies on the raw status + body to reconstruct
+ * `ApiError(status, body)` and map a DEFINITIVE answer to a closed-union outcome
+ * cause. Only the empty body of a body-less 2xx is defaulted to `{}` so a caller
+ * reading JSON still parses.
  */
 export async function brokerGet(
   request: Request,
   backendPath: string,
 ): Promise<Response> {
-  const upstream = await apiFetch(request, backendPath, { method: "GET" });
-
-  const headers = new Headers();
-  headers.set(
-    "content-type",
-    upstream.headers.get("content-type") ?? "application/json",
-  );
-  // Default a body-less 2xx to an empty JSON object so a caller reading the
-  // response as JSON still parses (mirrors brokerPost / brokerPatch).
-  const body = await upstream.text();
-  return new Response(body === "" ? "{}" : body, {
-    status: upstream.status,
-    headers,
+  return brokerRequest(request, backendPath, {
+    method: "GET",
+    flattenEnvelope: true,
   });
 }
 
@@ -71,23 +125,10 @@ export async function brokerPatch(
   backendPath: string,
 ): Promise<Response> {
   const contentType = request.headers.get("content-type") ?? "application/json";
-  const upstream = await apiFetch(request, backendPath, {
+  return brokerRequest(request, backendPath, {
     method: "PATCH",
     body: await request.text(),
     headers: { "content-type": contentType },
-  });
-
-  const headers = new Headers();
-  headers.set(
-    "content-type",
-    upstream.headers.get("content-type") ?? "application/json",
-  );
-  // Default a body-less 2xx to an empty JSON object so a fetcher reading the
-  // response as JSON still parses (mirrors the archive/restore brokers).
-  const body = await upstream.text();
-  return new Response(body === "" ? "{}" : body, {
-    status: upstream.status,
-    headers,
   });
 }
 
@@ -116,20 +157,35 @@ export async function brokerPost(
   backendPath: string,
 ): Promise<Response> {
   const contentType = request.headers.get("content-type") ?? "application/json";
-  const upstream = await apiFetch(request, backendPath, {
+  return brokerRequest(request, backendPath, {
     method: "POST",
     body: await request.text(),
     headers: { "content-type": contentType },
   });
+}
 
-  const headers = new Headers();
-  headers.set(
-    "content-type",
-    upstream.headers.get("content-type") ?? "application/json",
-  );
-  const body = await upstream.text();
-  return new Response(body === "" ? "{}" : body, {
-    status: upstream.status,
-    headers,
+/**
+ * Forward a `/ui-server/*` MULTIPART POST action to the backend `/api` endpoint at
+ * `backendPath` — the broker for the one-step dataset upload (`createDataset` →
+ * `POST /api/uploads`). Sibling of {@link brokerPost}; it differs only in that the
+ * inbound body is a binary `multipart/form-data` payload, so the raw bytes are
+ * forwarded via `arrayBuffer()` (not `text()`, which would corrupt the file) with
+ * the inbound `content-type` (carrying the multipart boundary) preserved.
+ *
+ * The browser POSTs the FormData same-origin (riding its session cookie); this
+ * forwards it to the backend through auth-proxy via {@link apiFetch}. The upstream
+ * status + JSON:API body pass straight through — a non-2xx is NOT turned into a
+ * `/login` redirect (this is a fetch target, so the caller surfaces the failure).
+ */
+export async function brokerUpload(
+  request: Request,
+  backendPath: string,
+): Promise<Response> {
+  const contentType =
+    request.headers.get("content-type") ?? "application/octet-stream";
+  return brokerRequest(request, backendPath, {
+    method: "POST",
+    body: await request.arrayBuffer(),
+    headers: { "content-type": contentType },
   });
 }

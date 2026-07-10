@@ -15,10 +15,10 @@ session.
   comment (below) rides in the thread as additional marching orders, so keep the story's
   `## Delivery` section consistent with it.
 - **Each delegate/@mention mints a NEW session**, and the mode comes from the issue's
-  **current labels** at that moment. So on a story: the first delegation (`wave:distill`)
-  runs the orchestrator; after you **relabel the story `wave:deliver`**, an @mention
+  **current labels** at that moment. So on a story: the first delegation (`wave › distill`)
+  runs the orchestrator; after you **relabel the story `wave › deliver`**, an @mention
   **comment** mints a fresh **builder** session that delivers the whole story. Relabel
-  BEFORE commenting — a comment on a still-`wave:distill` story runs read-only and can't
+  BEFORE commenting — a comment on a still-`wave › distill` story runs read-only and can't
   implement (see `story.md`).
 
 ## Prerequisites (devpod ops)
@@ -51,11 +51,11 @@ live at webhook time.)
 ## Quick checklist
 
 **Distill a story:** (1) story is in a Feature project + on a Release that has a
-`<slug>/<release>` branch; (2) labels `wave:distill` + `area:*`; (3) daemon + pump **up**
+`<slug>/<release>` branch; (2) labels `wave › distill` + `area` child; (3) daemon + pump **up**
 (`make status`); (4) assign / @mention `@dashboard-chat`.
 
 **Deliver a story:** (1) the breakdown (Skeleton + impl tasks) exists and looks right;
 (2) the story description has a `## Delivery` section (target the Release branch);
-(3) **relabel the story `wave:distill` → `wave:deliver`**; (4) **@mention `@dashboard-chat`
+(3) **relabel the story `wave › distill` → `wave › deliver`**; (4) **@mention `@dashboard-chat`
 in a story comment** with the deliver instruction (iterate sub-tasks, skeleton first, mark
 Done, one PR into `<slug>/<release>`).

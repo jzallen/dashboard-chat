@@ -6,7 +6,7 @@
 // the adapter is implemented (DC-130/131/133).
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError } from "../catalog/dataSources/backendClient";
+import { ApiError } from "./api-error";
 import { onboardingClient } from "./onboarding-client";
 
 /** A 2xx Response whose JSON body is a JSON:API envelope. */
@@ -59,17 +59,31 @@ describe("onboardingClient — /api → /ui-server URL flip", () => {
   });
 });
 
+describe("onboardingClient — non-/api path is a contract violation", () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => okJson({ data: null })),
+    );
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("throws naming the offending path when the driver hands a non-/api path", () => {
+    expect(() => onboardingClient.get("/ui-server/orgs/me")).toThrow(
+      /\/ui-server\/orgs\/me/,
+    );
+  });
+});
+
 describe("onboardingClient — OnboardingClient contract preserved", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("unwraps the JSON:API envelope on a 2xx GET → flat { id, name }", async () => {
+  it("returns the broker-flattened body on a 2xx GET → flat { id, name }", async () => {
+    // The `/ui-server` read broker owns the envelope→flat transform, so the GET
+    // response is already flat; the adapter passes it straight through.
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
-        okJson({
-          data: { type: "orgs", id: "org-7", attributes: { name: "Acme" } },
-        }),
-      ),
+      vi.fn(async () => okJson({ id: "org-7", name: "Acme" })),
     );
     const body = await onboardingClient.get("/api/orgs/me");
     expect(body).toEqual({ id: "org-7", name: "Acme" });

@@ -7,21 +7,30 @@
 import { type ReactNode } from "react";
 import { useLocation } from "react-router";
 
-import { keepAlive as defaultKeepAlive, logout as defaultLogout } from "../auth/session";
+import {
+  keepAlive as defaultKeepAlive,
+  logout as defaultLogout,
+} from "../auth/session";
 import { hasSession } from "../auth/tokenStorage";
-import { useInactivity } from "../auth/useInactivity";
+import { type InactivityTiming, useInactivity } from "../auth/useInactivity";
 import { ActivityCheckModal } from "../components/ActivityCheckModal/ActivityCheckModal";
 
 export function SessionLifecycleProvider({
   children,
   keepAlive = defaultKeepAlive,
   logout = defaultLogout,
+  timing,
+  modalTimeoutMs,
 }: {
   children: ReactNode;
   /** Test seam: the keep-alive beat (ui-state touch + token refresh). */
   keepAlive?: () => void | Promise<void>;
   /** Test seam: the logout action (WorkOS end-session + cookie/ui-state clear). */
   logout?: () => void | Promise<void>;
+  /** Override the idle debounce/threshold/poll timings (defaults in the hook). */
+  timing?: Partial<InactivityTiming>;
+  /** Override the modal's auto-logout grace window (default in the modal). */
+  modalTimeoutMs?: number;
 }) {
   // Re-render on navigation so hasSession() reflects a just-completed login.
   useLocation();
@@ -31,6 +40,7 @@ export function SessionLifecycleProvider({
     isAuthenticated: authenticated,
     onLogout: () => void logout(),
     onKeepAlive: () => void keepAlive(),
+    timing,
   });
 
   return (
@@ -40,6 +50,7 @@ export function SessionLifecycleProvider({
         isOpen={showModal}
         onContinue={handleContinue}
         onLogout={handleLogout}
+        timeoutMs={modalTimeoutMs}
       />
     </>
   );

@@ -8,7 +8,7 @@
  * Pure: types only, no concrete data dependency. The fixture cast lives in the
  * adapter that implements this interface, not here.
  */
-import type { AuditEntry, Edge, LineageNode, ModelKind } from "../lineage";
+import type { AuditEntry, Edge, LineageNode } from "../lineage";
 import type {
   ChatHistoryItem,
   ChatScript,
@@ -45,39 +45,6 @@ export interface CatalogSource {
   getChatScript(): Promise<ChatScript>;
   getDbtFiles(): Promise<DbtFile[]>;
   /**
-   * The catalog's first WRITE port (optional — only backend sources implement
-   * it). Enable/disable the transform a transform-type audit entry produced.
-   * Resolves on success; REJECTS on failure so the optimistic write-through
-   * rolls the catalog's optimistic flip back. A source that does not back writes
-   * (the fixture fallback) simply omits it.
-   */
-  toggleAuditEntry?(auditEntryId: string, enabled: boolean): Promise<void>;
-  /**
-   * Rename a model-bearing node (dataset/view/report) by id. The `kind` selects
-   * the backing endpoint; the active project scope is the source's own concern.
-   * Resolves on success; REJECTS on failure so the optimistic rename rolls back.
-   * Source-layer nodes have no backend entity and are never passed here.
-   */
-  renameModel?(id: string, kind: ModelKind, name: string): Promise<void>;
-  /**
-   * Set a dataset's dbt machine name (`model_name`) — the warehouse staging-view
-   * identifier. SEPARATE from {@link renameModel} (which edits `display_name`):
-   * the two are DECOUPLED, so editing the machine name never touches the display
-   * label. The backend forgiving-normalizes the input to `stg_<snake>`, enforces
-   * project-scoped uniqueness (409 on collision), and repoints the live view.
-   * Resolves on success; REJECTS on failure (the UI gates this behind a blocking
-   * confirm and does not flip optimistically).
-   */
-  setModelName?(id: string, modelName: string): Promise<void>;
-  /**
-   * Archive a model-bearing node (soft-delete). Only datasets support archival
-   * (a restorable Cold Storage); the impl no-ops for kinds the backend can't
-   * soft-delete. Rejects on failure so the optimistic archive rolls back.
-   */
-  archiveModel?(id: string, kind: ModelKind): Promise<void>;
-  /** Restore a previously archived model. Mirrors {@link archiveModel}. */
-  restoreModel?(id: string, kind: ModelKind): Promise<void>;
-  /**
    * Create a dataset by uploading a file (multipart, one step). The active
    * project scope is the source's own concern. Resolves with the new dataset's
    * id; rejects on failure.
@@ -89,12 +56,6 @@ export interface CatalogSource {
    * unwrapped backend source list; rejects on a fetch/auth error.
    */
   getSources?(): Promise<BackendSource[]>;
-  /**
-   * List the files uploaded to a Source (backs the upload modal's Files list).
-   * Resolves the mapped {@link SourceUpload}[] (both ingested and pending);
-   * rejects on a fetch/auth error.
-   */
-  getSourceUploads?(sourceId: string): Promise<SourceUpload[]>;
   /**
    * Create a Source (the logical table behind one or more uploaded files). The
    * active project scope is the source's own concern. Resolves with the new

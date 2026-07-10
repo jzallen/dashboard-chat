@@ -1,26 +1,38 @@
-/* Audit-log view: per-layer audit trails of the AI's transforms, one card per model. */
-import { type Layer, LAYER_ORDER, type LineageNode } from "../../catalog";
+/* Audit-log view: per-layer audit trails of the AI's transforms, one card per model.
+
+   A thin container (AuditLogView/LayerAuditTrail) reads the catalog and derives
+   each card's trail; ModelTrailCard is pure presentation over plain props and
+   reads the open-node callback from context. */
+import {
+  type AuditEntry,
+  type DataCatalog,
+  type Layer,
+  LAYER_ORDER,
+  type LineageNode,
+  SOURCE_LAYER,
+} from "../../catalog";
 import { LAYER_META } from "../layerMeta";
 import { Icon, LayerDot, TAG_ICON } from "../primitives";
-import { catalog } from "../useCatalog";
 import styles from "./lineageCanvas.module.css";
+import { useOpenNode } from "./openNodeContext";
 import { AiEditChip } from "./shared";
+import { auditTrailViewModel } from "./viewModel";
 
 /** The audit log skips the source layer — sources have no transforms. */
-const AUDITED_LAYERS = LAYER_ORDER.slice(1);
+const AUDITED_LAYERS = LAYER_ORDER.filter((layer) => layer !== SOURCE_LAYER);
 
 function ModelTrailCard({
   n,
   selected,
   justAdded,
-  onOpen,
+  audit,
 }: {
   n: LineageNode;
   selected: boolean;
   justAdded: boolean;
-  onOpen: (node: LineageNode) => void;
+  audit: AuditEntry[];
 }) {
-  const audit = catalog.auditFor(n.id);
+  const onOpen = useOpenNode();
   return (
     <div
       className={`${styles.streamCard} layer-${n.layer}`}
@@ -68,15 +80,15 @@ function ModelTrailCard({
 }
 
 function LayerAuditTrail({
+  catalog,
   layer,
   isSelected,
   wasJustAdded,
-  onOpen,
 }: {
+  catalog: DataCatalog;
   layer: Layer;
   isSelected: (id: string) => boolean;
   wasJustAdded: (id: string) => boolean;
-  onOpen: (node: LineageNode) => void;
 }) {
   const layerMeta = LAYER_META[layer];
   const items = catalog.getNodesByLayer(layer);
@@ -95,7 +107,7 @@ function LayerAuditTrail({
           n={n}
           selected={isSelected(n.id)}
           justAdded={wasJustAdded(n.id)}
-          onOpen={onOpen}
+          audit={auditTrailViewModel(catalog, n.id).audit}
         />
       ))}
     </div>
@@ -103,12 +115,12 @@ function LayerAuditTrail({
 }
 
 export function AuditLogView({
+  catalog,
   sel: selectedId,
-  onOpen,
   flashedNodeId,
 }: {
+  catalog: DataCatalog;
   sel: string | null;
-  onOpen: (node: LineageNode) => void;
   flashedNodeId: string | null;
 }) {
   const isSelected = (id: string) => selectedId === id;
@@ -118,10 +130,10 @@ export function AuditLogView({
       {AUDITED_LAYERS.map((ly) => (
         <LayerAuditTrail
           key={ly}
+          catalog={catalog}
           layer={ly}
           isSelected={isSelected}
           wasJustAdded={wasJustAdded}
-          onOpen={onOpen}
         />
       ))}
     </div>

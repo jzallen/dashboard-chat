@@ -5,7 +5,7 @@ Two kinds of Linear project exist in this workflow.
 ## Proposals project (standing intake)
 
 One long-lived **Proposals** project holds **discussion-topic issues** (proposals),
-each labeled `wave:discuss`. No milestones live here.
+each labeled `wave › discuss`. No milestones live here.
 
 - **You** add a proposal issue (the topic / problem to explore).
 - **Delegate dc-cyrus** → it runs `nw-discuss` (read-only) and **produces** the JTBD /
@@ -17,14 +17,22 @@ each labeled `wave:discuss`. No milestones live here.
 
 ## Feature project (one per feature)
 
-A **Feature project** = one nwave **feature**. Created at **promotion** time, it owns:
+A **Feature project** = one nwave **feature**. Created at **promotion** time. **Name it for
+the natural feature name from the code** — a plain product name a human recognizes, with no
+wave/artifact/ticket vocabulary. It owns:
 
 - **Release milestones**, each with its own git **`<slug>/<release>` branch** (see
   `milestone.md` + `branching-and-merge.md`) — there's no single feature branch,
+- one **Finalize milestone** (ordered last) holding the **migrated seed issue** — the
+  project closeout handle for `nw-finalize` (see `milestone.md`),
 - the promoted **stories** (created at promotion from the discuss analysis, labeled
-  `wave:distill`, assigned to a Release).
+  `distill` + area child, assigned to a Release).
 
-The project description holds the brief; the stories carry the detail.
+The project **description** is human-readable prose that **synthesizes** the outcome of the
+pre-distill waves (goal, scope, release-slicing) — not a verbatim quote of the analysis
+docs — followed by an `## AGENT NOTES` section and a bibliography-style `## References`
+block last for any file/artifact/issue pointers (see `issue-authoring.md`). The stories
+carry the detail. nwave artifacts stay in the codebase; reference them, don't attach them.
 
 ## Who creates what
 

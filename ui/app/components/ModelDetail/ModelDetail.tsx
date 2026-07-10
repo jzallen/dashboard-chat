@@ -2,16 +2,17 @@
 import { Fragment, type ReactNode, useState } from "react";
 import { useFetcher } from "react-router";
 
-import type { LineageNode, Model } from "../../catalog";
+import type {
+  AuditEntry,
+  DataCatalog,
+  LineageNode,
+  Model,
+} from "../../catalog";
 import { Icon, LayerBadge, LayerDot, SqlBlock, TAG_ICON } from "../primitives";
-import { catalog } from "../useCatalog";
-import { useCatalog } from "../useCatalog";
+import { useCatalogFromContext, useCatalogWithSelector } from "../useCatalog";
+import { InlineEditLabel } from "./InlineEditLabel";
 import styles from "./ModelDetail.module.css";
-
-// node.ref is typed as the loose ModelRef (an index-signature bag); the detail
-// panels are written against the full discriminated Model, which is the actual
-// runtime shape for every non-source node this view renders.
-const modelOf = (node: LineageNode) => node.ref as unknown as Model;
+import { useInlineEdit } from "./useInlineEdit";
 
 function MatBadge({ m }: { m?: string }) {
   return m ? <span className="badge neutral up">{m}</span> : null;
@@ -20,9 +21,11 @@ function MatBadge({ m }: { m?: string }) {
 function DepStrip({
   node,
   onOpen,
+  catalog,
 }: {
   node: LineageNode;
   onOpen: (node: LineageNode) => void;
+  catalog: DataCatalog;
 }) {
   const parents = catalog.parentsOf(node.id);
   return (
@@ -66,10 +69,16 @@ function CopyBtn({ text }: { text: string }) {
   );
 }
 
-function AuditPanel({ node }: { node: LineageNode }) {
-  const m = modelOf(node);
+function AuditPanel({
+  m,
+  audit,
+  projectId,
+}: {
+  m: Model;
+  audit: AuditEntry[];
+  projectId: string;
+}) {
   const fetcher = useFetcher();
-  const audit = catalog.auditFor(node.id);
   // map transform before/after samples onto matching audit lines for datasets
   const samples = (m.kind === "dataset" ? m.transforms : []).map(
     (t) => t.sample,
@@ -128,7 +137,7 @@ function AuditPanel({ node }: { node: LineageNode }) {
                       {
                         method: "PATCH",
                         action: `/ui-server/projects/${encodeURIComponent(
-                          catalog.getCurrentProject()?.id ?? "",
+                          projectId,
                         )}/audit/${encodeURIComponent(a.auditEntryId!)}`,
                         encType: "application/json",
                       },
@@ -145,8 +154,7 @@ function AuditPanel({ node }: { node: LineageNode }) {
   );
 }
 
-function ColumnsPanel({ node }: { node: LineageNode }) {
-  const m = modelOf(node);
+function ColumnsPanel({ m }: { m: Model }) {
   let head: string[];
   let rows: ReactNode[][];
   if (m.kind === "dataset") {
@@ -225,8 +233,7 @@ function ColumnsPanel({ node }: { node: LineageNode }) {
   );
 }
 
-function SummaryRow({ node }: { node: LineageNode }) {
-  const m = modelOf(node);
+function SummaryRow({ m }: { m: Model }) {
   const kvs: [string, string | number][] = [];
   if (m.kind === "view") {
     kvs.push(
@@ -275,8 +282,7 @@ function fmtCell(v: string | number | null) {
   return String(v);
 }
 
-function DataPreview({ node }: { node: LineageNode }) {
-  const m = modelOf(node);
+function DataPreview({ m }: { m: Model }) {
   const cols =
     m.kind === "dataset"
       ? m.fields.map((f) => f.name)
@@ -334,34 +340,10 @@ function DataPreview({ node }: { node: LineageNode }) {
  *
  * Editing is gated to dataset nodes — views/reports render a static label.
  */
-function DetName({ node }: { node: LineageNode }) {
-  const editable = modelOf(node).kind === "dataset";
+function DetName({ node, m }: { node: LineageNode; m: Model }) {
+  const editable = m.kind === "dataset";
   const fetcher = useFetcher();
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(node.label);
-
-  if (!editing) {
-    return (
-      <div
-        className={styles.detName}
-        onClick={
-          editable
-            ? () => {
-                setDraft(node.label);
-                setEditing(true);
-              }
-            : undefined
-        }
-      >
-        {node.label}
-      </div>
-    );
-  }
-
-  const commit = () => {
-    setEditing(false);
-    const next = draft.trim();
-    if (!next || next === node.label) return; // no-op / cancel
+  const edit = useInlineEdit(node.label, (next) =>
     fetcher.submit(
       { display_name: next },
       {
@@ -369,21 +351,16 @@ function DetName({ node }: { node: LineageNode }) {
         action: `/ui-server/datasets/${encodeURIComponent(node.id)}`,
         encType: "application/json",
       },
-    );
-  };
+    ),
+  );
 
   return (
-    <input
-      className={`${styles.detName} ${styles.detNameEditing}`}
-      aria-label="Edit dataset name"
-      autoFocus
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") commit();
-        if (e.key === "Escape") setEditing(false);
-      }}
+    <InlineEditLabel
+      text={node.label}
+      edit={editable ? edit : undefined}
+      className={styles.detName}
+      editingClassName={styles.detNameEditing}
+      ariaLabel="Edit dataset name"
     />
   );
 }
@@ -416,16 +393,16 @@ function ConfirmModelName({
       <div className={styles.confirmDialog} role="dialog">
         <div className={styles.cdTitle}>Update the machine name?</div>
         <div className={styles.cdBody}>
-          <b>{oldName}</b> → <b>{newName}</b>. The app takes care of this for you
-          everywhere it manages — your data here and the dbt project you can
+          <b>{oldName}</b> → <b>{newName}</b>. The app takes care of this for
+          you everywhere it manages — your data here and the dbt project you can
           export both stay in sync. The one thing to know: anything outside the
           app that points to <b>{oldName}</b>, like an external database or BI
           tool, you&rsquo;ll need to update yourself.
           <span className={styles.cdNote}>
             Not ready to commit? You can rename the display name,{" "}
-            <b>{displayName}</b>, instead — that&rsquo;s a soft, in-app label, so
-            the machine name and everything built from it stay exactly as they
-            are.
+            <b>{displayName}</b>, instead — that&rsquo;s a soft, in-app label,
+            so the machine name and everything built from it stay exactly as
+            they are.
           </span>
         </div>
         <div className={styles.cdActions}>
@@ -446,8 +423,8 @@ function ConfirmModelName({
  *
  * For a DATASET node this renders the EDITABLE dbt machine name
  * (`node.modelName`, e.g. `stg_customers`) — a SECOND, independent editor from
- * {@link DetName} (the display label). The two are DECOUPLED: this path only
- * ever calls `catalog.setModelName`, never `renameSource`. Editing is
+ * {@link DetName} (the display label). The two are DECOUPLED: this path edits
+ * only the machine name, never the display label. Editing is
  * PESSIMISTIC: a click opens a draft input; committing it opens a blocking
  * {@link ConfirmModelName} dialog, and only confirming writes (no optimistic
  * flip). Cancel/Escape reverts the draft with no write. Gates to nothing for a
@@ -465,9 +442,8 @@ function DetSubline({ node, m }: { node: LineageNode; m: Model }) {
   const isDataset = m.kind === "dataset";
   const text = isDataset ? node.modelName : m.name;
   const fetcher = useFetcher();
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(text ?? "");
   const [pending, setPending] = useState<string | null>(null);
+  const edit = useInlineEdit(text ?? "", (next) => setPending(next));
 
   if (!text) return null;
 
@@ -485,7 +461,7 @@ function DetSubline({ node, m }: { node: LineageNode; m: Model }) {
           displayName={node.label}
           onCancel={() => {
             setPending(null);
-            setDraft(text);
+            edit.cancel();
           }}
           onConfirm={() => {
             fetcher.submit(
@@ -503,42 +479,13 @@ function DetSubline({ node, m }: { node: LineageNode; m: Model }) {
     );
   }
 
-  if (!editing) {
-    return (
-      <div
-        className={styles.detFriendly}
-        onClick={() => {
-          setDraft(text);
-          setEditing(true);
-        }}
-      >
-        {text}
-      </div>
-    );
-  }
-
-  const commit = () => {
-    setEditing(false);
-    const next = draft.trim();
-    if (!next || next === text) return; // no-op / cancel → no dialog
-    setPending(next);
-  };
-
   return (
-    <input
-      className={`${styles.detFriendly} ${styles.detNameEditing}`}
-      aria-label="Edit dataset machine name"
-      autoFocus
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") commit();
-        if (e.key === "Escape") {
-          setDraft(text);
-          setEditing(false);
-        }
-      }}
+    <InlineEditLabel
+      text={text}
+      edit={edit}
+      className={styles.detFriendly}
+      editingClassName={styles.detNameEditing}
+      ariaLabel="Edit dataset machine name"
     />
   );
 }
@@ -550,13 +497,20 @@ export function ModelDetail({
   node: LineageNode;
   onOpen: (node: LineageNode) => void;
 }) {
-  const m = modelOf(node);
-  useCatalog(); // subscribe: re-render when the catalog mutates
+  const catalog = useCatalogFromContext();
+  // Re-render when the graph mutates (audit lands, dependency added) or the
+  // scope's current project changes.
+  useCatalogWithSelector((s) => s.graph);
+  useCatalogWithSelector((s) => s.currentProject);
+  const m = catalog.getModel(node.id);
+  if (!m) return null; // unknown/absent model kind — degrade rather than crash
+  const audit = catalog.auditFor(node.id);
+  const projectId = catalog.getCurrentProject()?.id ?? "";
   return (
     <div className={`${styles.det} layer-${node.layer}`}>
       <div className={styles.detHd}>
         <div>
-          <DetName node={node} />
+          <DetName node={node} m={m} />
           <DetSubline node={node} m={m} />
         </div>
         <div className={styles.detBadges}>
@@ -567,12 +521,12 @@ export function ModelDetail({
           />
         </div>
       </div>
-      <DepStrip node={node} onOpen={onOpen} />
-      <SummaryRow node={node} />
+      <DepStrip node={node} onOpen={onOpen} catalog={catalog} />
+      <SummaryRow m={m} />
       <div className={styles.detGrid} style={{ marginTop: 16 }}>
-        <DataPreview node={node} />
-        <AuditPanel node={node} />
-        <ColumnsPanel node={node} />
+        <DataPreview m={m} />
+        <AuditPanel m={m} audit={audit} projectId={projectId} />
+        <ColumnsPanel m={m} />
         <div className="panel spanfull">
           <div className={styles.sqlBar}>
             <Icon

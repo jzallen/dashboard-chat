@@ -24,7 +24,7 @@ import type {
   ChatAppWireEvent,
 } from "@dashboard-chat/ui-state-wire";
 
-import { ApiError } from "../catalog/dataSources/backendClient";
+import { ApiError } from "./api-error";
 import type { Logger } from "./log";
 
 // ───────────────────────────── injected ports ─────────────────────────────
@@ -238,8 +238,13 @@ export function createOnboardingDriver(
 
 /** Map an org-create POST failure to the closed-union org_create_failed event
  *  (ADR-050 §c): 409 → org_name_taken; 400|422 → org_name_invalid; any other
- *  status / network / timeout → org_create_failed. */
-function orgCreateFailure(err: unknown, orgName: string): ChatAppWireEvent {
+ *  status / network / timeout → org_create_failed. Exported as the reusable
+ *  status-code → cause mapping — the single place the org-create failure taxonomy
+ *  lives, so callers and tests share one definition. */
+export function orgCreateFailure(
+  err: unknown,
+  orgName: string,
+): ChatAppWireEvent {
   if (err instanceof ApiError) {
     if (err.status === 409) {
       return {

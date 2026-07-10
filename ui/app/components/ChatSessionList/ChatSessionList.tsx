@@ -2,25 +2,25 @@
    project, searchable, each linking back to the model it was shaping. */
 import { useState } from "react";
 
+import { useNavIntents } from "../../lib/nav";
 import { Icon } from "../primitives";
-import { catalog, useCatalog } from "../useCatalog";
+import { useCatalogFromContext, useCatalogWithSelector } from "../useCatalog";
 import styles from "./ChatSessionList.module.css";
 
-/** A nav request handed back to the app shell. */
-type ChatRoute = { name: string; nodeId?: string | null };
-
-export function ChatSessionList({ go }: { go: (route: ChatRoute) => void }) {
+export function ChatSessionList() {
+  const { navigateTo } = useNavIntents();
   const [q, setQ] = useState("");
-  // Subscribe to catalog commits so the list re-renders when sessions land from
-  // the backend (getAllChats resolves a beat after first paint).
-  useCatalog();
-  const list = catalog
-    .listChats()
-    .filter((c) =>
-      (c.title + " " + (c.snippet ?? ""))
-        .toLowerCase()
-        .includes(q.trim().toLowerCase()),
-    );
+  const catalog = useCatalogFromContext();
+  // Re-render when backend sessions land (getAllChats resolves a beat after
+  // first paint), or when the graph mutates — each row reads its backing node's
+  // label off the graph.
+  const chats = useCatalogWithSelector((s) => s.chats);
+  useCatalogWithSelector((s) => s.graph);
+  const list = chats.filter((c) =>
+    (c.title + " " + (c.snippet ?? ""))
+      .toLowerCase()
+      .includes(q.trim().toLowerCase()),
+  );
   return (
     <div className={styles.chatsPage}>
       <h1 className={styles.chatsTitle}>All Chats</h1>
@@ -37,14 +37,14 @@ export function ChatSessionList({ go }: { go: (route: ChatRoute) => void }) {
         />
       </div>
       <div className={styles.chatsList}>
-        {list.map((c, i) => {
+        {list.map((c) => {
           const node = c.nodeId ? catalog.getNode(c.nodeId) : null;
           return (
             <button
-              key={i}
+              key={`${c.nodeId ?? c.title}-${c.when ?? ""}`}
               className={`${styles.chatRow}${node ? " layer-" + node.layer : ""}`}
               onClick={() =>
-                go(
+                navigateTo(
                   c.nodeId
                     ? { name: "openRecent", nodeId: c.nodeId }
                     : { name: "chat" },

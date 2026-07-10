@@ -3,7 +3,7 @@ import { useState } from "react";
 
 import type { ProjectSummary } from "../../catalog";
 import { Icon } from "../primitives";
-import { catalog } from "../useCatalog";
+import { useCatalogWithSelector } from "../useCatalog";
 
 export function ProjectPicker({
   projectId,
@@ -14,7 +14,9 @@ export function ProjectPicker({
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
-  const projects = catalog.listProjects();
+  // Re-render only when the project list changes, so a project rename/add lands
+  // here even when no ancestor re-renders — and a lineage/audit commit does not.
+  const projects = useCatalogWithSelector((s) => s.projects);
   const cur = projects.find((p) => p.id === projectId) || projects[0];
   const list = projects.filter((p) =>
     (p.name + " " + p.desc).toLowerCase().includes(q.trim().toLowerCase()),

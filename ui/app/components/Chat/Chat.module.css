@@ -1,16 +1,14 @@
-/* Assistant dock styles — the light "comic panel" overlay (AssistantOverlay),
-   the dark TUI terminal (TerminalAssistant), and the floating launcher
-   (.assistantFab / .aoScrim, mounted by AppShell/Overlays). Only one of overlay
-   / terminal mounts at a time (light vs dark — see Overlays.tsx), so the overlay
-   carries only its light look.
+/* ChatOverlay styles — the light "comic panel" chat dock plus its floating
+   launcher (.launcher / .scrim, mounted by AppShell/Overlays). The module is
+   scoped to the component, so class names are its own vocabulary rather than
+   prefixed restatements of it.
 
    The Neobrutalist border that the global :is() rule forced onto these classes
    is baked in here (2.5px var(--border), so it reads in light and dark); the
-   per-element radii/colors are the values that rule actually produced (its
-   specificity beat the softer "comic" overrides, which were dead). */
+   per-element radii/colors are the values that rule actually produced. */
 
 /* ════════════ Floating launcher (rendered by AppShell/Overlays) ════════════ */
-.assistantFab {
+.launcher {
   position: fixed;
   right: 22px;
   bottom: 22px;
@@ -30,25 +28,25 @@
   transition: opacity 0.18s, transform 0.18s, box-shadow 0.18s, background 0.18s,
     color 0.18s;
 }
-.assistantFab:hover {
+.launcher:hover {
   opacity: 1;
   background: #1565ff;
   color: #fffdf6;
   transform: translate(-2px, -2px);
   box-shadow: 6px 6px 0 #1a1a1a;
 }
-:global(.app.dark) .assistantFab {
+:global(.app.dark) .launcher {
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
 }
-.aoScrim {
+.scrim {
   position: fixed;
   inset: 0;
   z-index: 35;
   background: transparent;
 }
 
-/* ════════════ Light overlay (AssistantOverlay) ════════════ */
-.assistantOverlay {
+/* ════════════ Overlay dock ════════════ */
+.overlay {
   position: fixed;
   right: 22px;
   bottom: 22px;
@@ -64,15 +62,15 @@
   background: #fffdf6;
   box-shadow: 6px 6px 0 #1a1a1a;
   transform-origin: bottom right;
-  animation: aoIn 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: overlayIn 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
-.assistantOverlay.aoOut {
+.overlay.closing {
   opacity: 0;
   transform: translateY(8px) scale(0.985);
   pointer-events: none;
 }
-@keyframes aoIn {
+@keyframes overlayIn {
   from {
     transform: translateY(10px) scale(0.94);
   }
@@ -80,21 +78,21 @@
     transform: none;
   }
 }
-.aoHead {
+.header {
   display: flex;
   align-items: center;
   gap: 9px;
   padding: 13px 14px;
   border-bottom: 1px solid var(--glass-line);
 }
-.aoHead .ct {
+.header .title {
   font-family: "Baloo 2", sans-serif;
   font-weight: 700;
   font-size: 14px;
   color: var(--text-900);
   letter-spacing: -0.01em;
 }
-.aoMark {
+.mark {
   width: 26px;
   height: 26px;
   border: 2.5px solid var(--border);
@@ -106,7 +104,7 @@
   color: #fff;
   box-shadow: var(--shadow-sm);
 }
-.chatCtx {
+.context {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -117,16 +115,16 @@
   padding: 3px 8px;
   border-radius: 99px;
 }
-.chatCtxLayer {
+.contextLayer {
   color: var(--text-400);
   text-transform: lowercase;
 }
-.aoActions {
+.actions {
   margin-left: auto;
   display: flex;
   gap: 3px;
 }
-.aoIconbtn {
+.iconButton {
   position: relative;
   width: 30px;
   height: 30px;
@@ -140,11 +138,11 @@
   justify-content: center;
   transition: background 0.14s, color 0.14s;
 }
-.aoIconbtn:hover {
+.iconButton:hover {
   background: var(--glass-chip);
   color: var(--text-900);
 }
-.aoIconbtn .tip {
+.iconButton .tooltip {
   position: absolute;
   top: calc(100% + 7px);
   right: 0;
@@ -161,10 +159,10 @@
   box-shadow: var(--shadow-md);
   z-index: 5;
 }
-.aoIconbtn:hover .tip {
+.iconButton:hover .tooltip {
   opacity: 1;
 }
-.aoBody {
+.body {
   flex: 1;
   overflow-y: auto;
   padding: 14px;
@@ -179,23 +177,23 @@
   background-size: 18px 18px, 18px 18px;
   background-position: 0 0, 9px 9px;
 }
-.aoSection {
+.section {
   display: flex;
   align-items: center;
 }
-.aoSecLabel {
+.sectionLabel {
   font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-500);
   font-weight: 700;
 }
-.aoRecents {
+.recents {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
-.aoRecent {
+.recent {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -207,11 +205,11 @@
   padding: 10px 12px;
   transition: background 0.14s, transform 0.14s;
 }
-.aoRecent:hover {
+.recent:hover {
   background: rgba(255, 255, 255, 0.62);
   transform: translateX(2px);
 }
-.aoRecDot {
+.recentDot {
   width: 22px;
   height: 22px;
   border-radius: 7px;
@@ -222,7 +220,7 @@
   background: var(--ln-soft, var(--surface-3));
   color: var(--ln, var(--text-400));
 }
-.aoRecTitle {
+.recentTitle {
   flex: 1;
   min-width: 0;
   font-size: 13px;
@@ -232,7 +230,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.aoDivider {
+.divider {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -240,20 +238,20 @@
   color: var(--text-400);
   font-size: 11px;
 }
-.aoDivider::before,
-.aoDivider::after {
+.divider::before,
+.divider::after {
   content: "";
   height: 1px;
   background: var(--glass-line);
   flex: 1;
 }
 
-.suggest {
+.suggestions {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
-.suggest button {
+.suggestions button {
   text-align: left;
   border: 2.5px solid var(--border);
   background: var(--glass-chip);
@@ -267,22 +265,22 @@
   align-items: center;
   transition: all 0.14s;
 }
-.suggest button:hover {
+.suggestions button:hover {
   background: #d3e2ff;
   border-color: #1a1a1a;
   color: #0a3aa8;
 }
-.suggest button svg {
+.suggestions button svg {
   color: var(--primary);
   flex: 0 0 16px;
 }
 
-.msg {
+.message {
   display: flex;
   flex-direction: column;
   max-width: 92%;
 }
-.msg.user {
+.message.user {
   align-self: flex-end;
   align-items: flex-end;
 }
@@ -293,11 +291,11 @@
   font-size: 13px;
   line-height: 1.5;
 }
-.msg.user .bubble {
+.message.user .bubble {
   background: var(--primary);
   color: #fff;
 }
-.msg.bot .bubble {
+.message.bot .bubble {
   background: var(--glass-chip);
   color: var(--text-900);
 }
@@ -311,44 +309,8 @@
   padding: 1px 5px;
   border-radius: 4px;
 }
-.msg.user .bubble code {
+.message.user .bubble code {
   background: rgba(255, 255, 255, 0.2);
-}
-.toolCard {
-  align-self: flex-start;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  background: var(--surface);
-  border: 2.5px solid var(--border);
-  border-radius: 12px;
-  padding: 8px 11px;
-  font-size: 12.5px;
-  color: var(--text-700);
-  max-width: 94%;
-}
-.toolCard .tcIco {
-  width: 22px;
-  height: 22px;
-  border: 2.5px solid var(--border);
-  border-radius: 3px;
-  flex: 0 0 22px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--accent-light);
-  color: var(--accent-dark);
-}
-.toolCard .tcIco svg {
-  width: 13px;
-  height: 13px;
-}
-.toolCard .tcTag {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  text-transform: uppercase;
-  color: var(--text-400);
 }
 .typing {
   display: inline-flex;
@@ -379,14 +341,14 @@
   }
 }
 
-.aoInput {
+.composer {
   border-top: 1px solid var(--glass-line);
   padding: 12px;
   display: flex;
   gap: 8px;
   align-items: flex-end;
 }
-.aoInput textarea {
+.composer textarea {
   flex: 1;
   resize: none;
   border: 2.5px solid var(--border);
@@ -400,11 +362,11 @@
   max-height: 120px;
   background: var(--glass-chip);
 }
-.aoInput textarea:focus {
+.composer textarea:focus {
   box-shadow: 0 0 0 3px var(--primary-light);
   background: rgba(255, 255, 255, 0.65);
 }
-.sendBtn {
+.sendButton {
   width: 42px;
   height: 42px;
   border: 2.5px solid #1a1a1a;
@@ -417,234 +379,7 @@
   justify-content: center;
   flex: 0 0 42px;
 }
-.sendBtn:disabled {
+.sendButton:disabled {
   opacity: 0.5;
   cursor: default;
-}
-
-/* ════════════ Docked TUI terminal (TerminalAssistant — dark only) ════════════ */
-.termDock {
-  position: fixed;
-  z-index: 36;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(var(--frame), calc(100vw - 28px));
-  height: min(384px, 64vh);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  background: #04161d;
-  border: 1px solid #0e3d49;
-  border-bottom: none;
-  border-radius: 12px 12px 0 0;
-  box-shadow: 0 -10px 50px rgba(0, 0, 0, 0.5);
-  font-family: var(--font-mono);
-  animation: termIn 0.26s cubic-bezier(0.2, 0.85, 0.25, 1);
-}
-.termDock.out {
-  animation: termOut 0.2s ease forwards;
-}
-@keyframes termIn {
-  from {
-    transform: translate(-50%, 16px);
-  }
-  to {
-    transform: translate(-50%, 0);
-  }
-}
-@keyframes termOut {
-  to {
-    transform: translate(-50%, 16px);
-    opacity: 0;
-  }
-}
-.termBar {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 9px 13px;
-  background: #061f27;
-  border-bottom: 1px solid #0e3d49;
-}
-.termLights {
-  display: flex;
-  gap: 6px;
-}
-.termLights i {
-  width: 11px;
-  height: 11px;
-  border-radius: 99px;
-  display: inline-block;
-}
-.termLights i:nth-child(1) {
-  background: #e8552e;
-}
-.termLights i:nth-child(2) {
-  background: #d6b41e;
-}
-.termLights i:nth-child(3) {
-  background: #6fbf3b;
-}
-.termWhere {
-  font-size: 12px;
-  color: #5e8a92;
-  letter-spacing: 0.02em;
-}
-.termWhere b {
-  color: #8fd0c4;
-  font-weight: 600;
-}
-.termCtx {
-  color: #38b6ff;
-}
-.termActs {
-  margin-left: auto;
-  display: flex;
-  gap: 4px;
-}
-.termBtn {
-  width: 26px;
-  height: 24px;
-  border-radius: 5px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: #5e8a92;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-mono);
-  font-size: 12px;
-}
-.termBtn:hover {
-  background: #0c2c35;
-  color: #b6dd00;
-}
-.termBody {
-  flex: 1;
-  overflow-y: auto;
-  padding: 12px 14px 4px;
-  font-size: 13px;
-  line-height: 1.6;
-  color: #93b4ba;
-}
-.termBody::-webkit-scrollbar-thumb {
-  background: #0e3d49;
-}
-.tl {
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.tlBanner {
-  color: #38b6ff;
-  margin-bottom: 2px;
-}
-.tlBanner b {
-  color: #b6dd00;
-}
-.tlDim {
-  color: #4e747c;
-}
-.tlUser {
-  color: #e8eed8;
-}
-.tlUser .tp {
-  color: #b6dd00;
-}
-.tlUser .th {
-  color: #38b6ff;
-}
-.tlUser .tc {
-  color: #5e8a92;
-}
-.tlOut {
-  color: #adc7cc;
-}
-.tlOut strong {
-  color: #fdf6e3;
-  font-weight: 600;
-}
-.tlOut code {
-  color: #8fd0c4;
-  background: #07252e;
-  padding: 0 4px;
-  border-radius: 3px;
-}
-.tlTool {
-  color: #8fd0c4;
-  display: flex;
-  gap: 8px;
-}
-.tlTool .ok {
-  color: #6fbf3b;
-}
-.tlTool .tg {
-  color: #4e747c;
-  margin-left: auto;
-}
-.tlLink {
-  color: #38b6ff;
-  cursor: pointer;
-  text-decoration: underline dotted;
-}
-.tlLink:hover {
-  color: #6fccff;
-}
-.termRec {
-  cursor: pointer;
-  color: #adc7cc;
-}
-.termRec:hover {
-  color: #b6dd00;
-}
-.termRec .n {
-  color: #38b6ff;
-}
-.termCursor {
-  display: inline-block;
-  width: 8px;
-  height: 15px;
-  background: #b6dd00;
-  vertical-align: text-bottom;
-  animation: tcur 0.9s steps(2) infinite;
-}
-@keyframes tcur {
-  50% {
-    opacity: 0;
-  }
-}
-.termInputRow {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 9px 14px;
-  border-top: 1px solid #0e3d49;
-  background: #061f27;
-}
-.termPrompt {
-  font-size: 13px;
-  white-space: nowrap;
-}
-.termPrompt .tp {
-  color: #b6dd00;
-}
-.termPrompt .th {
-  color: #38b6ff;
-}
-.termPrompt .tc {
-  color: #5e8a92;
-}
-.termInput {
-  flex: 1;
-  background: transparent;
-  border: none;
-  outline: none;
-  color: #e8eed8;
-  font-family: var(--font-mono);
-  font-size: 13px;
-  caret-color: #b6dd00;
-}
-.termInput::placeholder {
-  color: #3f5d64;
 }

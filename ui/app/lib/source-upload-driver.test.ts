@@ -21,7 +21,7 @@ function happyCatalog() {
     })),
     putToStorage: vi.fn(async () => undefined),
     processUpload: vi.fn(async () => ({ datasetId: "ds.1" })),
-    revalidateScope: vi.fn(async () => undefined),
+    revalidate: vi.fn(async () => undefined),
   };
 }
 
@@ -73,7 +73,7 @@ describe("sourceUploadDriver — happy path", () => {
       file,
     );
     expect(catalog.processUpload).toHaveBeenCalledWith("src.1", "up.1");
-    expect(catalog.revalidateScope).toHaveBeenCalled();
+    expect(catalog.revalidate).toHaveBeenCalled();
 
     // The ordered past-tense reports to ui-state.
     expect(events).toEqual([
@@ -152,7 +152,7 @@ describe("sourceUploadDriver — add to an existing source (slice 5)", () => {
       file,
     );
     expect(catalog.processUpload).toHaveBeenCalledWith("src.existing", "up.1");
-    expect(catalog.revalidateScope).toHaveBeenCalled();
+    expect(catalog.revalidate).toHaveBeenCalled();
 
     // No source_create_requested / source_created for the add path.
     expect(events).toEqual([
@@ -187,7 +187,7 @@ describe("sourceUploadDriver — add to an existing source (slice 5)", () => {
     expect(removeOptimistic).not.toHaveBeenCalled();
     expect(events).toContain("source_upload_failed");
     expect(events).not.toContain("source_upload_processed");
-    expect(catalog.revalidateScope).not.toHaveBeenCalled();
+    expect(catalog.revalidate).not.toHaveBeenCalled();
   });
 
   it("re-throws the original error so the surface can read its 422 mismatch body", async () => {
@@ -234,7 +234,7 @@ describe("sourceUploadDriver — add to an existing source (slice 5)", () => {
 describe("sourceUploadDriver — narration is best-effort", () => {
   // A broken state-report path (StateProxy.postEvent rejecting) must NOT be able
   // to freeze the canvas by aborting the real saga: the backend create→upload→
-  // process still runs to completion and revalidateScope() heals the optimistic
+  // process still runs to completion and revalidate() heals the optimistic
   // node into the real source. Narration is a side-channel, not a control path.
   it("completes the saga and does not roll back when a report leg rejects", async () => {
     const catalog = happyCatalog();
@@ -262,7 +262,7 @@ describe("sourceUploadDriver — narration is best-effort", () => {
 
     // The real saga still ran end to end.
     expect(catalog.processUpload).toHaveBeenCalled();
-    expect(catalog.revalidateScope).toHaveBeenCalled();
+    expect(catalog.revalidate).toHaveBeenCalled();
     expect(result).toEqual({ datasetId: "ds.1", tempNodeId: "tmp.abc" });
     // The optimistic node is NOT torn down over a mere narration failure.
     expect(removeOptimistic).not.toHaveBeenCalled();
@@ -328,7 +328,7 @@ describe("sourceUploadDriver — failure rollback", () => {
       .find((e) => e.type === "source_upload_failed");
     expect(failure?.payload?.reason).toContain("409");
     // No revalidation on a failed process.
-    expect(catalog.revalidateScope).not.toHaveBeenCalled();
+    expect(catalog.revalidate).not.toHaveBeenCalled();
   });
 
   it("rolls back and reports failure when the direct storage PUT rejects", async () => {

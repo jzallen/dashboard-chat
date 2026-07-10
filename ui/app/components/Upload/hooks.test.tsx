@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
+import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { CatalogSource, PartialCatalogSource } from "../../catalog";
@@ -68,9 +69,18 @@ function recordingProxy() {
 }
 
 function wrapper(proxy: StateProxy) {
-  return ({ children }: { children: ReactNode }) => (
-    <StateProxyProvider proxy={proxy}>{children}</StateProxyProvider>
-  );
+  return ({ children }: { children: ReactNode }) => {
+    // useUpload calls useFetcher which requires a data router context.
+    const router = createMemoryRouter([
+      {
+        path: "/",
+        element: (
+          <StateProxyProvider proxy={proxy}>{children}</StateProxyProvider>
+        ),
+      },
+    ]);
+    return <RouterProvider router={router} />;
+  };
 }
 
 describe("parseSchemaMismatch — 422 JSON:API envelope contract", () => {
@@ -113,8 +123,8 @@ describe("parseSchemaMismatch — 422 JSON:API envelope contract", () => {
     });
   });
 
-  it("reads the real ApiError the backendClient throws", async () => {
-    const { ApiError } = await import("../../catalog/dataSources/backendClient");
+  it("reads the real ApiError the gateway client throws", async () => {
+    const { ApiError } = await import("../../lib/api-error");
     const err = new ApiError(422, envelope(detail).body, "422 from /process");
     expect(parseSchemaMismatch(err)).toEqual(detail);
   });
@@ -201,8 +211,8 @@ describe("useUpload — createSource (slice-4 saga)", () => {
   it("exposes the schema-mismatch detail for the recovery UX when the add path 422s", async () => {
     const primary = sagaPrimary();
     primary.processUpload = vi.fn(async () => {
-      // Mirror the ApiError the backendClient throws on a 422 from /process.
-      const { ApiError } = await import("../../catalog/dataSources/backendClient");
+      // Mirror the ApiError the gateway client throws on a 422 from /process.
+      const { ApiError } = await import("../../lib/api-error");
       throw new ApiError(
         422,
         {

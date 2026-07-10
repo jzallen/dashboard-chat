@@ -1,0 +1,14 @@
+/* query-engines route — compute-management stub layout. */
+
+.container {
+  padding: 40px;
+}
+
+.heading {
+  font-size: 22px;
+  color: var(--text-900);
+}
+
+.subheading {
+  color: var(--text-500);
+}

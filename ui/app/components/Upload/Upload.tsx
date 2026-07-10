@@ -1,15 +1,8 @@
 /* Upload flow: browse → 3-leg dial-up progress → schema + name + upload-another,
    plus the archive-confirm dialog its "move to cold storage" action opens. */
-import {
-  type ChangeEvent,
-  type DragEvent,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { type ChangeEvent, type DragEvent, useRef, useState } from "react";
 
 import type { FieldDef, LineageNode } from "../../catalog";
-import type { SourceUpload } from "../../catalog/dataSources/source";
 import { ConfirmDialog, Icon } from "../primitives";
 import styles from "./Upload.module.css";
 
@@ -59,7 +52,6 @@ export function UploadModal({
   onArchive,
   mismatch = null,
   onRetry,
-  onLoadUploads,
 }: {
   source: LineageNode | null;
   onClose: () => void;
@@ -71,10 +63,6 @@ export function UploadModal({
   mismatch?: MismatchDetail | null;
   /** Clear the mismatch and let the user pick a different file. */
   onRetry?: () => void;
-  /** Load the existing source's uploaded files from the backend (the initial
-   *  Files list). Optional — when absent (a brand-new source) the list starts
-   *  empty and grows from fresh uploads only. */
-  onLoadUploads?: (sourceId: string) => Promise<SourceUpload[]>;
 }) {
   const existing = !!source;
   const [view, setView] = useState<UploadView>(existing ? "schema" : "browse");
@@ -83,11 +71,10 @@ export function UploadModal({
   const [schema, setSchema] = useState<FieldDef[] | null>(
     source ? source.schema || [] : null,
   );
-  // The Files list. For an existing source it is loaded from the backend (the
-  // UploadRecorded history) via onLoadUploads on open; fresh uploads append
-  // optimistically on top of it. A brand-new source starts empty.
+  // The Files list. Starts empty and grows only from fresh optimistic uploads in
+  // the current session. The persisted Files history for an existing source will
+  // be seeded by a future source-detail loader.
   const [files, setFiles] = useState<UploadFile[]>([]);
-  const [filesLoading, setFilesLoading] = useState<boolean>(!!source);
   const [freshFile, setFreshFile] = useState<string | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [name, setName] = useState(source ? source.label : "");
@@ -95,37 +82,6 @@ export function UploadModal({
   const [committed] = useState(existing);
   const inputRef = useRef<HTMLInputElement>(null);
   const runningRef = useRef(false);
-
-  // Load the existing source's uploaded files from the backend once on open.
-  // Fresh uploads (runUpload) append on top, so we prepend the loaded history
-  // before any optimistic rows rather than clobbering them.
-  useEffect(() => {
-    if (!source || !onLoadUploads) {
-      setFilesLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setFilesLoading(true);
-    onLoadUploads(source.id)
-      .then((loaded) => {
-        if (cancelled) return;
-        const initial: UploadFile[] = loaded.map((u) => ({
-          name: u.name,
-          rows: u.rows ?? 0,
-          when: u.when,
-        }));
-        setFiles((fresh) => [...initial, ...fresh]);
-      })
-      .catch(() => {
-        /* leave the list empty on a load error — the canvas surfaces failures */
-      })
-      .finally(() => {
-        if (!cancelled) setFilesLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [source?.id, onLoadUploads]);
 
   async function runUpload(file: File) {
     if (runningRef.current) return;
@@ -404,12 +360,7 @@ export function UploadModal({
                   {files.length} · {totalRows.toLocaleString()} rows
                 </span>
               </div>
-              {filesLoading && files.length === 0 && (
-                <div className={styles.fileRow}>
-                  <span className={styles.fileName}>Loading files…</span>
-                </div>
-              )}
-              {!filesLoading && files.length === 0 && (
+              {files.length === 0 && (
                 <div className={styles.fileRow}>
                   <span className={styles.fileName}>No files yet</span>
                 </div>

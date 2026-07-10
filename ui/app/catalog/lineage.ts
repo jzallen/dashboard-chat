@@ -10,8 +10,21 @@
  * the catalog, never the reverse.
  */
 
+/**
+ * The source layer — raw uploaded CSVs. Unlike the model-bearing layers it has
+ * no backend entity and carries no assistant transforms, so audit-facing code
+ * derives "layers with an audit trail" by excluding it (rather than slicing a
+ * position off {@link LAYER_ORDER}).
+ */
+export const SOURCE_LAYER = "source" as const;
+
 /** The pipeline layers, ordered left-to-right / upstream-to-downstream. */
-export const LAYER_ORDER = ["source", "staging", "intermediate", "mart"] as const;
+export const LAYER_ORDER = [
+  SOURCE_LAYER,
+  "staging",
+  "intermediate",
+  "mart",
+] as const;
 
 /**
  * A single data-pipeline layer. Derived from {@link LAYER_ORDER} so the list is
@@ -25,6 +38,24 @@ export type Layer = (typeof LAYER_ORDER)[number];
  * mart→report. Source-layer nodes have no model kind (no backend entity).
  */
 export type ModelKind = "dataset" | "view" | "report";
+
+/**
+ * The model kind behind a node, derived from its pipeline layer (the domain
+ * 1:1: staging→dataset, intermediate→view, mart→report). `undefined` for
+ * source-layer nodes, which have no backend model entity.
+ */
+export function modelKindForLayer(layer: Layer): ModelKind | undefined {
+  switch (layer) {
+    case "staging":
+      return "dataset";
+    case "intermediate":
+      return "view";
+    case "mart":
+      return "report";
+    default:
+      return undefined;
+  }
+}
 
 /** A field/column descriptor as it appears in source schemas and model refs. */
 export interface FieldDef {

@@ -1,11 +1,12 @@
 /* Upload-flow state: the upload modal, the archive-confirm dialog it can open,
    and the catalog mutations behind creating / renaming / archiving a source. */
 import { useCallback, useState } from "react";
+import { useFetcher, useRevalidator } from "react-router";
 
 import type { LineageNode } from "../../catalog";
 import { createLogger } from "../../lib/log";
 import { useStateProxy } from "../../lib/StateProxyProvider";
-import { catalog } from "../useCatalog";
+import { useCatalogFromContext } from "../useCatalog";
 
 const log = createLogger("upload");
 
@@ -26,9 +27,11 @@ export type SchemaMismatchDetail = {
 
 /** Parse a thrown upload error into a {@link SchemaMismatchDetail}, or `null`
  *  when it is not a 422 schema-mismatch (a network/auth/other failure). The
- *  backendClient throws an `ApiError` whose `body` is the JSON:API error
+ *  gateway client throws an `ApiError` whose `body` is the JSON:API error
  *  envelope `{ errors: [{ detail: {missing, extra, type_mismatch} }] }`. */
-export function parseSchemaMismatch(error: unknown): SchemaMismatchDetail | null {
+export function parseSchemaMismatch(
+  error: unknown,
+): SchemaMismatchDetail | null {
   if (!error || typeof error !== "object") return null;
   const status = (error as { status?: unknown }).status;
   if (status !== 422) return null;
@@ -49,9 +52,12 @@ export function parseSchemaMismatch(error: unknown): SchemaMismatchDetail | null
 
 /** @param flash - mark a freshly created node so the canvas can pop it. */
 export function useUpload(flash: (id: string) => void) {
+  const catalog = useCatalogFromContext();
   // The StateProxy.postEvent is the saga's report sink — the browser narrates
   // each past-tense Source-creation outcome to ui-state (zero-egress model).
   const { proxy } = useStateProxy();
+  const archiveFetcher = useFetcher();
+  const { revalidate } = useRevalidator();
   const [modal, setModal] = useState<{
     open: boolean;
     source: LineageNode | null;
@@ -81,15 +87,19 @@ export function useUpload(flash: (id: string) => void) {
   const cancelArchive = useCallback(() => setConfirmArchive(null), []);
   const archiveSource = useCallback(
     (src: LineageNode) => {
-      catalog.archiveSource(src);
+      archiveFetcher.submit(null, {
+        method: "POST",
+        action: `/ui-server/datasets/${encodeURIComponent(src.id)}/archive`,
+        encType: "application/json",
+      });
       setConfirmArchive(null);
       closeUpload();
     },
-    [closeUpload],
+    [archiveFetcher, closeUpload],
   );
   const renameSource = useCallback(
     (id: string, name: string) => catalog.renameSource(id, name),
-    [],
+    [catalog],
   );
   const existingSource = modal.source;
   const createSource = useCallback(
@@ -113,11 +123,13 @@ export function useUpload(flash: (id: string) => void) {
               existingSource.id,
               src.file,
               proxy.postEvent,
+              revalidate,
             )
           : await catalog.createSourceFromUpload(
               src.file,
               src.name,
               proxy.postEvent,
+              revalidate,
             );
         if (result?.datasetId) flash(result.datasetId);
       } catch (error) {
@@ -126,7 +138,7 @@ export function useUpload(flash: (id: string) => void) {
         if (detail) setMismatch(detail);
       }
     },
-    [flash, proxy, existingSource],
+    [catalog, flash, proxy, existingSource, revalidate],
   );
 
   return {

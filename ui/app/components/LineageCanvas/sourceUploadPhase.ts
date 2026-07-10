@@ -1,6 +1,6 @@
 /**
  * sourceUploadPhase — the canvas's read-side view of the ui-state `sourceUpload`
- * region (slice 4). A pure phase→label map plus a thin {@link useSourceUpload}
+ * region. A pure phase→label map plus a thin {@link useSourceUpload}
  * hook that slices the region off the StateProxy via `useSelector`, so the
  * lineage canvas can render the optimistic source node advancing through the
  * Source-creation saga (creating_source → uploading → processing → linked, plus
@@ -12,7 +12,9 @@ import { useSelector } from "@xstate/react";
 import { useStateProxy } from "../../lib/StateProxyProvider";
 
 /** A human-readable badge for an in-flight phase; `null` at idle (no badge). */
-export function sourceUploadPhaseLabel(phase: SourceUploadPhase): string | null {
+export function sourceUploadPhaseLabel(
+  phase: SourceUploadPhase,
+): string | null {
   switch (phase) {
     case "creating_source":
       return "Creating…";

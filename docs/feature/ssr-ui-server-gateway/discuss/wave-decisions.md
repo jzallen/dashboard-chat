@@ -45,6 +45,12 @@
 
 ## Constraints Established (from the brainstorm, not invented)
 
+> **Superseded (2026-06-25).** The first constraint below ("reactive reads MUST
+> stay in the client `DataCatalog`") is superseded by
+> [ADR-034 §"Amendment (2026-06-25)"](../../../decisions/adr-034-frontend-coexistence-via-rrv7-framework-mode.md):
+> derivation stays server-side in the loader and SSE is a revalidation *trigger*,
+> with no client-side graph state. Preserved as captured; not rewritten.
+
 - Reactive reads (live assistant-transform reflection) MUST stay in the client
   `DataCatalog`; only cold/initial/static-after-load reads move to server
   loaders.

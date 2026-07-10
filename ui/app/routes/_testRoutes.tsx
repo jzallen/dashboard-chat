@@ -12,7 +12,7 @@ import { type RouteObject } from "react-router";
 
 import { ThemeProvider } from "../components/AppShell/ThemeProvider";
 import { FlashedNodeProvider } from "../components/FlashedNodeProvider";
-import { selectProject } from "../components/useCatalog";
+import { loadTestScope } from "../components/useCatalog";
 import { scriptedStateProxy } from "../lib/_stateProxyTestKit";
 import { type StateProxy } from "../lib/state-proxy";
 import { StateProxyProvider } from "../lib/StateProxyProvider";
@@ -33,7 +33,9 @@ import WorkspaceRoute from "./workspace";
  *  project layout re-scopes the catalog on entry, exercising the real seam.
  *  Production drives this from the component (selectProject + seedProjectScoped
  *  off the server loader's data); these route/nav tests carry no SSR payload, so
- *  a thin loader re-scopes directly — the seam without the seeded data. */
+ *  a thin loader stands in for the server loader — reading the installed test
+ *  source and seeding the scope (fire-and-forget, so the async deep-link
+ *  resolution stays observable). */
 export const testRouteTree: RouteObject[] = [
   { path: "/login", element: <LoginRoute /> },
   { path: "/auth/callback", element: <AuthCallbackRoute /> },
@@ -47,7 +49,7 @@ export const testRouteTree: RouteObject[] = [
         path: "project/:projectId",
         element: <ProjectLayout />,
         loader: ({ params }) => {
-          selectProject((params as { projectId?: string }).projectId!);
+          void loadTestScope((params as { projectId?: string }).projectId!);
           return null;
         },
         children: [

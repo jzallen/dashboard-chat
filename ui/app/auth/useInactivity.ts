@@ -10,9 +10,19 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getLastActivity, setLastActivity } from "./tokenStorage";
 
-const ACTIVITY_DEBOUNCE_MS = 5 * 60 * 1000; // keep-alive cadence ceiling
-const INACTIVITY_THRESHOLD_MS = 20 * 60 * 1000; // idle → "are you still there?"
-const INACTIVITY_CHECK_MS = 60 * 1000; // poll cadence
+/** Default timings. Overridable via {@link UseInactivityArgs.timing} so tests can
+ *  inject small values (rather than faking timers) and ops can tune without a
+ *  rebuild — the constants remain the production defaults. */
+export const DEFAULT_INACTIVITY_TIMING = {
+  /** Keep-alive cadence ceiling: at most one beat per this window of activity. */
+  debounceMs: 5 * 60 * 1000,
+  /** Idle span before the "are you still there?" modal opens. */
+  thresholdMs: 20 * 60 * 1000,
+  /** How often the idle poll checks the threshold. */
+  checkMs: 60 * 1000,
+} as const;
+
+export type InactivityTiming = typeof DEFAULT_INACTIVITY_TIMING;
 
 const ACTIVITY_EVENTS: Array<keyof DocumentEventMap> = [
   "mousedown",
@@ -28,6 +38,9 @@ export interface UseInactivityArgs {
   onLogout: () => void;
   /** The keep-alive beat, fired on each debounced activity edge + on Continue. */
   onKeepAlive?: () => void;
+  /** Override any subset of the debounce/threshold/poll timings (defaults from
+   *  {@link DEFAULT_INACTIVITY_TIMING}). */
+  timing?: Partial<InactivityTiming>;
 }
 
 export interface UseInactivityResult {
@@ -40,10 +53,18 @@ export function useInactivity({
   isAuthenticated,
   onLogout,
   onKeepAlive,
+  timing,
 }: UseInactivityArgs): UseInactivityResult {
   const [showModal, setShowModal] = useState(false);
-  // Stash the latest callbacks in refs so the debounced listener never closes
-  // over a stale one (and the effect needn't re-bind on every render).
+  const {
+    debounceMs = DEFAULT_INACTIVITY_TIMING.debounceMs,
+    thresholdMs = DEFAULT_INACTIVITY_TIMING.thresholdMs,
+    checkMs = DEFAULT_INACTIVITY_TIMING.checkMs,
+  } = timing ?? {};
+  // Stash the latest callbacks in refs so the debounced listener reads them live
+  // and the effect needn't re-bind on every render. The effect deliberately
+  // depends only on isAuthenticated + the timings (NOT the callbacks); the refs
+  // keep the listeners stable while still calling the current callbacks.
   const keepAliveRef = useRef(onKeepAlive);
   keepAliveRef.current = onKeepAlive;
   const logoutRef = useRef(onLogout);
@@ -56,7 +77,7 @@ export function useInactivity({
     const updateActivity = (): void => {
       const now = Date.now();
       const last = getLastActivity() ?? 0;
-      if (now - last > ACTIVITY_DEBOUNCE_MS) {
+      if (now - last > debounceMs) {
         setLastActivity(now);
         keepAliveRef.current?.();
       }
@@ -66,8 +87,8 @@ export function useInactivity({
     );
     const intervalId = setInterval(() => {
       const last = getLastActivity() ?? Date.now();
-      if (Date.now() - last >= INACTIVITY_THRESHOLD_MS) setShowModal(true);
-    }, INACTIVITY_CHECK_MS);
+      if (Date.now() - last >= thresholdMs) setShowModal(true);
+    }, checkMs);
 
     return () => {
       ACTIVITY_EVENTS.forEach((event) =>
@@ -75,7 +96,7 @@ export function useInactivity({
       );
       clearInterval(intervalId);
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, debounceMs, thresholdMs, checkMs]);
 
   const handleContinue = useCallback(() => {
     setLastActivity(Date.now());

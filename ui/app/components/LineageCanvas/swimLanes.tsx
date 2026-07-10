@@ -1,26 +1,37 @@
-/* Swimlanes view: one horizontal band per pipeline layer, cards within each. */
-import { type Layer, LAYER_ORDER, type LineageNode } from "../../catalog";
+/* Swimlanes view: one horizontal band per pipeline layer, cards within each.
+
+   A thin container (SwimView/Lane) reads the catalog and derives each card's
+   data; LaneCard is pure presentation over plain props and reads the open-node
+   callback from context. */
+import {
+  type DataCatalog,
+  type Layer,
+  LAYER_ORDER,
+  type LineageNode,
+} from "../../catalog";
 import { LAYER_META } from "../layerMeta";
 import { Icon, LayerDot } from "../primitives";
-import { catalog } from "../useCatalog";
 import styles from "./lineageCanvas.module.css";
+import { useOpenNode } from "./openNodeContext";
 import { AiEditChip } from "./shared";
+import { laneCardViewModel } from "./viewModel";
 
 function LaneCard({
   n,
   selected,
   orphan,
   justAdded,
-  onOpen,
+  parentLabels,
+  edits,
 }: {
   n: LineageNode;
   selected: boolean;
   orphan: boolean;
   justAdded: boolean;
-  onOpen: (node: LineageNode) => void;
+  parentLabels: string[];
+  edits: number;
 }) {
-  const parentLabels = catalog.parentsOf(n.id).map((p) => p.label);
-  const edits = catalog.auditCount(n.id);
+  const onOpen = useOpenNode();
   return (
     <div
       className={`${styles.laneCard} layer-${n.layer}`}
@@ -53,17 +64,17 @@ function LaneCard({
 }
 
 function Lane({
+  catalog,
   layer,
   isSelected,
   isOrphaned,
   wasJustAdded,
-  onOpen,
 }: {
+  catalog: DataCatalog;
   layer: Layer;
   isSelected: (id: string) => boolean;
   isOrphaned: (id: string) => boolean;
   wasJustAdded: (id: string) => boolean;
-  onOpen: (node: LineageNode) => void;
 }) {
   const layerMeta = LAYER_META[layer];
   const items = catalog.getNodesByLayer(layer);
@@ -76,28 +87,32 @@ function Lane({
         <span className={styles.lhDesc}>{layerMeta.desc}</span>
       </div>
       <div className={styles.laneBody}>
-        {items.map((n) => (
-          <LaneCard
-            key={n.id}
-            n={n}
-            selected={isSelected(n.id)}
-            orphan={isOrphaned(n.id)}
-            justAdded={wasJustAdded(n.id)}
-            onOpen={onOpen}
-          />
-        ))}
+        {items.map((n) => {
+          const vm = laneCardViewModel(catalog, n.id);
+          return (
+            <LaneCard
+              key={n.id}
+              n={n}
+              selected={isSelected(n.id)}
+              orphan={isOrphaned(n.id)}
+              justAdded={wasJustAdded(n.id)}
+              parentLabels={vm.parentLabels}
+              edits={vm.auditCount}
+            />
+          );
+        })}
       </div>
     </div>
   );
 }
 
 export function SwimView({
+  catalog,
   sel: selectedId,
-  onOpen,
   flashedNodeId,
 }: {
+  catalog: DataCatalog;
   sel: string | null;
-  onOpen: (node: LineageNode) => void;
   flashedNodeId: string | null;
 }) {
   const orphans = catalog.orphans();
@@ -109,11 +124,11 @@ export function SwimView({
       {LAYER_ORDER.map((ly) => (
         <Lane
           key={ly}
+          catalog={catalog}
           layer={ly}
           isSelected={isSelected}
           isOrphaned={isOrphaned}
           wasJustAdded={wasJustAdded}
-          onOpen={onOpen}
         />
       ))}
     </div>

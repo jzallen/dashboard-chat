@@ -5,9 +5,8 @@
 import { useLocation, useParams } from "react-router";
 
 import { useChat } from "../../../app/lib/chatContext";
-import { useNavIntents } from "../../../app/lib/nav";
-import type { Edge, LineageNode } from "../../catalog";
-import { AssistantOverlay, TerminalAssistant } from "../Chat";
+import type { DataCatalog, Edge, LineageNode } from "../../catalog";
+import { ChatOverlay } from "../Chat";
 import chat from "../Chat/Chat.module.css";
 import type { ColdStorageApi } from "../ColdStorage";
 import { ColdStorageModal } from "../ColdStorage";
@@ -16,8 +15,7 @@ import { ExportDrawer } from "../Export";
 import { Icon } from "../primitives";
 import type { UploadApi } from "../Upload";
 import { ConfirmArchive, UploadModal } from "../Upload";
-import { catalog } from "../useCatalog";
-import { useTheme } from "./ThemeProvider";
+import { catalog, useCatalogFromContext } from "../useCatalog";
 
 /**
  * The resolved deep-linked model for the chat context, or null off a model route.
@@ -29,10 +27,11 @@ import { useTheme } from "./ThemeProvider";
  */
 export function chatContextNode(
   params: Record<string, string | undefined>,
+  source: DataCatalog = catalog,
 ): LineageNode | null {
   const id = params.datasetId ?? params.viewId ?? params.reportId;
   if (!id) return null;
-  return catalog.getNode(id) ?? null;
+  return source.getNode(id) ?? null;
 }
 
 export function Overlays({
@@ -48,43 +47,32 @@ export function Overlays({
   createModel: (node: LineageNode, edge: Edge) => void;
   onOpenNode: (node: LineageNode) => void;
 }) {
-  const { dark } = useTheme();
   const { chatOpen, openChat, closeChat } = useChat();
-  const intents = useNavIntents();
   const location = useLocation();
   const params = useParams();
+  const catalog = useCatalogFromContext();
   const onOrg = location.pathname === "/org";
-  const chatContext = chatContextNode(params);
+  const chatContext = chatContextNode(params, catalog);
   return (
     <>
       {!chatOpen && !onOrg && (
         <button
-          className={chat.assistantFab}
+          className={chat.launcher}
           onClick={openChat}
           aria-label="Assistant"
         >
           <Icon name="sparkle" size={23} />
         </button>
       )}
-      {chatOpen && <div className={chat.aoScrim} onClick={closeChat} />}
-      {chatOpen &&
-        (dark ? (
-          <TerminalAssistant
-            context={chatContext}
-            onCreate={createModel}
-            onClose={closeChat}
-            onOpenNode={onOpenNode}
-            go={intents.go}
-          />
-        ) : (
-          <AssistantOverlay
-            context={chatContext}
-            onCreate={createModel}
-            onClose={closeChat}
-            onOpenNode={onOpenNode}
-            go={intents.go}
-          />
-        ))}
+      {chatOpen && <div className={chat.scrim} onClick={closeChat} />}
+      {chatOpen && (
+        <ChatOverlay
+          context={chatContext}
+          onCreate={createModel}
+          onClose={closeChat}
+          onOpenNode={onOpenNode}
+        />
+      )}
       {exporter.open && <ExportDrawer onClose={exporter.closeExport} />}
       {upload.modal.open && (
         <UploadModal
@@ -96,7 +84,6 @@ export function Overlays({
           onArchive={upload.requestArchive}
           mismatch={upload.mismatch}
           onRetry={upload.clearMismatch}
-          onLoadUploads={(sourceId) => catalog.getSourceUploads(sourceId)}
         />
       )}
       {upload.confirmArchive && (

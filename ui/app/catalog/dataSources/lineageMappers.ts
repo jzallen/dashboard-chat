@@ -22,6 +22,7 @@
  * no React. The fetch lives in {@link metadataApiSource}; this module is pure.
  */
 import type { Edge, FieldDef, LineageNode } from "../lineage";
+import type { ColdStorageRecord } from "../lineageGraph";
 
 /** A `{id,type}` upstream reference a view/report carries. */
 export interface BackendSourceRef {
@@ -205,6 +206,8 @@ export function toReportNode(r: BackendReport): LineageNode {
   };
 }
 
+const COLD_RETENTION_DAYS = 90;
+
 /**
  * Assemble the full lineage graph from the four backend lists. Source nodes are
  * the upstream-most roots; staging nodes come from non-archived datasets;
@@ -212,22 +215,42 @@ export function toReportNode(r: BackendReport): LineageNode {
  * upload carries a `source_id`, yielding a `[source_id, dataset.id]` edge
  * (source → staging); a LEGACY dataset (no `source_id`) stays a root, exactly as
  * before. Each `source_ref` on a view/report yields a `[ref.id, entity.id]` edge.
+ *
+ * Archived datasets (those with `archived_at`) are excluded from the active
+ * `nodes` map and instead returned as `coldRecords` — so the project-layout
+ * loader can seed cold storage from server truth rather than relying on
+ * client-side optimistic state. Restore is symmetric: once the backend clears
+ * `archived_at`, the next loader run re-derives the node as active and drops it
+ * from cold.
  */
 export function toLineageGraph(
   sources: BackendSource[],
   datasets: BackendDataset[],
   views: BackendView[],
   reports: BackendReport[],
-): { nodes: Record<string, LineageNode>; edges: Edge[] } {
+): { nodes: Record<string, LineageNode>; edges: Edge[]; coldRecords: ColdStorageRecord[] } {
   const nodes: Record<string, LineageNode> = {};
   const edges: Edge[] = [];
+  const coldRecords: ColdStorageRecord[] = [];
 
   for (const s of sources) {
     nodes[s.id] = toSourceNode(s);
   }
 
   for (const d of datasets) {
-    if (d.archived_at) continue;
+    if (d.archived_at) {
+      // Derive the incident edges for this archived dataset so restore can re-wire
+      // it losslessly. Only the source→staging edge is possible at archive time
+      // (a dataset is a leaf of the source layer).
+      const incidentEdges: Edge[] = d.source_id ? [[d.source_id, d.id]] : [];
+      coldRecords.push({
+        node: toStagingNode(d),
+        edges: incidentEdges,
+        retiredAt: Date.parse(d.archived_at),
+        retentionDays: COLD_RETENTION_DAYS,
+      });
+      continue;
+    }
     nodes[d.id] = toStagingNode(d);
     if (d.source_id) edges.push([d.source_id, d.id]);
   }
@@ -246,5 +269,5 @@ export function toLineageGraph(
     }
   }
 
-  return { nodes, edges };
+  return { nodes, edges, coldRecords };
 }
