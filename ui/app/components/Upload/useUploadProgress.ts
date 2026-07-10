@@ -123,7 +123,11 @@ export function useUploadProgress({
 
     const parsed = await parseUploadedCsv(file);
     const cols = resolveColumns(schema, parsed);
-    const rows = parsed ? parsed.rows : Math.floor(180 + Math.random() * 1600);
+    // The row count is the client-side parse count; when the file can't be
+    // parsed (unreadable body or an empty CSV) we show 0 rather than inventing a
+    // plausible-looking number. The authoritative count arrives from the backend
+    // upload-process response in the catalog layer, not this simulated saga.
+    const rows = parsed?.rows ?? 0;
     const fname = file ? file.name : `upload_${files.length + 1}.csv`;
 
     setSchema(cols);
