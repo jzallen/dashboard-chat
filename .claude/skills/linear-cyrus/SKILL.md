@@ -90,7 +90,7 @@ tasks-within-a-story — tasks share the skeleton (see `parallel-execution.md`).
 
 | File | Covers |
 |---|---|
-| `references/choosing-waves.md` | which `wave:*`/`/nw-*` to pick; **nw-deliver vs nw-refactor**; RPP levels + scope/flags |
+| `references/choosing-waves.md` | which `wave:*`/`/nw-*` to pick; **nw-deliver vs nw-refactor**; RPP levels + scope/flags; **nw-finalize (load skill from GitHub)** |
 | `references/issue-authoring.md` | titles/descriptions: human-readable name, `## AGENT NOTES`, `## References`, issue linking |
 | `references/intake-and-promotion.md` | Proposals→feature funnel, cyrus-vs-main-session split, promotion mechanics |
 | `references/project.md` | Proposals vs Feature projects; who creates them; `nw-discuss` |
