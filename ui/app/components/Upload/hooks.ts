@@ -103,15 +103,30 @@ export function useUpload(flash: (id: string) => void) {
   const cancelArchive = useCallback(() => setConfirmArchive(null), []);
   const archiveSource = useCallback(
     (src: LineageNode) => {
-      archiveFetcher.submit(null, {
-        method: "POST",
-        action: `/ui-server/datasets/${encodeURIComponent(src.id)}/archive`,
-        encType: "application/json",
-      });
+      // Cold Storage is modelled on the DATASET entity; a source node backs no
+      // backend entity and has no dataset id. Archiving a source therefore means
+      // archiving the staging dataset(s) it feeds — never threading the source id
+      // to the dataset archive route (that 404s). Resolve the source's staging
+      // children through the catalog graph and archive each; a genuine dataset
+      // node keeps the direct single-target behaviour.
+      const targetIds =
+        src.layer === "source"
+          ? catalog
+              .childrenOf(src.id)
+              .filter((child) => child.layer === "staging")
+              .map((child) => child.id)
+          : [src.id];
+      for (const datasetId of targetIds) {
+        archiveFetcher.submit(null, {
+          method: "POST",
+          action: `/ui-server/datasets/${encodeURIComponent(datasetId)}/archive`,
+          encType: "application/json",
+        });
+      }
       setConfirmArchive(null);
       closeUpload();
     },
-    [archiveFetcher, closeUpload],
+    [archiveFetcher, catalog, closeUpload],
   );
   const renameSource = useCallback(
     (id: string, name: string) => catalog.renameSource(id, name),

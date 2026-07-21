@@ -123,7 +123,7 @@ export function DagView({
   const { inFlightNodeId, inFlightLabel } = useInFlightSourceNode();
 
   const inFocusNodeId = hover || sel;
-  const orphans = catalog.orphans();
+  const orphans = catalog.disabledNodes();
   const focus = useMemo(
     () => dagFocusModel(catalog, inFocusNodeId),
     [catalog, version, inFocusNodeId],

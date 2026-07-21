@@ -313,6 +313,12 @@ export async function createDataCatalog(
     childrenOf: (id: string) => snapshot.graph.childrenOf(id),
     /** Ids of non-source nodes with no incoming edge. */
     orphans: () => snapshot.graph.orphans(),
+    /**
+     * Ids of active nodes that render disabled-but-visible: the structural
+     * orphans plus any staging node whose only source ingress was archived
+     * (source moved to cold storage). Superset of {@link orphans}.
+     */
+    disabledNodes: () => snapshot.graph.disabledNodes(),
     /** True if a direct edge connects nodes `a` and `b` in either direction. */
     isNodeAdjacent: (a: string, b: string) =>
       snapshot.graph.isNodeAdjacent(a, b),
