@@ -503,6 +503,24 @@ feature's DESIGN wave appends a sub-heading.
 
 ### Application-architecture features
 
+#### `source-soft-delete-cold-storage` (DESIGN — 2026-07-21)
+
+**Author:** Morgan (nw-solution-architect)
+**ADR:** ADR-055 (Accepted) · **Linear:** DC-199 (parent DC-195)
+**Status:** Ratified → DISTILL
+
+**Decision summary.** A **Source** gains the recoverable Cold Storage a Dataset already has,
+fixing the DC-195 404. New HTTP convention: **`PATCH /api/sources/{id}` `{"archived": bool}`**
+is soft-delete (Cold Storage); **`DELETE` is reserved** for future hard/permanent deletion
+(DC-139). Persistence reuses the dataset MR-7 pair — nullable `archived_at` + `retention_until`
+on `sources` (migration 021) — exposed in the source read contract, with `GET /api/sources`
+default-excluding archived (`?archived=true` for the cold-storage list). One boolean-driven,
+idempotency-preserving use case `archive_source` on the standard decorator stack; authz reuses
+`_authorize_source` (404 unknown / **403 cross-org**, correcting the DISCUSS AC to the
+`deps.py:88` platform posture). Flagged debt: this is the 2nd instance of the cold-storage
+pattern → future `ColdStorable` mixin + shared `RETENTION_WINDOW` extraction. Full design:
+`docs/feature/source-soft-delete-cold-storage/design/application-architecture.md`.
+
 #### `dbt-test-validation` (DESIGN — 2026-05-08)
 
 **Author:** Morgan (nw-solution-architect)
@@ -921,3 +939,4 @@ pino in their house style; `ui/` keeps consola; Python uses stdlib `logging` +
 | ADR-052 | Application | Normalize View/Report operations into a shared relation IR — component tables, joins-only sequence, kernel visitor (Proposed) |
 | ADR-053 | Application | Cross-service structured-logging envelope + Node logger choice — `shared/logging` `LogRecord`, pino for server surfaces, retain consola in `ui/` (Proposed) |
 | ADR-054 | Application | Correlation-id binding — mint-once at ingress, `X-Request-Id` propagation, `AsyncLocalStorage`/`ContextVar` ambient binding (Proposed) |
+| ADR-055 | Application | PATCH = soft-delete (Cold Storage) / DELETE = hard-delete — source cold-storage contract, reuses dataset `archived_at`/`retention_until` (Accepted) |
