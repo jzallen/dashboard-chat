@@ -1,0 +1,68 @@
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("//tools:version_layer.bzl", "version_layer")
+
+# ─── reverse-proxy OCI Image ─────────────────────────────────────────────────
+#
+# nginx ingress/routing image (ADR-047). Pure routing/coordination: nginx conf +
+# build-identity layer + entrypoint. It carries NO frontend assets — web-ssr
+# (//ui:ssr_image) owns and serves build/client. The entrypoint writes its OWN
+# build identity to /usr/share/nginx/html/_meta.json; nginx serves that one file
+# from its static root (dc-1k8).
+#
+# Split out of the removed frontend/BUILD.bazel: source-tree directories are
+# named for the body of source they contain (ADR-033), so the nginx routing
+# config lives in reverse-proxy/ and the RRv7 SSR sources live in ui/.
+
+genrule(
+    name = "nginx_conf_layer",
+    srcs = ["nginx.conf"],
+    outs = ["nginx_conf.tar"],
+    cmd = """
+        mkdir -p $$TMPDIR/etc/nginx/conf.d && \
+        cp $(location nginx.conf) $$TMPDIR/etc/nginx/conf.d/default.conf && \
+        tar -cf $(OUTS) -C $$TMPDIR etc
+    """,
+    tags = ["no-sandbox", "manual"],
+)
+
+version_layer(
+    name = "version_layer",
+    image_tag = "dashboard-chat/reverse-proxy:bazel",
+)
+
+genrule(
+    name = "entrypoint_layer",
+    srcs = ["docker-entrypoint.sh"],
+    outs = ["entrypoint.tar"],
+    cmd = """
+        staging=$$(mktemp -d) && \
+        mkdir -p $$staging/usr/local/bin && \
+        cp $(location docker-entrypoint.sh) $$staging/usr/local/bin/dashboard-entrypoint.sh && \
+        chmod +x $$staging/usr/local/bin/dashboard-entrypoint.sh && \
+        tar -cf $(OUTS) -C $$staging usr && \
+        rm -rf $$staging
+    """,
+    tags = ["no-sandbox", "manual"],
+)
+
+oci_image(
+    name = "image",
+    base = "@nginx_alpine",
+    tars = [
+        ":nginx_conf_layer",
+        ":version_layer",
+        ":entrypoint_layer",
+    ],
+    entrypoint = ["/usr/local/bin/dashboard-entrypoint.sh"],
+    exposed_ports = ["80"],
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "image_tar",
+    image = ":image",
+    repo_tags = ["dashboard-chat/reverse-proxy:bazel"],
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
