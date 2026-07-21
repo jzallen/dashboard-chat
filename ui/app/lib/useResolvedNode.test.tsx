@@ -8,7 +8,7 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { LineageNode, PartialCatalogSource } from "../catalog";
-import { installCatalogForTest, selectProject } from "../components/useCatalog";
+import { installCatalogForTest, loadTestScope } from "../components/useCatalog";
 import { fixtureFallback, fixtureNodes } from "../routes/_fixtureCatalog";
 import { useResolvedNode } from "./useResolvedNode";
 
@@ -30,7 +30,8 @@ async function installEmpty(): Promise<void> {
 describe("useResolvedNode", () => {
   it("reports pending until a catalog commit makes the node appear, then resolved", async () => {
     // Empty fallback graph, plus a primary that supplies d1 on the scoped read —
-    // so d1 is absent until selectProject commits the primary's nodes.
+    // so d1 is absent until the project-layout loader (loadTestScope stands in
+    // for it) fetches the primary's nodes and commits them into the catalog.
     const nodes: Record<string, LineageNode> = { d1: fixtureNodes().d1 };
     const primary: PartialCatalogSource = {
       getCurrentProject: () =>
@@ -45,7 +46,7 @@ describe("useResolvedNode", () => {
     expect(result.current.status).toBe("pending");
 
     await act(async () => {
-      await selectProject("proj-1");
+      await loadTestScope("proj-1");
     });
 
     expect(result.current.status).toBe("resolved");
