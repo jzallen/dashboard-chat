@@ -92,6 +92,17 @@ client (E6). Two viable shapes:
 
 Whichever shape: the load-bearing behavioural guarantee is **the source id is never used as a dataset id**.
 
+> **Correction (adopted).** Both shapes above cascade a **backend** archive from a source action —
+> derive the child datasets, then archive them. That is the very cascade this fix must avoid: it deletes
+> a downstream dataset as a side effect of retiring its source. A source node backs **no backend entity**
+> (E5), so "archive a source" has no backend meaning at all. The adopted fix is **client-only**:
+> `archiveSource` moves the source into the working graph's cold storage via the existing pure
+> `LineageGraph.archive` reducer and **posts nothing**. Its staging children simply lose their live
+> ingress and render disabled-but-visible (RC-B) — no dataset is archived or deleted. Restore is
+> symmetric and entity-routed: a client-archived **source** restores locally through the graph, while a
+> server-archived **dataset** still restores via the backend (`archived_at` cleared). The load-bearing
+> guarantee becomes stronger: **archiving a source issues no backend request whatsoever.**
+
 ### Fix for RC-B — mark downstream nodes that lost their only source ingress as disabled-but-visible
 
 Introduce a derivation for "a staging node whose only source ingress is gone (source archived)" and feed the
@@ -107,11 +118,11 @@ deleted from warehouse state, the node stays visible for remap.
 
 ## DISTILL regression test — required assertions
 
-**Archive-succeeds path (RC-A):**
-1. Invoking the source modal's "Move to cold storage" issues `POST` to `/ui-server/datasets/{childDatasetId}/archive` where `childDatasetId` is the source's staging child, a real dataset id.
-2. **No** request is ever made to `/ui-server/datasets/{sourceId}/archive` (the source id must never be threaded to the dataset route).
-3. On upstream 2xx, the source and its archived child are removed from the active graph and appear in Cold Storage (`listColdStorage()` includes them); no rollback occurs.
-4. (Guard) A source with multiple staging children archives all of them.
+**Archive path (RC-A) — client-only, no backend write (adopted):**
+1. Invoking the source modal's "Move to cold storage" issues **no** backend request at all — in particular nothing to `/ui-server/datasets/*/archive` (the source id must never be threaded to the dataset route, and no child dataset is archived as a side effect).
+2. The source is removed from the active graph and appears in Cold Storage (`listColdStorage()` includes it, layer `source`).
+3. (Guard) A source feeding multiple staging children still issues no backend request; every child is disabled-but-visible.
+4. Restore is entity-routed: a client-archived source restores locally (no backend); a server-archived dataset restores via `POST /ui-server/datasets/{id}/restore`.
 
 **Downstream-disabled-but-visible path (RC-B):**
 5. Given a `source → staging` graph, after the source is archived, the staging node is flagged disabled (surfaced through the same `data-orphan`/disabled presentation) AND remains in the rendered node set (visible, not deleted).

@@ -302,6 +302,7 @@ export class LineageGraph {
       .map((r) => ({
         id: r.node.id,
         name: r.node.label,
+        layer: r.node.layer,
         schema: r.node.schema,
         files: r.node.files,
         retiredAt: r.retiredAt,

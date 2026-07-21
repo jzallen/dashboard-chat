@@ -1,13 +1,14 @@
 // @vitest-environment happy-dom
 //
-// Regression spec: archiving a SOURCE node must NOT thread the source id to the
-// dataset archive route (that 404s). It resolves the source's staging child
-// dataset id(s) via the catalog graph and archives EACH child through the
-// working /ui-server/datasets/:datasetId/archive route.
+// Regression spec: archiving a SOURCE node is a CLIENT-ONLY lineage update. It
+// must NOT post anything to the backend (no source id threaded to the dataset
+// archive route — that 404s — and no cascading dataset archive). The source
+// moves into the working graph's cold storage and its connected staging
+// dataset(s) render disabled-but-visible; the dataset archive route is never hit.
 //
-// IF YOU'RE AN AGENT, READ THIS: the captured request targets ARE the contract.
-// The source id must never appear as a :datasetId. Do NOT weaken these
-// assertions to make an implementation pass.
+// IF YOU'RE AN AGENT, READ THIS: "no backend request fired" IS the contract.
+// The dataset archive action must never run. Do NOT weaken these assertions to
+// make an implementation pass.
 import { anonymousStateDocument } from "@dashboard-chat/ui-state-wire";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
@@ -21,7 +22,11 @@ import type { CatalogSource, Edge, LineageNode } from "../../catalog";
 import { fixtureSource } from "../../catalog";
 import { scriptedStateProxy } from "../../lib/_stateProxyTestKit";
 import { StateProxyProvider } from "../../lib/StateProxyProvider";
-import { installCatalogForTest } from "../useCatalog";
+import {
+  installCatalogForTest,
+  useCatalogFromContext,
+  useCatalogVersion,
+} from "../useCatalog";
 import { useUpload } from "./hooks";
 
 afterEach(() => vi.restoreAllMocks());
@@ -62,27 +67,47 @@ const SOURCE: LineageNode = {
   schema: [{ name: "id", type: "integer" }],
 };
 
-function SourceArchiveButton() {
+/** Renders the archive trigger alongside a live read-out of the catalog's cold
+ *  storage + disabled-node derivations so the test asserts the client lineage
+ *  update rather than any backend call. */
+function SourceArchiveHarness() {
   const hook = useUpload(vi.fn());
+  const catalog = useCatalogFromContext();
+  useCatalogVersion(); // re-render on every catalog mutation
   return (
-    <button
-      data-testid="archive-btn"
-      onClick={() => hook.archiveSource(SOURCE)}
-    >
-      Archive
-    </button>
+    <>
+      <button
+        data-testid="archive-btn"
+        onClick={() => hook.archiveSource(SOURCE)}
+      >
+        Archive
+      </button>
+      <div data-testid="cold">
+        {catalog
+          .listColdStorage()
+          .map((c) => c.id)
+          .sort()
+          .join(",")}
+      </div>
+      <div data-testid="disabled">
+        {[...catalog.disabledNodes()].sort().join(",")}
+      </div>
+      <div data-testid="active-source">
+        {catalog.getNode("src.people") ? "present" : "gone"}
+      </div>
+    </>
   );
 }
 
-function renderArchive(archivedIds: string[]) {
+function renderArchive(datasetRouteHits: string[]) {
   const proxy = settledProxy();
   const routes: RouteObject[] = [
-    { path: "/host", element: <SourceArchiveButton /> },
+    { path: "/host", element: <SourceArchiveHarness /> },
     {
+      // A spy that records ANY hit — archiving a source must never reach it.
       path: "/ui-server/datasets/:datasetId/archive",
-      action: async ({ request, params }) => {
-        archivedIds.push(String(params.datasetId));
-        expect(request.method).toBe("POST");
+      action: async ({ params }) => {
+        datasetRouteHits.push(String(params.datasetId));
         return Response.json({});
       },
     },
@@ -95,8 +120,8 @@ function renderArchive(archivedIds: string[]) {
   );
 }
 
-describe("useUpload.archiveSource — archiving a source archives its staging children", () => {
-  it("POSTs the staging CHILD dataset id and NEVER the source id", async () => {
+describe("useUpload.archiveSource — archiving a source is a client-only lineage update", () => {
+  it("moves the source to cold storage and disables its staging child WITHOUT any backend request", async () => {
     const stg: LineageNode = {
       id: "ds.people",
       label: "people",
@@ -112,17 +137,25 @@ describe("useUpload.archiveSource — archiving a source archives its staging ch
       ),
     );
 
-    const archivedIds: string[] = [];
-    renderArchive(archivedIds);
+    const datasetRouteHits: string[] = [];
+    renderArchive(datasetRouteHits);
 
     await act(async () => {
       fireEvent.click(screen.getByTestId("archive-btn"));
     });
 
-    await waitFor(() => expect(archivedIds).toEqual(["ds.people"]));
+    // Client lineage update: the source left the active DAG for cold storage…
+    await waitFor(() =>
+      expect(screen.getByTestId("cold").textContent).toBe("src.people"),
+    );
+    expect(screen.getByTestId("active-source").textContent).toBe("gone");
+    // …and its staging child is now disabled-but-visible.
+    expect(screen.getByTestId("disabled").textContent).toBe("ds.people");
+    // The load-bearing guarantee: the dataset archive route was NEVER hit.
+    expect(datasetRouteHits).toEqual([]);
   });
 
-  it("archives EVERY staging child of a source with multiple children", async () => {
+  it("never cascades a backend archive for a source feeding multiple staging datasets", async () => {
     const stgA: LineageNode = {
       id: "ds.people.a",
       label: "people-a",
@@ -148,15 +181,19 @@ describe("useUpload.archiveSource — archiving a source archives its staging ch
       ),
     );
 
-    const archivedIds: string[] = [];
-    renderArchive(archivedIds);
+    const datasetRouteHits: string[] = [];
+    renderArchive(datasetRouteHits);
 
     await act(async () => {
       fireEvent.click(screen.getByTestId("archive-btn"));
     });
 
     await waitFor(() =>
-      expect([...archivedIds].sort()).toEqual(["ds.people.a", "ds.people.b"]),
+      expect(screen.getByTestId("disabled").textContent).toBe(
+        "ds.people.a,ds.people.b",
+      ),
     );
+    expect(screen.getByTestId("cold").textContent).toBe("src.people");
+    expect(datasetRouteHits).toEqual([]);
   });
 });

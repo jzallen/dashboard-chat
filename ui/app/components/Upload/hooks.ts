@@ -103,23 +103,19 @@ export function useUpload(flash: (id: string) => void) {
   const cancelArchive = useCallback(() => setConfirmArchive(null), []);
   const archiveSource = useCallback(
     (src: LineageNode) => {
-      // Cold Storage is modelled on the DATASET entity; a source node backs no
-      // backend entity and has no dataset id. Archiving a source therefore means
-      // archiving the staging dataset(s) it feeds — never threading the source id
-      // to the dataset archive route (that 404s). Resolve the source's staging
-      // children through the catalog graph and archive each; a genuine dataset
-      // node keeps the direct single-target behaviour.
-      const targetIds =
-        src.layer === "source"
-          ? catalog
-              .childrenOf(src.id)
-              .filter((child) => child.layer === "staging")
-              .map((child) => child.id)
-          : [src.id];
-      for (const datasetId of targetIds) {
+      // Archive is routed by entity. A SOURCE node backs no backend entity, so
+      // archiving one is a CLIENT-ONLY lineage update: move it into the working
+      // graph's cold storage and let its connected staging datasets render
+      // disabled-but-visible. Nothing is POSTed — no source id threaded to the
+      // dataset route (that 404s) and no cascading dataset archive/delete. A
+      // genuine DATASET node is a backend entity and still archives through the
+      // dataset route, which persists `archived_at`.
+      if (src.layer === "source") {
+        catalog.archiveSource(src.id);
+      } else {
         archiveFetcher.submit(null, {
           method: "POST",
-          action: `/ui-server/datasets/${encodeURIComponent(datasetId)}/archive`,
+          action: `/ui-server/datasets/${encodeURIComponent(src.id)}/archive`,
           encType: "application/json",
         });
       }

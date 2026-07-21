@@ -350,6 +350,24 @@ export async function createDataCatalog(
     /** Add a live source node (dedup by id). */
     addSource: (node: LineageNode) =>
       commit({ graph: snapshot.graph.addSource(node) }),
+    /**
+     * Archive a source LOCALLY — move it (and its incident edges) into the
+     * working graph's cold storage. A source node backs no backend entity, so
+     * this posts NOTHING: it is a pure client lineage update. Its staging
+     * children lose their only live ingress and render disabled-but-visible via
+     * {@link disabledNodes}; no downstream dataset is touched (no cascading
+     * archive). `Date.now()` is injected here, out of the pure reducer.
+     */
+    archiveSource: (id: string): void =>
+      commit({ graph: snapshot.graph.archive(id, Date.now()) }),
+    /**
+     * Restore a locally-archived source from the working graph's cold storage —
+     * re-wire its node and stashed edges back into the active DAG. The
+     * client-only counterpart of {@link archiveSource}; server-archived datasets
+     * restore through the backend instead.
+     */
+    restoreSource: (id: string): void =>
+      commit({ graph: snapshot.graph.restore(id) }),
     /** Add a live model node and the edge feeding it (each deduped). */
     addModel: (node: LineageNode, edge: Edge) =>
       commit({ graph: snapshot.graph.addModel(node, edge) }),
