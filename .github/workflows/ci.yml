@@ -52,8 +52,8 @@ jobs:
       - name: Run lint
         run: bazel test //... --test_tag_filters=lint --nocache_test_results --config=ci
 
-  # ── Frontend tests (Bazel) ────────────────────────────────────────────────
-  test-frontend:
+  # ── UI (web-ssr) tests (Bazel) ────────────────────────────────────────────
+  test-ui:
     needs: [lint]
     runs-on: ubuntu-latest
     steps:
@@ -61,10 +61,10 @@ jobs:
       - uses: bazel-contrib/setup-bazel@0.9.1
         with:
           bazelisk-cache: true
-          disk-cache: ${{ github.workflow }}-frontend
+          disk-cache: ${{ github.workflow }}-ui
           repository-cache: true
-      - name: Run frontend tests
-        run: bazel test //frontend/... --test_tag_filters=-lint --nocache_test_results --config=ci
+      - name: Run ui tests
+        run: bazel test //ui/... --test_tag_filters=-lint --nocache_test_results --config=ci
 
   # ── Agent tests (Bazel) ───────────────────────────────────────────────────
   test-agent:
@@ -114,7 +114,7 @@ jobs:
   # ── Release (semantic-release) ────────────────────────────────────────────
   # Runs only on push to main (not on pull_request events)
   release:
-    needs: [lint, test-frontend, test-agent, test-backend, test-auth-proxy]
+    needs: [lint, test-ui, test-agent, test-backend, test-auth-proxy]
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
     permissions:

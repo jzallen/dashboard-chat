@@ -1,5 +1,6 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@npm//:defs.bzl", "npm_link_all_packages")
+load("@npm//:vitest/package_json.bzl", vitest_bin = "bin")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("//tools:version_layer.bzl", "version_layer")
 
@@ -17,6 +18,7 @@ js_library(
         [
             "app/**/*.ts",
             "app/**/*.tsx",
+            "app/**/*.js",
             "app/**/*.css",
         ],
         exclude = [
@@ -36,6 +38,30 @@ js_library(
         "//shared/logging:lib",
         "//shared/ui-state-wire:lib",
     ],
+)
+
+# ─── Unit Tests ──────────────────────────────────────────────────────────────
+#
+# Restores the `bazel test //ui/...` parity the removed frontend/ tree used to
+# provide via its per-module vitest targets. ui/ runs one `vitest run` over the
+# whole framework-mode tree (a single vitest.config.ts, unlike frontend/'s
+# split configs), so a single target mirrors the whole suite. Vitest uses
+# @vitejs/plugin-react rather than the reactRouter() Vite plugin — see
+# vitest.config.ts for why the RR plugin can't drive the test runtime.
+vitest_bin.vitest_test(
+    name = "test",
+    args = ["run", "--config", "vitest.config.ts"],
+    chdir = package_name(),
+    data = [
+        ":sources",
+        "vitest.config.ts",
+        "//:node_modules/vitest",
+    ] + glob([
+        "app/**/*.test.ts",
+        "app/**/*.test.tsx",
+    ]) + [":node_modules"],
+    size = "medium",
+    tags = ["no-sandbox"],
 )
 
 # ─── SSR OCI Image (web-ssr) ─────────────────────────────────────────────────
