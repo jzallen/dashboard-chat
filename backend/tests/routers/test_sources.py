@@ -6,6 +6,7 @@ the identity-header + project-access path used by the uploads router.
 """
 
 import pytest
+from freezegun import freeze_time
 from httpx import ASGITransport, AsyncClient
 
 from app.database import get_db
@@ -303,3 +304,99 @@ async def test_subsequent_mismatched_upload_returns_422_with_detail(client, seed
     error = body["errors"][0]
     assert "active" in error["detail"]["missing"]
     assert "email" in error["detail"]["extra"]
+
+
+# ---------------------------------------------------------------------------
+# PATCH /api/sources/{id} {archived} — archive a source to Cold Storage
+# ---------------------------------------------------------------------------
+
+
+async def test_patch_archive_returns_source_with_cold_storage_fields(client, seeded):
+    async with client:
+        with freeze_time("2026-07-22T12:00:00+00:00"):
+            source_id = await _create_source(client)
+
+        with freeze_time("2026-08-30T09:00:00+00:00"):
+            res = await client.patch(
+                f"/api/sources/{source_id}",
+                json={"archived": True},
+                headers=IDENTITY_HEADERS,
+            )
+
+    assert res.status_code == 200, res.text
+    assert res.json() == {
+        "data": {
+            "type": "sources",
+            "id": source_id,
+            "attributes": {
+                "project_id": PROJECT_1,
+                "name": "Patients",
+                "schema_config": {},
+                "created_by": "dev-user-001",
+                "created_at": "2026-07-22T12:00:00",
+                "updated_at": "2026-08-30T09:00:00",
+                "archived_at": "2026-08-30T09:00:00",
+                "retention_until": "2026-11-28T09:00:00",
+            },
+        },
+        "links": {"self": f"/api/sources/{source_id}"},
+    }
+
+
+async def test_patch_archive_is_idempotent_preserving_timestamp(client, seeded):
+    async with client:
+        source_id = await _create_source(client)
+
+        first = await client.patch(f"/api/sources/{source_id}", json={"archived": True}, headers=IDENTITY_HEADERS)
+        second = await client.patch(f"/api/sources/{source_id}", json={"archived": True}, headers=IDENTITY_HEADERS)
+
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    assert second.json() == first.json()
+
+
+async def test_patch_archive_unknown_source_returns_404(client, seeded):
+    async with client:
+        res = await client.patch(
+            "/api/sources/019515a0-b0ff-7000-8000-0000000000ff",
+            json={"archived": True},
+            headers=IDENTITY_HEADERS,
+        )
+
+    assert res.status_code == 404, res.text
+
+
+async def test_patch_archive_cross_org_source_is_forbidden(client, seeded, db_session):
+    other_project = "019515a0-0004-7000-8000-000000000004"
+    db_session.add(ProjectRecord(id=other_project, name="Other", org_id="other-org"))
+    await db_session.flush()
+
+    async with client:
+        other_headers = {**IDENTITY_HEADERS, "X-Org-Id": "other-org"}
+        created = await client.post(
+            "/api/sources",
+            json={"project_id": other_project, "name": "Theirs"},
+            headers=other_headers,
+        )
+        other_source_id = created.json()["data"]["id"]
+
+        res = await client.patch(
+            f"/api/sources/{other_source_id}",
+            json={"archived": True},
+            headers=IDENTITY_HEADERS,
+        )
+
+    assert res.status_code == 403, res.text
+
+
+async def test_patch_archive_malformed_body_returns_422(client, seeded):
+    async with client:
+        source_id = await _create_source(client)
+
+        res = await client.patch(
+            f"/api/sources/{source_id}",
+            json={"archived": "banana"},
+            headers=IDENTITY_HEADERS,
+        )
+
+    assert res.status_code == 422, res.text

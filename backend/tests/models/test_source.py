@@ -93,6 +93,8 @@ class TestSourceSerialize:
             "created_by": "user-1",
             "created_at": now.isoformat(),
             "updated_at": now.isoformat(),
+            "archived_at": None,
+            "retention_until": None,
         }
 
     def test_serialize_handles_none_timestamps(self):
@@ -103,3 +105,85 @@ class TestSourceSerialize:
 
         assert serialized["created_at"] is None
         assert serialized["updated_at"] is None
+        assert serialized["archived_at"] is None
+        assert serialized["retention_until"] is None
+
+
+class TestSourceColdStorageFields:
+    """Cold-storage lifecycle fields (archived_at, retention_until) on the wire."""
+
+    def test_serialize_carries_cold_storage_timestamps(self):
+        """An archived source serializes both lifecycle fields as ISO-8601 strings."""
+        archived_at = datetime(2026, 7, 22, 12, 0, 0, tzinfo=UTC)
+        retention_until = datetime(2026, 10, 20, 12, 0, 0, tzinfo=UTC)
+        source = Source(
+            id="src-1",
+            project_id="proj-1",
+            name="Patients",
+            schema_config={"fields": {}},
+            created_by="user-1",
+            created_at=archived_at,
+            updated_at=archived_at,
+            archived_at=archived_at,
+            retention_until=retention_until,
+        )
+
+        assert source.serialize() == {
+            "id": "src-1",
+            "project_id": "proj-1",
+            "name": "Patients",
+            "schema_config": {"fields": {}},
+            "created_by": "user-1",
+            "created_at": "2026-07-22T12:00:00+00:00",
+            "updated_at": "2026-07-22T12:00:00+00:00",
+            "archived_at": "2026-07-22T12:00:00+00:00",
+            "retention_until": "2026-10-20T12:00:00+00:00",
+        }
+
+    def test_from_record_maps_cold_storage_fields(self):
+        """from_record hydrates the cold-storage fields off the ORM record."""
+        archived_at = datetime(2026, 7, 22, 12, 0, 0, tzinfo=UTC)
+        retention_until = datetime(2026, 10, 20, 12, 0, 0, tzinfo=UTC)
+        record = SimpleNamespace(
+            id="src-1",
+            project_id="proj-1",
+            name="Patients",
+            schema_config={"fields": {}},
+            created_by="user-1",
+            created_at=archived_at,
+            updated_at=archived_at,
+            archived_at=archived_at,
+            retention_until=retention_until,
+        )
+
+        assert Source.from_record(record) == Source(
+            id="src-1",
+            project_id="proj-1",
+            name="Patients",
+            schema_config={"fields": {}},
+            created_by="user-1",
+            created_at=archived_at,
+            updated_at=archived_at,
+            archived_at=archived_at,
+            retention_until=retention_until,
+        )
+
+    def test_from_record_defaults_cold_storage_fields_to_none(self):
+        """A live source (record without the fields) hydrates them as None."""
+        record = SimpleNamespace(
+            id="src-1",
+            project_id="proj-1",
+            name="Patients",
+            schema_config={"fields": {}},
+            created_by="user-1",
+            created_at=None,
+            updated_at=None,
+        )
+
+        assert Source.from_record(record) == Source(
+            id="src-1",
+            project_id="proj-1",
+            name="Patients",
+            schema_config={"fields": {}},
+            created_by="user-1",
+        )

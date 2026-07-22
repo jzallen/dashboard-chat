@@ -76,6 +76,8 @@ dev = [
     "detect-secrets>=1.5.0",
     # In-memory Redis for unit tests (no docker dep needed)
     "fakeredis>=2.20.0",
+    # Freeze wall-clock time so time-dependent assertions use literals
+    "freezegun>=1.5.0",
 ]
 
 [tool.ruff]
