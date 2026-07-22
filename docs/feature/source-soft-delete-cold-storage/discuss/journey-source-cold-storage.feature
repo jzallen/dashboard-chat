@@ -1,46 +1,44 @@
-Feature: Soft-delete a source into Cold Storage
+Feature: Move a source to Cold Storage
   As a project curator
-  I want to move a source into recoverable Cold Storage via the backend
-  So that archived state survives reload, syncs across clients, and no longer 404s
+  I want to move a source I no longer need into recoverable Cold Storage
+  So that my active catalog stays uncluttered while the source stays safe,
+    and its archived state holds across reloads and every client — not just my tab
 
   Background:
-    Given an authenticated curator in org "org-A"
-    And an ingested, active source "src-1" in a project owned by "org-A"
+    Given I am a curator working in my own organization
+    And my project has an active source I ingested earlier
 
-  Scenario: Archive an active source
-    When I PATCH /api/sources/src-1 with {"archived": true}
-    Then the response status is 200
-    And the source body has "archived_at" set to the request time
-    And "retention_until" equals archived_at plus 90 days
-    And no child dataset of "src-1" is archived or deleted
+  Scenario: Archiving a source moves it to Cold Storage
+    When I move that source to Cold Storage
+    Then the source is marked as archived from that moment
+    And it is scheduled to be retained for 90 days before it can be purged
+    And the datasets built from that source are left untouched
 
-  Scenario: Archiving is idempotent
-    Given "src-1" was archived at time T
-    When I PATCH /api/sources/src-1 with {"archived": true}
-    Then the response status is 200
-    And "archived_at" is still T
+  Scenario: Moving an already-archived source to Cold Storage changes nothing
+    Given I already moved that source to Cold Storage earlier
+    When I move it to Cold Storage again
+    Then it stays archived with its original archive time unchanged
 
-  Scenario: Archived source leaves the default list but is retrievable
-    Given "src-1" is archived
-    When I GET /api/sources?project_id=<project>
-    Then "src-1" is not in the results
-    When I GET /api/sources?project_id=<project>&archived=true
-    Then "src-1" is in the results with its "archived_at"
-    And GET /api/sources/src-1 returns "src-1" with 200
+  Scenario: Archived sources leave the active catalog but stay findable
+    Given I moved that source to Cold Storage
+    When I browse my project's active sources
+    Then the archived source is not among them
+    But when I browse Cold Storage
+    Then I find the archived source there, showing when it was archived
+    And I can still open the source directly to inspect it
 
-  Scenario: Restore a source from Cold Storage
-    Given "src-1" is archived
-    When I PATCH /api/sources/src-1 with {"archived": false}
-    Then the response status is 200
-    And "archived_at" is null
-    And "retention_until" is null
-    And GET /api/sources?project_id=<project> includes "src-1"
+  Scenario: Restoring a source brings it back into the active catalog
+    Given I moved that source to Cold Storage
+    When I restore it from Cold Storage
+    Then it is no longer marked as archived
+    And its retention schedule is cleared
+    And it appears among my project's active sources again
 
-  Scenario: Cross-org isolation
-    Given a source "src-2" owned by org "org-B"
-    When I (org "org-A") PATCH /api/sources/src-2 with {"archived": true}
-    Then the response status is 404
+  Scenario: I cannot touch a source that belongs to another organization
+    Given a source that belongs to a different organization
+    When I try to move it to Cold Storage
+    Then the source appears not to exist to me
 
-  Scenario: Unknown source
-    When I PATCH /api/sources/does-not-exist with {"archived": true}
-    Then the response status is 404
+  Scenario: Moving a source that isn't there tells me it isn't there
+    When I try to move a source that does not exist to Cold Storage
+    Then I am told the source cannot be found
