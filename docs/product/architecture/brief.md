@@ -517,8 +517,9 @@ on `sources` (migration 021) — exposed in the source read contract, with `GET 
 default-excluding archived (`?archived=true` for the cold-storage list). One boolean-driven,
 idempotency-preserving use case `archive_source` on the standard decorator stack; authz reuses
 `_authorize_source` (404 unknown / **403 cross-org**, correcting the DISCUSS AC to the
-`deps.py:88` platform posture). Flagged debt: this is the 2nd instance of the cold-storage
-pattern → future `ColdStorable` mixin + shared `RETENTION_WINDOW` extraction. Full design:
+`deps.py:88` platform posture). Flagged debt: 2nd instance of the cold-storage
+pattern — wait for the rule of three before extracting; when extracted prefer a `Protocol`
+(consumer-defined) over a mixin/`singledispatch`. Full design:
 `docs/feature/source-soft-delete-cold-storage/design/application-architecture.md`.
 
 #### `dbt-test-validation` (DESIGN — 2026-05-08)

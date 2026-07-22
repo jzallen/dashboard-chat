@@ -28,7 +28,7 @@ See the full table in `application-architecture.md`. Summary: 6 EXTEND, 2 CREATE
 - AC1.2 status code corrected 404 → 403 for cross-org (unknown id stays 404). Full rationale in `upstream-changes.md`.
 
 ## Tech-debt flagged (not actioned)
-- 2nd instance of the Cold-Storage pattern → `RETENTION_WINDOW` + archive/restore/filter now duplicated across dataset and source paths. Candidate for a future `/nw-refactor` to extract a shared `ColdStorable` mixin + single retention constant. ADR-055 Consequences.
+- 2nd instance of the Cold-Storage pattern → `RETENTION_WINDOW` + archive/restore/filter now duplicated across dataset and source paths. **Wait for the rule of three** (3rd instance) before extracting. When extracted, prefer a **`Protocol`** (structural, consumer-defined) over an inheritance mixin/base class or `singledispatch` — simplest, keeps domain models free of shared inheritance. The `RETENTION_WINDOW` constant may be lifted independently/sooner. Owned by a future `/nw-refactor`. ADR-055 Consequences.
 
 ## Handoff
 → DISTILL (`/nw-distill`): author the regression/acceptance tests from `discuss/journey-source-cold-storage.feature` (with the 403 correction), then DELIVER (Outside-In TDD). Backend-only; `backend-use-case` + `alembic-migration` skills.
