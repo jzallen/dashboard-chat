@@ -53,23 +53,9 @@ class TestListProjectsForwarding:
             )
         )
         await ProjectController.list_projects(
-            cursor="IN", page_size=25, base_url="/api/p", user="USER_SENTINEL", list_projects_func=fake
+            cursor="IN", page_size=25, user="USER_SENTINEL", list_projects_func=fake
         )
         fake.assert_awaited_once_with(user="USER_SENTINEL", cursor="IN", page_size=25)
-
-    async def test_envelope_uses_base_url(self):
-        fake = AsyncMock(
-            return_value=Success(
-                {
-                    "items": [],
-                    "next_cursor": None,
-                    "has_more": False,
-                    "page_size": 50,
-                }
-            )
-        )
-        body, _ = await ProjectController.list_projects(base_url="/api/custom-projects", list_projects_func=fake)
-        assert "/api/custom-projects" in body["links"]["self"]
 
 
 # ---------------------------------------------------------------------------

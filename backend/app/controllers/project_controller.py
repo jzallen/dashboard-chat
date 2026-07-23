@@ -88,7 +88,6 @@ class ProjectController:
     async def list_projects(
         cursor: str | None = None,
         page_size: int = 50,
-        base_url: str = "/api/projects",
         user: "AuthUser | None" = None,
         *,
         list_projects_func: ListProjectsProtocol = project_use_cases.list_projects,
@@ -98,7 +97,7 @@ class ProjectController:
             case Success(data):
                 items = data["items"]
                 resp = wrap_jsonapi_list(
-                    "projects", items, base_url, data["page_size"], data["next_cursor"], data["has_more"]
+                    "projects", items, "/api/projects", data["page_size"], data["next_cursor"], data["has_more"]
                 )
                 return resp, 200
             case Failure(error):
