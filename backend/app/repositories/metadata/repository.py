@@ -559,11 +559,23 @@ class MetadataRepository:
         return _mappers.source_to_dict(source)
 
     @handle_repository_exceptions
-    async def list_sources(self, project_id: str) -> list[dict[str, Any]]:
-        """List sources for a project, ordered by ID (UUIDv7 = chronological)."""
-        result = await self._session.execute(
-            select(SourceRecord).where(SourceRecord.project_id == project_id).order_by(SourceRecord.id)
-        )
+    async def list_sources(self, project_id: str, archived: bool | None = None) -> list[dict[str, Any]]:
+        """List sources for a project, ordered by ID (UUIDv7 = chronological).
+
+        ``archived`` filters by Cold-Storage state (mirrors ``list_datasets``):
+        ``None``/``False`` returns only active rows (``archived_at IS NULL``) — the
+        default catalog view; ``True`` returns only archived rows
+        (``archived_at IS NOT NULL``) — the Cold-Storage list. Org scoping is
+        transitive via ``project_id``.
+        """
+        query = select(SourceRecord).where(SourceRecord.project_id == project_id)
+
+        if archived:
+            query = query.where(SourceRecord.archived_at.is_not(None))
+        else:
+            query = query.where(SourceRecord.archived_at.is_(None))
+
+        result = await self._session.execute(query.order_by(SourceRecord.id))
         return [_mappers.source_to_dict(s) for s in result.scalars().all()]
 
     @handle_repository_exceptions

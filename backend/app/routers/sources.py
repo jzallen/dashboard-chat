@@ -53,13 +53,14 @@ async def create_source(
 @router.get("")
 async def list_sources(
     project_id: str = Query(..., description="Parent project UUID"),
+    archived: bool = Query(False, description="Return Cold Storage (archived sources) instead of the active catalog"),
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(use_db_context),
 ):
-    """List the sources for a project (backs the lineage canvas)."""
+    """List a project's sources — the active catalog, or Cold Storage when ``archived=true``."""
     _, _project = await authorize_project_access(project_id=project_id, user=user, db=db)
 
-    body, status_code = await SourceController.list_sources(project_id)
+    body, status_code = await SourceController.list_sources(project_id, archived=archived)
     return JSONResponse(content=body, status_code=status_code)
 
 

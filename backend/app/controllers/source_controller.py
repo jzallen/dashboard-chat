@@ -41,7 +41,7 @@ class CreateSourceProtocol(Protocol):
 class ListSourcesProtocol(Protocol):
     """Call interface for the list-sources use case."""
 
-    async def __call__(self, project_id: str) -> Result: ...
+    async def __call__(self, project_id: str, *, archived: bool = False) -> Result: ...
 
 
 class GetSourceProtocol(Protocol):
@@ -113,9 +113,10 @@ class SourceController:
     async def list_sources(
         project_id: str,
         *,
+        archived: bool = False,
         list_sources_func: ListSourcesProtocol = source_use_cases.list_sources,
     ) -> tuple[dict, int]:
-        result = await list_sources_func(project_id)
+        result = await list_sources_func(project_id, archived=archived)
         match result:
             case Success(data):
                 items = [serialize(i) for i in data]
