@@ -61,14 +61,12 @@ class Source:
         and an already-active source stays cleared — returning ``self`` unchanged
         when the requested state already holds.
         """
-        is_already_archived = self.is_archived
-        if should_archive and is_already_archived:
+        if should_archive and (is_already_archived := self.is_archived):  # noqa: F841
             return self
         if should_archive:
             archived_at = datetime.now(UTC)
             return replace(self, archived_at=archived_at, retention_until=archived_at + RETENTION_WINDOW)
-        is_already_restored = not is_already_archived
-        if is_already_restored:
+        if is_already_restored := not self.is_archived:  # noqa: F841
             return self
         # restore source
         return replace(self, archived_at=None, retention_until=None)
