@@ -11,7 +11,7 @@ Feature: Move a source to Cold Storage
   # Cross-org returns 403 (not 404) per ADR-055 §amendment — the platform posture
   # (deps.py:88) supersedes the DISCUSS AC1.2 404 assumption.
   # Slice tags map scenarios to the carpaccio slices in story-map.md.
-  # @skip drives one-at-a-time delivery; the crafter unskips one scenario per TDD cycle.
+  # All three slices are delivered; every scenario is live (no @skip).
 
   Background:
     Given I am a curator working in my own organization
@@ -26,18 +26,18 @@ Feature: Move a source to Cold Storage
     And it is scheduled to be retained for 90 days before it can be purged
     And the datasets built from that source are left untouched
 
-  @slice1 @skip
+  @slice1
   Scenario: Moving an already-archived source to Cold Storage changes nothing
     Given I already moved that source to Cold Storage earlier
     When I move it to Cold Storage again
     Then it stays archived with its original archive time unchanged
 
-  @slice1 @skip
+  @slice1
   Scenario: Moving a source that isn't there tells me it isn't there
     When I try to move a source that does not exist to Cold Storage
     Then I am told the source cannot be found
 
-  @slice1 @skip
+  @slice1
   Scenario: I cannot touch a source that belongs to another organization
     Given a source that belongs to a different organization
     When I try to move it to Cold Storage
@@ -45,7 +45,7 @@ Feature: Move a source to Cold Storage
 
   # ── Slice 2 — Cold-Storage listing (default-exclude + browse Cold Storage) ─────
 
-  @slice2 @skip
+  @slice2
   Scenario: Archived sources leave the active catalog but stay findable
     Given I moved that source to Cold Storage
     When I browse my project's active sources
@@ -56,7 +56,7 @@ Feature: Move a source to Cold Storage
 
   # ── Slice 3 — Restore (symmetric PATCH {"archived": false}) ────────────────────
 
-  @slice3 @skip
+  @slice3
   Scenario: Restoring a source brings it back into the active catalog
     Given I moved that source to Cold Storage
     When I restore it from Cold Storage
@@ -64,7 +64,7 @@ Feature: Move a source to Cold Storage
     And its retention schedule is cleared
     And it appears among my project's active sources again
 
-  @slice3 @skip
+  @slice3
   Scenario: Restoring an already-active source changes nothing
     When I restore a source that was never archived
     Then it stays active with no retention schedule
