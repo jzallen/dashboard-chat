@@ -13,7 +13,7 @@ module-level alias. This is the seam that replaces the ``_uc()`` late-binding
 shim inherited from the http_controller DDD refactor.
 """
 
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, TypedDict
 
 from returns.result import Failure, Result, Success
 
@@ -26,6 +26,20 @@ if TYPE_CHECKING:
     from app.auth.types import AuthUser
 
 
+class ProjectListPage(TypedDict):
+    """One cursor-paginated page of projects, as returned by the list use case.
+
+    Unlike the other endpoints — which hand back a single serializable model —
+    listing wraps its rows in a pagination envelope that the controller unpacks
+    into the JSON:API list response.
+    """
+
+    items: list[dict]
+    next_cursor: str | None
+    has_more: bool
+    page_size: int
+
+
 class ListProjectsProtocol(Protocol):
     """Call interface for the list-projects use case."""
 
@@ -35,7 +49,7 @@ class ListProjectsProtocol(Protocol):
         user: "AuthUser | None" = None,
         cursor: str | None = None,
         page_size: int = 50,
-    ) -> Result: ...
+    ) -> Result[ProjectListPage, Any]: ...
 
 
 class GetProjectProtocol(Protocol):
@@ -94,10 +108,9 @@ class ProjectController:
     ) -> tuple[dict, int]:
         result = await list_projects_func(user=user, cursor=cursor, page_size=page_size)
         match result:
-            case Success(data):
-                items = data["items"]
+            case Success(page):
                 resp = wrap_jsonapi_list(
-                    "projects", items, "/api/projects", data["page_size"], data["next_cursor"], data["has_more"]
+                    "projects", page["items"], "/api/projects", page["page_size"], page["next_cursor"], page["has_more"]
                 )
                 return resp, 200
             case Failure(error):
@@ -112,8 +125,8 @@ class ProjectController:
     ) -> tuple[dict, int]:
         result = await get_project_func(project_id, user=user)
         match result:
-            case Success(data):
-                return wrap_jsonapi_single("projects", serialize(data), f"/api/projects/{project_id}"), 200
+            case Success(project):
+                return wrap_jsonapi_single("projects", serialize(project), f"/api/projects/{project_id}"), 200
             case Failure(error):
                 return error_response(error)
 
@@ -127,8 +140,8 @@ class ProjectController:
     ) -> tuple[dict, int]:
         result = await create_project_func(name=name, description=description, user=user)
         match result:
-            case Success(data):
-                serialized = serialize(data)
+            case Success(created):
+                serialized = serialize(created)
                 return wrap_jsonapi_single("projects", serialized, f"/api/projects/{serialized['id']}"), 201
             case Failure(error):
                 return error_response(error)
@@ -144,8 +157,8 @@ class ProjectController:
     ) -> tuple[dict, int]:
         result = await update_project_func(project_id, kwargs, user=user, project=project)
         match result:
-            case Success(data):
-                return wrap_jsonapi_single("projects", serialize(data), f"/api/projects/{project_id}"), 200
+            case Success(updated):
+                return wrap_jsonapi_single("projects", serialize(updated), f"/api/projects/{project_id}"), 200
             case Failure(error):
                 return error_response(error)
 
@@ -159,7 +172,7 @@ class ProjectController:
     ) -> tuple[dict, int]:
         result = await delete_project_func(project_id, user=user, project=project)
         match result:
-            case Success(data):
-                return {"meta": {"deleted": data}}, 200
+            case Success(deleted):
+                return {"meta": {"deleted": deleted}}, 200
             case Failure(error):
                 return error_response(error)
