@@ -5,9 +5,10 @@
 | Linear primitive | Maps to | Reference |
 |---|---|---|
 | **Project** | Proposals (intake) or a Feature (= nwave feature) | `project.md` |
-| **Milestone** | a **Release** (shippable increment; 1:many stories) | `milestone.md` |
-| **Issue (story)** | an nwave **story** — `wave › distill`, decomposes into tasks | `story.md` |
-| **Sub-issue (task)** | a build unit — `wave › deliver`, one PR; AC checklist = tests | `task.md` |
+| **Milestone** | a **Release Slice** (from `slices/`; carries slice AC; 1:many stories) | `milestone.md` |
+| **Issue (Release Slice)** | the slice-AC **checklist surface**; not delegated | `milestone.md` |
+| **Issue (story)** | an nwave **user story** — validation surface, grouped onto a slice; not delegated | `story.md` |
+| **Issue (scenario)** | a roadmap **step** = the codegen unit — `wave › deliver`, scenario branch → squash into feature | `scenario.md` |
 | **Cycle** | optional WIP bound for solo cadence | — skip if it's overhead |
 
 This file covers the cross-cutting **labels / routing / views**; see the per-level files
@@ -49,28 +50,33 @@ trusting this list from memory.
 > cleanup). Until then, only the grouped-child form is safe.
 
 ### `wave` group — drives the cyrus mode + tool scope
+The pre-promotion waves (`discuss`/`design`/`distill`/`deliver`) run on the **proposal** issue
+and are **write-capable** — they commit artifacts to the proposal's branch. (This is the change
+from the old model, where `discuss` was read-only thread analysis.)
+
 | Child | nwave entry | cyrus tool scope |
 |---|---|---|
-| `discuss` | `/nw-discuss` | `readOnly` — posts stories/AC to thread |
-| `design` | `/nw-design` | `readOnly` — C4/ADRs |
+| `discuss` | `/nw-discuss` | **write-capable** — commits `user-stories.md`, `story-map.md`, `slices/` |
+| `design` | `/nw-design` | **write-capable** — commits ADRs / C4 / domain model |
+| `distill` | `/nw-distill` | **write-capable** — commits the `.feature` acceptance suite |
+| `deliver` | `/nw-deliver` (proposal: **partial**; scenario: `/nw-execute`) | `all` — on the **proposal** generates `roadmap.json` only then stops; on a **scenario** runs `/nw-execute <slug> <step-id>` for one step |
 | `research` | `/nw-research` | `readOnly` |
 | `document` | `/nw-document` | `readOnly` |
-| `distill` | orchestrator mode | `coordinator` (read + create Linear sub-issues, **no code edits**) — decomposes a story into a Skeleton task + impl tasks |
-| `deliver` | `/nw-deliver` | `all` — builder; on a **story** it delivers the whole story in one session (one story PR) |
 | `bugfix` | `/nw-bugfix` | `safe`/`all` |
 | `refactor` | `/nw-refactor` | `safe`/`all` — behaviour-preserving; targeted by RPP level + scope |
-| `finalize` | `/nw-finalize` | write-capable — closes a project out from the migrated seed issue under its Finalize milestone (`milestone.md`); assigned **manually** when all Releases are Done |
+| `finalize` | `/nw-finalize` | write-capable — closes a project out from the migrated seed issue under its Finalize milestone (`milestone.md`); assigned **manually** when all Release PRs are merged |
 
 Read-only waves are safe to fire liberally — they cannot touch production code.
 `deliver | bugfix | refactor | finalize` are the gated ones (they write / open PRs). For
 **which** wave a given task wants — especially **`deliver` (behaviour-adding) vs `refactor`
 (behaviour-preserving, RPP level + scope targeted)** — see `choosing-waves.md`.
 
-**On a story, the wave child is a phase flag:** `distill` (awaiting breakdown,
-orchestrator) → relabel `deliver` (approved, builder). Mode is read from the story's
-label, so flipping it is how you move from planning to building (see `story.md`); group
-exclusivity means the flip is a single label write. Task sub-issues stay `deliver` as the
-plan — they're never individually delegated.
+**The wave child is a phase flag on the PROPOSAL:** cycle it `discuss → design → distill →
+deliver`, delegating at each, to run the pre-promotion wave chain (`intake-and-promotion.md`);
+group exclusivity means each flip is a single label write. After promotion, **Scenario** issues
+carry a static `deliver` (each delivered via `/nw-execute`); **Story** and **Release Slice**
+issues carry **no `wave` label** — they are validation surfaces and must not be delegatable into
+a build (`story.md`, `milestone.md`).
 
 ### `area` group — subtree filtering (mirrors the CI gate's subtree routing)
 `ui` (the `ui/` frontend tree), `backend`, `agent`, `ui-state`, `auth-proxy`, `infra`.

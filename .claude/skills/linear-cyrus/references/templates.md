@@ -1,147 +1,137 @@
 # Templates — canonical shapes for each primitive
 
-Every proposal / project / story / task / debt item has a **canonical body shape** so good
-issue hygiene is the path of least resistance instead of something re-derived from prose
-each time. Two surfaces carry those shapes, split by **who creates the primitive**:
+Every proposal / project / story / slice / scenario / debt item has a **canonical body shape**
+so good issue hygiene is the path of least resistance. Two surfaces carry those shapes, split by
+**who creates the primitive**:
 
-- **Human-authored** primitives (Proposal, Tech Debt intake, and any story/project you hand-
-  author) → **Linear native team templates**. Pick the template in the UI (or use its
-  unique email address) and the body, labels, and defaults pre-fill. This is the intuitive
-  path and needs no in-repo file.
-- **Agent-built** primitives (stories at promotion via the main session; Skeleton + impl
-  tasks at distill via dc-cyrus) → the **per-level reference files** are the shape the agent
-  fills via `save_issue` / `create_issue`. The MCP **cannot apply a Linear template** (no
-  `templateId` argument), so for these the shape must live where an agent reads it.
+- **Human-authored** primitives (Proposal, Tech Debt intake, Refactor, Bug-fix) → **Linear
+  native team templates**. Pick the template in the UI (or its unique email address) and the
+  body/labels/defaults pre-fill. Needs no in-repo file.
+- **Main-session-built** primitives (Release Slice, Story, Scenario issues at promotion) → the
+  **per-level reference files** are the shape the main session fills via `save_issue`. The MCP
+  **cannot apply a Linear template** (no `templateId` argument), so their shape lives here.
 
-The native template and the reference shape describe the **same** body — keep them in sync.
+Keep native templates and reference shapes in sync.
+
+> ⚠️ **Migration note (old → new model).** The previously-shipped native templates encode the
+> retired "story → Skeleton task + impl sub-issues → one story PR into the Release branch"
+> model. They **must be re-saved** in the Linear UI to the shapes below. See the **Purge
+> checklist** at the bottom — the MCP cannot edit templates, so this is manual.
 
 ## What a Linear template can preset (and can't)
 
 A **team** issue template presets team, status, priority, assignee, **delegated agent**,
-project, labels, estimate, and sub-issues, and has a **unique email address** that applies
-it on create. It **cannot** be applied through the API/MCP, and it can't target a specific
-**milestone** (milestones are project-scoped and dynamic) — so milestone assignment is
-always an explicit post-create step. **Do not preset the delegate on the Story template**:
-delegation must come *after* project + Release are attached, or distill fires too early
-(see `story.md` § Creating a story). Project templates have no email affordance and are
-created by hand in Settings.
-
-## Authoring loop (how these templates get made)
-
-1. The main session **creates a canonical example issue** via `save_issue` (labels applied
-   by validated grouped child name — `linear-structure.md`).
-2. A human **promotes it to a team template** in Linear (⋯ → Save as template), then
-   deletes/archives the example.
-3. **Project templates** (Feature, Refactor) are created by hand in Settings from the specs
-   below — no MCP path exists.
+project, labels, estimate, sub-issues, and has a **unique email address** that applies it on
+create. It **cannot** be applied through the API/MCP, and it can't target a specific
+**milestone** — so milestone assignment is always an explicit post-create step. Project
+templates have no email affordance and are created by hand in Settings.
 
 ## Which shape lives where
 
 | Primitive | Creator | Shape / template |
 |---|---|---|
 | **Proposal issue** | human | native template — below |
-| **Tech Debt intake issue** | human | native template — below |
-| **Refactor issue** | human / main session | native template — below |
-| **Story issue** | main session (at promotion); human for one-offs | native template + `story.md` |
-| **Skeleton task** | dc-cyrus (at distill) | `skeleton-task.md` |
-| **Implementation task** | dc-cyrus (at distill) | `task.md` |
+| **Tech Debt intake issue** | human | native template — below (unchanged) |
+| **Refactor issue** | human / main session | native template — below (unchanged) |
+| **Bug-fix issue** | human | native template — below (unchanged) |
+| **Release Slice issue** | main session (at promotion) | `milestone.md` + below |
+| **Story issue** | main session (at promotion) | `story.md` + below |
+| **Scenario issue** | main session (at promotion) | `scenario.md` + below |
 | **Feature project** | main session (at promotion) | spec below + `project.md` |
-| **Refactor project** | main session | spec below |
 
 Placeholders: `{{token}}` = mechanical substitution (`{{feature-slug}}`, `{{area}}`,
-`{{release-n}}`); `<free prose>` = author writes it. Labels are grouped `wave`/`area`
-**children** applied by validated child name, never the colon-form (`linear-structure.md`).
+`{{slice-n}}`, `{{step-id}}`); `<free prose>` = author writes it. Labels are grouped
+`wave`/`area` **children** applied by validated child name, never colon-form
+(`linear-structure.md`).
 
 ---
 
 ## Proposal issue  (labels: `wave › discuss`, `area › {{area}}`)
 
 ```
-<1–3 sentences: the problem or opportunity to explore, and why it matters now. No
-solution yet — a topic to discuss, not a plan.>
+<1–3 sentences: the problem or opportunity to explore, and why it matters now. No solution
+yet — a topic to discuss, not a plan.>
 
 ## What we'd want to learn
 - <open question the discussion should settle>
 
 ## AGENT NOTES
-Reference the `linear-cyrus` skill. While labeled `wave › discuss`, run `nw-discuss`
-(read-only) to produce the JTBD analysis, stories, and Given-When-Then AC **as analysis in
-this thread** — do NOT create issues or edit code. The main session materializes stories at
-promotion. Do not jump ahead to distill or deliver.
+Reference the `linear-cyrus` skill. This proposal runs the FULL pre-promotion wave chain,
+committing artifacts to this issue's branch (which becomes the feature branch). Cycle the
+`wave` flag and run each in order: `discuss` → `nw-discuss` (user-stories.md, story-map.md,
+slices/), `design` → `nw-design`, `distill` → `nw-distill` (the .feature suite), `deliver` →
+PARTIAL `nw-deliver` (generate roadmap.json ONLY, then STOP — no code). All are write-capable.
+The main session promotes after roadmap.json exists. Do NOT create Linear issues.
 
 ## References
 - <related ADR / docs pointer / Linear id>
 ```
 
-## Story issue  (labels: `wave › distill`, `area › {{area}}`; no preset delegate)
+## Release Slice issue  (labels: `area › {{area}}`; NO wave label; not delegated)
 
 ```
-<1–3 sentences that synthesize what this story delivers and why — plain language, not a
-quote of the discuss analysis.>
+<1 sentence: the slice goal, from slices/slice-{{slice-n}}-*.md.>
+
+## Slice acceptance criteria
+- [ ] <the slice's own AC, from the brief — cross-cutting invariants, not the union of story AC>
+
+## AGENT NOTES
+Validation surface for Release Slice {{slice-n}} — NOT delegated, generates no code. Its AC are
+verified independently once all this slice's Stories are complete (verification.md). Story work
+lands via the Scenario issues; this issue tracks the slice-level AC only.
+
+## References
+- docs/feature/{{feature-slug}}/slices/slice-{{slice-n}}-*.md
+```
+
+## Story issue  (labels: `area › {{area}}`; NO wave label; not delegated)
+
+```
+<1–3 sentences synthesizing what this story delivers and why — plain language, not a quote of
+user-stories.md.>
 
 ## Acceptance criteria
 - [ ] **Given** <context> **when** <action> **then** <observable outcome>
 
 ## AGENT NOTES
-Reference the `linear-cyrus` skill. While labeled `wave › distill`, run `nw-distill` to
-DECOMPOSE this into a Skeleton task + implementation sub-issues — create issues only, do
-NOT implement. When relabeled `wave › deliver`, run `nw-deliver` to implement the AC
-checklist test-first and open ONE story PR into the Release branch. Do not skip distill.
+Validation surface — do NOT implement from this issue. Code is delivered by the linked Scenario
+issues (one per roadmap step, `/nw-execute`). As scenarios merge, their sessions check the AC
+above that they satisfy (agent judgment — verification.md). This story's AC come from
+user-stories.md; the slice's AC live on the Release Slice issue.
 
 ## References
-- <ADR / docs/feature/{{feature-slug}}/ / related Linear id>
+- docs/feature/{{feature-slug}}/discuss/user-stories.md · related Linear ids (slice, scenarios)
 ```
 
-## Tech Debt intake issue  (project: Tech Debt; labels: `wave › refactor`, `area › {{area}}`)
-
-Membership in the **Tech Debt** project is the marker — no extra label axis. Use `discuss`
-instead of `refactor` if the item needs scoping before it's actionable.
+## Scenario issue  (labels: `wave › deliver`, `area › {{area}}`; no milestone)
 
 ```
-<1–3 sentences: what's structurally wrong (duplication, primitive obsession, hotspot
-churn) and the cost of leaving it. Behaviour does NOT change.>
+<1–2 sentences: the observable behaviour this step delivers — from the roadmap step criteria.>
 
 ## AGENT NOTES
-Reference the `linear-cyrus` skill. Behaviour-preserving cleanup — when promoted, run
-`nw-refactor <path> --level=<N> --scope=<file|module|package>` (add `--mikado_planning=true`
-if it crosses modules). Hard gates: a green suite over the code you touch, and
-characterization tests first for any untested legacy in scope. If you find yourself writing
-an AC for new behaviour, this is a Story, not debt.
+Reference the `linear-cyrus` skill. Run `/nw-execute {{feature-slug}} {{step-id}}` to drive this
+roadmap step's acceptance scenario RED → GREEN. Base your worktree on and open your PR into the
+FEATURE branch `{{feature-branch}}` (NOT main) — squash-merge. On merge, mark this scenario
+`related to` the Story/AC it satisfies and check those Story AC boxes. Iron Rule: do not weaken
+or skip the .feature scenario to go green.
 
 ## References
-- <hotspot output / ADR / related Linear id>
+- roadmap.json step {{step-id}} · tests/.../{{feature-slug}}/acceptance/<file>.feature
 ```
 
-See `intake-and-promotion.md` § Tech Debt for the light (detach → delegate) vs heavy
-(Refactor project) promotion paths.
+## Tech Debt intake / Refactor / Bug-fix issues (unchanged)
 
-## Refactor issue  (labels: `wave › refactor`, `area › {{area}}`)
-
-The actionable form of debt — distinct from a Story (no AC checklist / skeleton frame).
-
-```
-<1–3 sentences: the structural change and why it's behaviour-preserving.>
-
-## Cleanup target
-- **Scope:** `<path>` — `--scope=file | module | package`
-- **Level:** `--level=<N>` (RPP L1–L6; ~80% of value is L1–L2)
-
-## AGENT NOTES
-Reference the `linear-cyrus` skill. Run `nw-refactor <path> --level=<N> --scope=<scope>`
-(+ `--mikado_planning=true` if multi-module). Green suite + characterization tests are hard
-gates. Do NOT add observable behaviour.
-
-## References
-- <hotspot output / ADR>
-```
+The debt/refactor/bug-fix path does **not** use the slice/story/scenario frame — keep the
+existing native templates. Their AGENT NOTES already point at `nw-refactor` / `nw-bugfix` and
+do not reference skeleton tasks or story PRs. (If any still mention "Skeleton task" or "story PR
+into the Release branch," fix that line — see the Purge checklist.)
 
 ---
 
 ## Feature project — template spec  (create by hand in Settings)
 
 - **Name:** the natural feature name from the code (no wave/artifact/ticket vocabulary).
-- **Milestones:** the Release slices, plus a **Finalize** milestone ordered last
-  (`milestone.md`).
+- **Milestones:** the Release Slices, plus a **Finalize** milestone ordered last (`milestone.md`).
 - **Description:**
 
 ```
@@ -151,29 +141,42 @@ gates. Do NOT add observable behaviour.
 - <what's included>  · <explicit non-goal>
 
 ## AGENT NOTES
-Promoted from a proposal. Stories carry the work (labeled `wave › distill`); the migrated
-seed issue sits under Finalize as the `nw-finalize` closeout handle.
+Promoted from a proposal. Release-Slice milestones + their Slice issues carry slice AC; Story
+issues (validation surfaces) carry story AC; Scenario issues (`wave › deliver`) carry the code,
+one per roadmap step via `/nw-execute`. Single feature branch (the proposal's). The migrated
+seed sits under Finalize as the `nw-finalize` closeout handle.
 
 ## References
 - Originating proposal: {{DC-NN}}  · docs/feature/{{feature-slug}}/
 ```
 
-## Refactor project — template spec  (create by hand in Settings)
-
-- **Name:** the natural name of the subsystem/cleanup.
-- **Holds Refactor issues**, not Stories. Slice with Release milestones only if the RPP
-  cascade or Mikado phases warrant it; add a **Finalize** milestone for the migrated seed.
-- **Description:** same anatomy as the Feature project, with AGENT NOTES noting the work is
-  behaviour-preserving (`nw-refactor`, level + scope per issue).
-
 ---
 
-## One-time Settings checklist (manual — no MCP path)
+## Native-template PURGE checklist (manual — no MCP path)
 
-- [ ] **Delete the flat `wave:*` / `area:*` labels** so only the grouped children remain
-  (removes the colon-form footgun — `linear-structure.md`).
-- [ ] **Create the `finalize` child** under the `wave` group and add its `labelPrompts`
-  entry (write-capable mode) so `wave › finalize` routes to `nw-finalize`.
-- [ ] **Promote** each example issue (Proposal, Story, Tech Debt, Refactor) to a **team
-  template**.
-- [ ] **Create the Feature and Refactor project templates** from the specs above.
+The MCP cannot read or edit Linear templates. Do this once in the UI to remove old-model
+assumptions (verified present as of this rewrite):
+
+- [ ] **Story template** — re-save from the new **Story issue** shape above. Remove every trace
+  of *"Skeleton task + implementation sub-issues"* and *"ONE story PR into the Release branch."*
+  A Story is now a **validation surface** (no wave label, not delegated).
+- [ ] **Proposal template** — re-save from the new **Proposal issue** shape. Remove *"run
+  `nw-discuss` (read-only) … as analysis in this thread — do NOT create issues or edit code."*
+  The proposal now runs the **full write-capable wave chain** committing artifacts.
+- [ ] **Add a Release Slice issue template** and a **Scenario issue template** (new shapes above).
+- [ ] **Proposals project description** — update the read-only/discuss-only prose to the full
+  wave chain.
+- [ ] **Retire the old task/skeleton assumptions everywhere** — no template or project prose
+  should mention Skeleton tasks, implementation sub-issues, or story-PR-into-Release.
+
+**The label taxonomy does NOT change** — `wave`/`area` and their grouped children are reused
+as-is. The only rewrite-driven config change is not a label at all:
+
+- [ ] **`labelPrompts` tool-scope remap (cyrus config, `~/.cyrus/config.json`).** The
+  pre-promotion wave children (`discuss`/`design`/`distill`) now **commit artifacts**, so they
+  must map to **write-capable** presets instead of the old `readOnly`. Same labels, different
+  mode. `deliver` stays write-capable; add `finalize` if absent (`linear-structure.md`).
+
+*(Unrelated pre-existing hygiene, not part of this rewrite: the flat colon-form `wave:*`/`area:*`
+labels still shadow the grouped children — DC-190/DC-192 carry `wave:discuss`. Delete them and
+re-tag to the child whenever convenient; it predates this change.)*

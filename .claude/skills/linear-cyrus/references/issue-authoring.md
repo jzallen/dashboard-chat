@@ -1,10 +1,9 @@
 # Issue authoring — titles, descriptions, linking
 
 How every Linear **issue and project** we create (proposal, feature/refactor project,
-story, task) should read. **The description is the agent's prompt** *and* a human's
-briefing, so it has to serve both without one leaking into the other. Applies to the main
-session materializing projects + stories at promotion and to dc-cyrus creating task
-sub-issues during distill.
+Release Slice, story, scenario) should read. **The description is the agent's prompt** *and* a
+human's briefing, so it has to serve both without one leaking into the other. Applies to the
+main session materializing the project + Release Slice / Story / Scenario issues at promotion.
 
 ## Titles are human-readable, self-contained
 
@@ -60,7 +59,8 @@ Never encode a relationship in the title or prose narration. Instead:
 
 1. **Structural link (preferred): "Mark as related to".** Use Linear's relation
    (`related` / `blocks` / `blocked by`) so the graph is queryable and shows on both
-   issues. Task sub-issues already use `blocked by` the skeleton — same mechanism.
+   issues. Scenario issues use `blocked by` (from the roadmap deps), and the scenario→story
+   `related` link is added on merge (`verification.md`) — same mechanism.
 2. **Mention the Linear id in the description.** When a soft pointer is enough, name the
    issue by id (e.g. "context in DC-160") in the body — ideally under `## References` —
    so it auto-links, without asserting a typed relation.

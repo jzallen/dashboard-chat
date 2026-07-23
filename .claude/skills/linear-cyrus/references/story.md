@@ -1,89 +1,58 @@
-# Story level
+# Story level — a validation surface
 
-A **story** = an nwave user story. In Linear it's an **issue** in a Feature project,
-assigned to a **Release** milestone. Its `wave` child label is a **phase flag**:
+A **story** = an nwave user story (`user-stories.md`). In Linear it's an **issue** in a Feature
+project, assigned to the **Release Slice** milestone that `story-map.md` grouped it with, with
+its **AC checklist** (from `user-stories.md`) in the description.
 
-| Story label | Phase | A session on the story runs as |
-|---|---|---|
-| `wave › distill` | awaiting breakdown | **orchestrator** (coordinator — reads code, creates sub-issues, **no code edits**) |
-| `wave › deliver` | breakdown approved, building | **builder** (`all` tools — implements) |
+A story is a **validation surface, not a build unit.** It generates no code and is **never
+delegated** to cyrus. Code is produced only by **scenario** issues (`scenario.md`); a story's
+AC boxes get checked as scenarios merge and the delivering agent judges which AC they satisfied
+(`verification.md`). Linear auto-generates a branch for the story — **never used**.
 
-The session mode comes from the **story's** label, *not* the sub-issues' — so the label
-**is** how you move the story from planning to building. Apply it by grouped child name (validated),
-never the colon-form string (`linear-structure.md`); group exclusivity flips the flag in a
-single write.
+## Where stories come from (main session, at promotion)
 
-## Creating a story (main session, at promotion)
+Stories are minted by the **main session at promotion**, read from the committed
+`user-stories.md`, and placed on a slice per `story-map.md`:
 
-The story only becomes delegatable once it's attached to its project **and** its Release.
-Do these in order — **delegate last** so distill doesn't fire before the milestone is set:
+1. `save_issue` — `team` = DC, `project` = the Feature project, **`area` child label only**
+   (no `wave` label — a story must not be delegatable into a build), human-readable title,
+   body per `issue-authoring.md` with the **AC checklist** and a `## References` pointer to
+   `docs/feature/{slug}/`.
+2. `save_issue(id, milestone: "Release Slice N")` — assign it to the slice `story-map.md`
+   grouped it with. Milestone is project-scoped, so this is always an explicit step.
 
-1. `save_issue` — create it: `team` = DC, `project` = the Feature project, labels
-   `distill` + area child, human-readable title, body per `issue-authoring.md`. Fill from
-   the Story template shape (`templates.md`). **Do not preset the delegate/assignee.**
-2. Ensure its **Release milestone exists** (create with `save_milestone` if not), then set
-   `save_issue(id, milestone: "Release N")` — milestone is project-specific and can't be
-   preset by a template, so it's always this explicit step.
-3. **Delegate dc-cyrus last** (`save_issue(id, delegate: "dc-cyrus")` or assign) — this is
-   what fires the distill session, now that project + Release are in place.
+**Promotion gate:** every story maps to **exactly one** slice, and `slices/` ↔ `story-map.md`
+agree on membership (`intake-and-promotion.md`). A story that spans two slices is rejected/
+re-sliced — a Linear issue holds one milestone.
 
-## Phase 1 — distill (story is `wave › distill`)
+## AC checklist = the story's contract
 
-Assign dc-cyrus → it reads the real code and **decomposes the story into task
-sub-issues** (writes no code). It creates:
+The AC come from `user-stories.md` (AC-per-story). They are the story's **validation surface**:
 
-- a **Skeleton task first** (`skeleton-task.md`) — scaffold + signatures + RED tests;
-- then **implementation tasks**, each one AC, **`blocked by`** the skeleton task.
+- As scenarios merge, the delivering session judges which Story AC the work satisfies and
+  **checks those boxes** (`verification.md`) — attribution is a runtime gut call, no tag.
+- A story is "done" when its AC read satisfied — but that is a *surface*, not a gate. The
+  release gate is the **green scenario suite** (`verification.md`).
 
-Each task `create_issue`: `parentId` = the story, `project` = the Feature project,
-labels `deliver` + the story's area child, `state: "To Do"`, and an **AC checklist** in
-its description. (No `milestone` — tracked at story level.)
+## Every story body has an `## AGENT NOTES` section
 
-It ends the **story description** with a short **`## Delivery`** section: base on / PR
-into `<feature>/<release>`, iterate sub-tasks in order (skeleton first), mark each Done,
-one story PR.
-
-## Phase 2 — deliver (you relabel the story `wave › deliver`)
-
-When you're satisfied with the breakdown:
-
-1. **Relabel the story `distill` → `deliver`.** (Mode is label-driven, so this flips a
-   session on the story into builder mode — without it, the next session would run
-   read-only and couldn't implement. Group exclusivity means one label write does it.)
-2. **@mention dc-cyrus in a story comment:** "iterate the sub-tasks in order, `nw-deliver`
-   each, mark each sub-issue Done as you go; skeleton first; one PR into
-   `<feature>/<release>`."
-
-That mints **one builder session** on the story. In its single worktree it works through
-the sub-tasks — skeleton (RED tests land) then implementation (RED → green, **one atomic
-commit per AC checkbox**), marking each sub-issue Done — and opens **one story PR** into
-the Release branch. Sub-issues are the **plan**, never individually delegated.
-
-## Every story body ends with an `## AGENT NOTES` section (required)
-
-The canonical body shape is the Story template (`templates.md`) — fill it in rather than
-re-deriving the sections here. **The issue body IS the agent's prompt.** A cyrus session
-keys off the description; if it doesn't name the skill/wave, the agent just presses
-straight to implementation (observed on DC-8 — it skipped distill and opened a PR). So
-every story description keeps its human-readable summary on top and ends with an
-`## AGENT NOTES` block like:
+Even though a story is not delegated for code, its body is read by any session that touches it
+(and by humans). Keep the human-readable summary + AC on top; put a short `## AGENT NOTES` that
+states its role, e.g.:
 
 ```
 ## AGENT NOTES
-Reference the `linear-cyrus` skill for the workflow. While labeled `wave › distill`, run
-`nw-distill` to DECOMPOSE this into a Skeleton task + implementation sub-issues — create
-issues only, do NOT implement. When relabeled `wave › deliver`, run `nw-deliver` to
-implement the AC checklist test-first and open ONE story PR into the Release branch. Do
-not skip distill and jump straight to implementation.
+Validation surface — do NOT implement from this issue. Code is delivered by the linked
+Scenario issues (one per roadmap step, `/nw-execute`). As scenarios merge, their sessions
+check the AC below that they satisfy. This story's AC come from user-stories.md; the slice's
+AC live on the Release Slice issue.
 ```
 
-Keep the **title human-readable** (no wave/tier/relationship tags) and put any doc/issue
-pointers in a `## References` block below AGENT NOTES — see `issue-authoring.md`. The main
-session adds all of this when it materializes stories at promotion (see
-`intake-and-promotion.md`).
+Keep the **title human-readable** (no wave/artifact tags), pointers under `## References`
+(`issue-authoring.md`).
 
 ## Iron Rule
 
-The AC checklists are the spec. A deliver session may NOT weaken or delete a checkbox to
-go green. Unmet → the box stays unchecked, the sub-issue stays open, the story PR isn't
-ready. After 3 failed attempts on one item, revert and escalate (`needs-human`).
+The AC checklist is the spec. No session may weaken or delete an AC box to make a story look
+done. Unmet AC → the box stays unchecked and the slice can't release. The objective backstop is
+always the scenario suite, not the checkbox.

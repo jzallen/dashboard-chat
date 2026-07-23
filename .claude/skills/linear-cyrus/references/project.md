@@ -4,48 +4,47 @@ Two kinds of Linear project exist in this workflow.
 
 ## Proposals project (standing intake)
 
-One long-lived **Proposals** project holds **discussion-topic issues** (proposals),
-each labeled `wave › discuss`. No milestones live here.
+One long-lived **Proposals** project holds **discussion-topic issues** (proposals), each
+starting at `wave › discuss`. No milestones live here.
 
 - **You** add a proposal issue (the topic / problem to explore).
-- **Delegate dc-cyrus** → it runs `nw-discuss` (read-only) and **produces** the JTBD /
-  user stories / acceptance criteria **as analysis in the issue thread**. It does NOT
-  create issues (readOnly mode has no `create_issue`) — the main session materializes the
-  stories as issues at promotion.
-- A validated proposal is then **promoted** to its own Feature project (see
-  `intake-and-promotion.md`).
+- **Delegate dc-cyrus** and cycle the wave flag `discuss → design → distill → deliver`. Unlike
+  the old read-only discuss, these are **write-capable** sessions that **commit artifacts to the
+  proposal's branch** (`docs/feature/{slug}/…`, the `.feature` suite, and `roadmap.json`) — see
+  `intake-and-promotion.md`. Partial-deliver stops after `roadmap.json` (no code).
+- A validated proposal is then **promoted** to its own Feature project.
 
 ## Feature project (one per feature)
 
-A **Feature project** = one nwave **feature**. Created at **promotion** time. **Name it for
-the natural feature name from the code** — a plain product name a human recognizes, with no
-wave/artifact/ticket vocabulary. It owns:
+A **Feature project** = one nwave **feature**. Created at **promotion**. **Name it for the
+natural feature name from the code** — a plain product name, no wave/artifact/ticket vocabulary.
+It owns:
 
-- **Release milestones**, each with its own git **`<slug>/<release>` branch** (see
-  `milestone.md` + `branching-and-merge.md`) — there's no single feature branch,
-- one **Finalize milestone** (ordered last) holding the **migrated seed issue** — the
-  project closeout handle for `nw-finalize` (see `milestone.md`),
-- the promoted **stories** (created at promotion from the discuss analysis, labeled
-  `distill` + area child, assigned to a Release).
+- **Release-Slice milestones** (from `slices/`), each with a **Release Slice issue** carrying
+  the slice AC (`milestone.md`),
+- **Story issues** (from `user-stories.md` grouping via `story-map.md`) — validation surfaces
+  (`story.md`),
+- **Scenario issues** (from `roadmap.json` steps) — the codegen units (`scenario.md`),
+- one **Finalize milestone** holding the **migrated seed issue**,
+- **exactly one git branch** — the **proposal's branch**, reused as the feature branch. There
+  are **no per-Release integration branches** (`branching-and-merge.md`).
 
-The project **description** is human-readable prose that **synthesizes** the outcome of the
-pre-distill waves (goal, scope, release-slicing) — not a verbatim quote of the analysis
-docs — followed by an `## AGENT NOTES` section and a bibliography-style `## References`
-block last for any file/artifact/issue pointers (see `issue-authoring.md`). The stories
-carry the detail. nwave artifacts stay in the codebase; reference them, don't attach them.
+The project **description** synthesizes the pre-distill outcome (goal, scope, slicing) in fresh
+prose — not a quote of the analysis — then `## AGENT NOTES` and a `## References` block last
+(`issue-authoring.md`). nwave artifacts stay in the codebase; reference them, don't attach them.
 
 ## Who creates what
 
-cyrus's built-in Linear MCP is **issue-only** (`create_issue` / `get_issue` /
-`update_issue` / `save_comment`), so the split is by Linear level:
+cyrus's Linear MCP is **issue-scoped**, but in the new model it **does not create issues during
+the build** — scenarios come from `roadmap.json` and are minted by the main session at
+promotion. The split:
 
 | Level | Creator |
 |---|---|
-| Project, Release milestones (+ their git branches) | **main session** (full MCP: `save_project`/`save_milestone`) |
-| **Stories** | **main session**, at promotion (from the discuss analysis) |
-| **Task sub-issues** | **dc-cyrus**, during **`nw-distill`** — it *does* create the Skeleton task + impl sub-issues (orchestrator/coordinator mode, `create_issue`) |
+| Project, Release-Slice milestones | **main session** (full MCP: `save_project` / `save_milestone`) |
+| Release Slice issues, Story issues, Scenario issues | **main session**, at promotion (from committed artifacts) |
+| The committed **artifacts** (docs, `.feature`, `roadmap.json`) | **dc-cyrus**, during the pre-promotion wave chain |
+| Code (per scenario) | **dc-cyrus**, `/nw-execute` per scenario issue |
 
-So cyrus **can and does** create issue-level structure (the task sub-issues at distill);
-it just **cannot** create projects or milestones, and in `nw-discuss` (read-only mode) it
-can't create any issues. **cyrus thinks (waves) + creates the task sub-issues; the main
-session creates the project/milestone/story scaffolding.** See `intake-and-promotion.md`.
+So cyrus **produces the artifacts and the code**; the **main session mints all the Linear
+structure** from those artifacts. See `intake-and-promotion.md`.

@@ -2,60 +2,66 @@
 
 ## What actually starts a session
 
-cyrus runs **only** on a Linear `AgentSessionEvent / created`. That is minted by
-**delegating or @mentioning the agent-enabled `@dashboard-chat` app** on an issue.
-Plain assignment to a human, a comment, or a label change does **not** start a
-session.
+cyrus runs **only** on a Linear `AgentSessionEvent / created`, minted by **delegating or
+@mentioning the agent-enabled `@dashboard-chat` app** on an issue. Plain assignment to a human,
+a bare comment, or a label change does **not** start a session.
 
-- **Delegate** (assign the agent) or **@mention `@dashboard-chat`** in a comment → an
-  AgentSession is created → Linear POSTs the signed event → it reaches cyrus → a
-  Claude Code session runs and **streams activity back into the issue thread**.
-- The issue's **description is the task prompt** (`fetchFullIssueDetails`). Whatever is
-  in the body is what the agent works on — so the body must be a real brief. The deliver
-  comment (below) rides in the thread as additional marching orders, so keep the story's
-  `## Delivery` section consistent with it.
-- **Each delegate/@mention mints a NEW session**, and the mode comes from the issue's
-  **current labels** at that moment. So on a story: the first delegation (`wave › distill`)
-  runs the orchestrator; after you **relabel the story `wave › deliver`**, an @mention
-  **comment** mints a fresh **builder** session that delivers the whole story. Relabel
-  BEFORE commenting — a comment on a still-`wave › distill` story runs read-only and can't
-  implement (see `story.md`).
+- **Delegate** (assign the agent) or **@mention `@dashboard-chat`** → an AgentSession is created
+  → Linear POSTs the signed event → cyrus runs a Claude Code session that **streams activity
+  back into the issue thread**.
+- The issue's **description is the task prompt** (`fetchFullIssueDetails`) — so the body must be
+  a real brief with `## AGENT NOTES` naming the command.
+- **Each delegate/@mention mints a NEW session**, and the mode comes from the issue's **current
+  labels** at that moment.
+
+## The two delegation patterns
+
+**1. The proposal wave chain (pre-promotion, write-capable).** On the **proposal issue**, cycle
+the `wave` flag and delegate at each step — `discuss → design → distill → deliver`. Each mints a
+fresh session whose mode is the current wave label; each is **write-capable** and commits its
+artifacts to the proposal's branch (`intake-and-promotion.md`). Relabel forward only when you're
+satisfied with the prior wave. Partial-deliver stops after `roadmap.json`.
+
+**2. Per-scenario delivery (post-promotion).** After promotion, delegate dc-cyrus on each
+**scenario issue** (`wave › deliver`). Its `## AGENT NOTES` names **`/nw-execute <slug>
+<step-id>`** and the **feature branch** to base on / PR into. The session cuts a scenario branch
+off the feature branch, drives the step's `.feature` scenario green, and squash-merges back
+(`scenario.md`, `branching-and-merge.md`). Scenarios in a slice with no `blocked_by` edge can be
+delegated **concurrently** (`parallel-execution.md`).
+
+**Not delegated:** Release Slice issues and Story issues are **validation surfaces** — never
+delegate them for code (`milestone.md`, `story.md`). Their AC boxes are checked by the scenario
+sessions + slice verification (`verification.md`), not by a build session.
+
+## cyrus mode config (`labelPrompts`)
+
+Mode + tool scope come from the `wave` child label. The pre-promotion waves must map to
+**write-capable** presets (they commit docs/tests/roadmap) — this is the change from the old
+read-only `discuss`. `deliver` stays write-capable (`all`) for scenario `/nw-execute`. A new
+wave child needs its `labelPrompts` entry before it routes (`linear-structure.md`).
 
 ## Prerequisites (devpod ops)
 
-The full path is: Linear → AWS Lambda Function URL → SQS → local pump → local cyrus
-daemon → Claude Code → posts back to Linear. For delegations to drive sessions:
+Linear → AWS Lambda Function URL → SQS → local pump → local cyrus daemon → Claude Code → posts
+back. For delegations to drive sessions:
 
-- **cyrus daemon** running on the devpod (`cyrus` on :3456).
-- **Continuous SQS-mode pump** running (drains the queue and replays to cyrus).
-- Managed together via `cyrus/Makefile`: `make up | down | restart | status | logs`.
-- Both must be restarted after a devpod stop/start (and the EC2 **IMDS hop-limit = 2**
-  re-applied if the instance was recreated — see memory `cyrus-local-running`).
-- The Linear app must stay **agent-enabled** with the "Agent session events" webhook
-  registered, else mentions/delegations won't mint an AgentSession.
-
-## Access control
-
-cyrus `userAccessControl.allowedUsers` restricts who may delegate. For a solo/small
-setup, leave open or list the known delegators. `blockBehavior` (`silent` /
-`comment`) controls the response to a blocked delegation.
+- **cyrus daemon** running (`cyrus` on :3456) and a **continuous SQS-mode pump**.
+- Managed via `cyrus/Makefile`: `make up | down | restart | status | logs`. Both restart after a
+  devpod stop/start (re-apply IMDS hop-limit = 2 if the instance was recreated — memory
+  `cyrus-local-running`).
+- The Linear app must stay **agent-enabled** with the "Agent session events" webhook registered.
 
 ## Routing recap
 
-With the **`teamKeys` catch-all** configured for the single team, every issue routes
-to `dashboard-chat` without needing a per-issue routing label. The `wave:*` label then
-selects the `labelPrompts` mode + tool scope. (If routing ever misbehaves, a
-`[repo=dashboard-chat]` tag in the description is the highest-priority override, read
-live at webhook time.)
+The **`teamKeys` catch-all** routes every DC issue to `dashboard-chat` without a per-issue label.
+The `wave` child then selects the `labelPrompts` mode. (If routing misbehaves, a
+`[repo=dashboard-chat]` tag in the description is the highest-priority override.)
 
 ## Quick checklist
 
-**Distill a story:** (1) story is in a Feature project + on a Release that has a
-`<slug>/<release>` branch; (2) labels `wave › distill` + `area` child; (3) daemon + pump **up**
-(`make status`); (4) assign / @mention `@dashboard-chat`.
+**Advance a proposal wave:** (1) proposal on its branch; (2) relabel to the next `wave` child;
+(3) daemon + pump **up** (`make status`); (4) delegate / @mention `@dashboard-chat`.
 
-**Deliver a story:** (1) the breakdown (Skeleton + impl tasks) exists and looks right;
-(2) the story description has a `## Delivery` section (target the Release branch);
-(3) **relabel the story `wave › distill` → `wave › deliver`**; (4) **@mention `@dashboard-chat`
-in a story comment** with the deliver instruction (iterate sub-tasks, skeleton first, mark
-Done, one PR into `<slug>/<release>`).
+**Deliver a scenario:** (1) promotion done, scenario issue exists with `deliver` + area, no open
+`blocked_by`; (2) its body names `/nw-execute <slug> <step-id>` + the feature branch; (3)
+daemon + pump **up**; (4) delegate / @mention `@dashboard-chat`.

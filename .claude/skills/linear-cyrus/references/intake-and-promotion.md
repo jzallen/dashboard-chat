@@ -1,30 +1,32 @@
 # Intake & promotion
 
 How a raw idea becomes a structured feature, and who does which part. Two standing backlog
-projects hold ideas — **Proposals** (new features) and **Tech Debt** (debt intake) — and
-both promote into feature/refactor projects the same way: the seed issue **migrates into
-the promoted project** rather than being left behind.
+projects hold ideas — **Proposals** (new features) and **Tech Debt** (debt intake) — and both
+promote the same way: the seed issue **migrates into the promoted project** rather than being
+left behind.
 
 ## The funnel
 
 ```
 Proposals project
-  └ Proposal issue (wave › discuss)
-        │   delegate dc-cyrus → nw-discuss
-        ▼
-     proposal enriched + stories produced as ANALYSIS in the thread (JTBD, stories, AC)
-        │   [main session] PROMOTE
+  └ Proposal issue — wave flag cycles: discuss → design → distill → deliver
+        │   each wave = a write-capable dc-cyrus session on the proposal's branch:
+        │     discuss  → docs/feature/{slug}/discuss/  (user-stories.md, story-map.md, slices/)
+        │     design   → docs/feature/{slug}/design/   (ADRs, C4, domain model)
+        │     distill  → tests/.../{slug}/acceptance/*.feature  (the acceptance suite)
+        │     deliver  → docs/feature/{slug}/deliver/roadmap.json  (PARTIAL — stops here, no code)
+        │   [main session] PROMOTE — reads the committed artifacts, mints Linear structure
         ▼
   New Feature project (named for the natural code feature name)
-    + Release milestones (from the discuss release-slicing) + a git <slug>/<release> branch each
-    + Finalize milestone  ← the migrated seed issue lands here (project closeout handle)
-    + stories created in (on their Release milestone, wave › distill)
-        │   per story: create → attach project + Release → delegate dc-cyrus → nw-distill → Skeleton + impl tasks
-        │   review breakdown → relabel story wave › deliver → @mention comment
-        │   → ONE builder session delivers the whole story → ONE story PR into the Release branch
+    + Release-Slice milestones (from slices/) + one Release Slice issue each (slice AC)
+    + Story issues (from user-stories.md, grouped onto slices by story-map.md)
+    + Scenario issues (from roadmap.json steps; no milestone; blocked_by per phase/step deps)
+    + Finalize milestone  ← the migrated seed issue lands here (closeout handle)
+        │   deliver scenarios: /nw-execute per step → scenario branch → squash into feature branch
+        │   on merge: agent judges + checks the Story AC it satisfied (verification.md)
         ▼
-     review + merge story PRs in Linear; Release done → <slug>/<release> → main (no PR)
-        │   ALL Releases done → relabel the seed wave › finalize → delegate → nw-finalize
+     slice green + merged & slice AC verified → Release PR feature→main (merge, never squash)
+        │   ALL Release PRs merged → relabel seed wave › finalize → delegate → nw-finalize
         ▼
      project closed out (artifacts archived to docs/evolution/); seed issue Done
 ```
@@ -33,82 +35,86 @@ Proposals project
 
 | Actor | Linear MCP | Owns |
 |---|---|---|
-| **dc-cyrus** | issue-only (`create_issue`/`update_issue`/`get_issue`/`save_comment`) | the **waves** in-session: `nw-discuss` (→ stories **as thread analysis** — read-only mode, no issue creation), `nw-distill` (→ task sub-issues — coordinator mode), `nw-deliver` (→ code), `nw-finalize` (→ closeout) |
-| **main-session assistant** | full (`save_project`, `save_milestone`, `save_issue`) | the **structure**: create/manage projects + milestones + their git branches, **promotion**, migrating the seed |
+| **dc-cyrus** | issue-scoped | the **waves** in-session, **write-capable**: the pre-promotion chain (`nw-discuss`→`nw-design`→`nw-distill`→partial `nw-deliver`, committing artifacts to the proposal's branch), then one `/nw-execute` **per scenario** after promotion |
+| **main-session assistant** | full (`save_project`/`save_milestone`/`save_issue`) | the **structure**: project, Release-Slice milestones + Slice issues, Story issues, Scenario issues, dependency wiring, promotion, migrating the seed |
 
-**cyrus thinks; the main session structures.** cyrus literally can't create projects or
-milestones (no tools for it — that's why DC-6 came back with no project/milestone), so
-those never block on it.
+**cyrus runs the waves; the main session structures Linear.** cyrus cannot create projects or
+milestones — those never block on it. Note the shift from the old model: **cyrus no longer
+creates issues during the build** (scenarios come from `roadmap.json` and are minted by the
+main session at promotion).
+
+## The pre-promotion wave chain (write-capable)
+
+Unlike the old read-only `nw-discuss`, the proposal now runs **four write-capable waves**,
+each committing to the **proposal's branch** (which becomes the feature branch —
+`branching-and-merge.md`). Cycle the proposal's `wave` flag and delegate at each:
+
+1. `wave › discuss` → `nw-discuss` — journeys, `user-stories.md` (AC-per-story), `story-map.md`,
+   and carpaccio **`slices/slice-NN-*.md`** (each with its own AC).
+2. `wave › design` → `nw-design` — ADRs / C4 / domain model.
+3. `wave › distill` → `nw-distill` — the **`.feature` acceptance suite** (feature-scoped;
+   traces story→scenario at its review gate but does not persist it).
+4. `wave › deliver` → **partial** `nw-deliver` — generate **`roadmap.json` only** (phases →
+   steps), then **stop before code**. Promotion happens only after this exists.
+
+Review between waves is your gate; relabel forward when satisfied.
 
 ## Promotion mechanics (main session)
 
-There's no single "convert issue → project" API call, so the main session **replicates**
-it via the full Linear MCP. Fill each primitive from its shape (native template for the
-human-authored ones, the per-level reference for the agent-built ones — see `templates.md`),
-and apply labels by the **validated grouped child name, never the colon-form** (`linear-structure.md`):
+There's no "convert issue → project" API call, so the main session **replicates** it, reading
+the committed artifacts. Apply labels by the **validated grouped child name**
+(`linear-structure.md`); synthesize prose, don't quote the analysis (`issue-authoring.md`).
 
-1. `save_project` — create the Feature project. **Name it for the natural feature name from
-   the code** (a plain product name; no wave/artifact/ticket vocabulary), team = DC. The
-   description is human-readable prose that **synthesizes** the discuss outcome (not a
-   verbatim quote of the analysis docs), with an `## AGENT NOTES` section and a
-   bibliography-style `## References` block last (see `project.md`, `issue-authoring.md`).
-2. `save_milestone` (×N) — create the Release milestones from the discuss release-slicing
-   (`Release 1` = the first / thinnest increment — NOT a "walking skeleton"; that's the
-   per-story Skeleton task).
-3. `save_milestone` (×1) — create the **Finalize milestone**, ordered last. It is a
-   *lifecycle* milestone, not a slice (the one exception to one-milestone-per-slice — see
-   `milestone.md`).
-4. **Migrate the seed issue** — `save_issue(id: <proposal>, project: <feature>,
-   milestone: "Finalize")` to move the originating proposal out of Proposals and into the
-   new project under Finalize. It becomes the **closeout handle** (agent surface for
-   `nw-finalize`); do not leave or close it in the backlog. This is what prevents the
-   lingering-seed symptom (an orphaned proposal stuck `In Progress` with an idle worktree).
-5. `save_issue` (per story) — **create** the story issues from the discuss analysis (the
-   thread is read-only output, so there are no story sub-issues to move): `team` = DC,
-   `project`, `milestone` = its Release, labels `distill` + area child. Human-readable
-   title (no wave/tier/relationship tags) and a body that **synthesizes** the story from
-   the analysis with an `## AGENT NOTES` block (see `story.md`) — the issue body is the
-   agent's prompt; without it the deliver agent skips distill and implements directly. See
-   the create-a-story sequence in `story.md` (attach project + Release, then delegate last).
-6. Cut a git branch **per Release**: `git branch <slug>/release-1 main && git push -u
-   origin <slug>/release-1` (story PRs target it; later Releases rebase on `main` after
-   the prior one merges — see `branching-and-merge.md`).
+1. `save_project` — the Feature project, named for the **natural feature name from the code**,
+   team = DC. Description synthesizes the outcome + `## AGENT NOTES` + `## References`.
+2. `save_milestone` (×N) — one **Release-Slice** milestone per `slices/slice-NN-*.md`
+   (`Release Slice 1` = the thinnest increment). Name from the slice goal.
+3. `save_issue` (×N) — one **Release Slice issue** per slice, its **slice AC** as a checklist
+   (from the brief), `area` child, **no `wave` label** (not delegated — `milestone.md`).
+4. `save_issue` (per story) — **Story issues** from `user-stories.md`: `area` child only, AC
+   checklist, then `save_issue(id, milestone:)` onto the slice `story-map.md` grouped it with
+   (`story.md`).
+5. `save_issue` (per roadmap step) — **Scenario issues** from `roadmap.json`: `deliver` +
+   `area`, **no milestone**, body naming `/nw-execute <slug> <step-id>` + the feature branch
+   (`scenario.md`). Wire **`blocked_by`** from `phase.depends_on` / `step.deps`.
+6. `save_milestone` (×1) — the **Finalize** milestone, ordered last; **migrate the seed**
+   (`save_issue(id: <proposal>, project, milestone: "Finalize")`).
 
-nwave artifacts (JTBD, journeys, ADRs, roadmaps) **stay in the codebase** — never attach
-them to Linear as comments or documents. When a description needs to point at one, name it
-in the `## References` block.
+**No git branch creation at promotion** — the feature branch already exists (it is the
+proposal's branch, carrying the committed artifacts).
 
-Then per story: assign dc-cyrus (`nw-distill`) to decompose, review, relabel `deliver`,
-and @mention a comment to deliver the whole story in one session (see `story.md`).
+### Promotion gates (block if any fail)
+
+- **Every story ∈ exactly one slice** (Linear one-milestone constraint — `story.md`).
+- **`slices/` ↔ `story-map.md` agree**: every slice has a brief and vice-versa; shared
+  `slice-NN` join key.
+- **`story-map.md` references final `US-NN` IDs** (cheap check; DISCUSS ran fully, so the
+  Phase-4 story IDs are stamped — `docs/research/nwave-linear-mapping-rules.md` Rule 16).
+
+nwave artifacts (JTBD, journeys, ADRs, roadmaps, slice briefs) **stay in the codebase** — never
+attach them to Linear. Name them in `## References`.
 
 ## Closeout (the terminal transition)
 
-When **all Release milestones are Done**, the seed issue under Finalize is delegated:
-relabel it `wave › finalize` (assigned **manually** — it does not auto-fire) and delegate
-dc-cyrus. `nw-finalize` archives the feature's artifacts to `docs/evolution/` and does the
-project-level wrap-up; the seed goes **Done**, which is what makes its worktree prunable.
+When **all Release PRs are merged to `main`**, delegate the seed under Finalize: relabel it
+`wave › finalize` (manual — it does not auto-fire) and delegate dc-cyrus. `nw-finalize` archives
+to `docs/evolution/`; the seed goes **Done**.
 
-## Tech Debt intake & promotion
+## Tech Debt intake & promotion (unchanged)
 
-The **Tech Debt** project is the standing intake for debt (mirrors Proposals). Membership
-in the project *is* the marker — no separate label axis. A debt issue is authored from the
-Tech Debt intake template (`templates.md`). Two promotion paths:
+The **Tech Debt** project is the standing debt intake (mirrors Proposals). Refactor work is
+**behaviour-preserving** and does **not** use the story/slice/scenario frame — it keeps its own
+path:
 
-- **Light (single actionable item).** Most debt is one behaviour-preserving cleanup. Detach
-  it from the Tech Debt project, relabel `refactor` + its area child, and delegate dc-cyrus
-  → `nw-refactor <path> --level=N --scope=…` (`choosing-waves.md`). No project needed. A
-  **generator** debt issue (one that surveys an area and spawns sibling items) produces
-  those as **parentless standalone** Refactor issues, not sub-issues; it goes Done once
-  decomposed.
-- **Heavy (earns its own project).** A multi-module / multi-level cleanup promotes like a
-  proposal: create a **Refactor project** from its template, migrate the seed under a
-  Finalize milestone, and add **Refactor issues** (each carrying its level + scope) — not
-  Stories; refactor is behaviour-preserving and has no AC-checklist / skeleton frame
-  (`choosing-waves.md`). Slice with Release milestones if the RPP cascade or Mikado phases
-  warrant it.
+- **Light (single item).** Detach from Tech Debt, relabel `refactor` + area child, delegate
+  dc-cyrus → `nw-refactor <path> --level=N --scope=…` (`choosing-waves.md`). No project. A
+  **generator** debt issue spawns siblings as **parentless standalone** Refactor issues.
+- **Heavy (own project).** Promote like a proposal into a **Refactor project** holding
+  **Refactor issues** (each carrying level + scope) — not Stories/Scenarios. Slice with Release
+  milestones only if the RPP cascade or Mikado phases warrant it.
 
 ## When to skip the funnel
 
-For a small, obvious change you don't need the Proposals → promotion path — create a
-Feature project (or reuse one) directly, add the story, and distill. The funnel earns its
-keep for genuinely new, multi-story features that need discussion first.
+For a small, obvious change, skip the Proposals path — create/reuse a Feature project, add the
+story + its scenarios, deliver. The funnel earns its keep for genuinely new, multi-slice
+features that need discussion first.
