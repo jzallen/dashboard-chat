@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.types import AuthUser
 from app.controllers import HTTPController, wrap_jsonapi_single
+from app.controllers.project_controller import ProjectController
 from app.use_cases.exceptions import DomainException
 from app.use_cases.project import export_dbt_project, get_dbt_manifest
 
@@ -24,7 +25,7 @@ async def list_projects(
     _: AsyncSession = Depends(use_db_context),
 ):
     """List all projects with cursor-based pagination."""
-    body, status_code = await HTTPController.list_projects(user=user, cursor=page_after, page_size=page_size)
+    body, status_code = await ProjectController.list_projects(user=user, cursor=page_after, page_size=page_size)
     return JSONResponse(content=body, status_code=status_code)
 
 
@@ -34,7 +35,7 @@ async def get_project(
 ):
     """Get a single project by ID (metadata only)."""
     user, project = auth
-    body, status_code = await HTTPController.get_project(project["id"], user=user)
+    body, status_code = await ProjectController.get_project(project["id"], user=user)
     return JSONResponse(content=body, status_code=status_code)
 
 
@@ -197,7 +198,7 @@ async def create_project(
     _: AsyncSession = Depends(use_db_context),
 ):
     """Create a new project."""
-    body, status_code = await HTTPController.post_project(
+    body, status_code = await ProjectController.post_project(
         name=project_data.name,
         description=project_data.description,
         user=user,
@@ -213,7 +214,9 @@ async def update_project(
     """Update a project."""
     user, project = auth
     project_kwargs = update_data.model_dump(exclude_unset=True)
-    body, status_code = await HTTPController.patch_project(project["id"], user=user, project=project, **project_kwargs)
+    body, status_code = await ProjectController.patch_project(
+        project["id"], user=user, project=project, **project_kwargs
+    )
     return JSONResponse(content=body, status_code=status_code)
 
 
@@ -223,5 +226,5 @@ async def delete_project(
 ):
     """Delete a project and all its datasets."""
     user, project = auth
-    body, status_code = await HTTPController.delete_project(project["id"], user=user, project=project)
+    body, status_code = await ProjectController.delete_project(project["id"], user=user, project=project)
     return JSONResponse(content=body, status_code=status_code)

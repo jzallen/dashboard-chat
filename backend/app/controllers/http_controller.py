@@ -27,7 +27,6 @@ them are rewritten to patch the per-context controllers directly.
 from app.use_cases import assistant_audit as assistant_audit_use_cases  # noqa: F401
 from app.use_cases import dataset as dataset_use_cases  # noqa: F401
 from app.use_cases import organization as organization_use_cases  # noqa: F401
-from app.use_cases import project as project_use_cases  # noqa: F401
 from app.use_cases import query_engine as query_engine_use_cases  # noqa: F401
 from app.use_cases import report as report_use_cases  # noqa: F401
 from app.use_cases import sql_access as sql_access_use_cases  # noqa: F401
@@ -51,7 +50,6 @@ from .assistant_audit_controller import AssistantAuditController
 from .conversation_controller import ConversationController
 from .dataset_controller import DatasetController
 from .organization_controller import OrganizationController
-from .project_controller import ProjectController
 from .query_engine_controller import QueryEngineController
 from .report_controller import ReportController
 from .sql_access_controller import SQLAccessController
@@ -84,12 +82,9 @@ class HTTPController:
     # deliberately not rolled up here. See source_controller.py for the DI pattern that
     # supersedes the http_controller late-binding shim.
 
-    # Project & Workspace (Seam 2)
-    list_projects = staticmethod(ProjectController.list_projects)
-    get_project = staticmethod(ProjectController.get_project)
-    post_project = staticmethod(ProjectController.post_project)
-    patch_project = staticmethod(ProjectController.patch_project)
-    delete_project = staticmethod(ProjectController.delete_project)
+    # Project & Workspace — routed directly via ProjectController (app/routers/projects.py);
+    # deliberately not rolled up here. See project_controller.py for the DI pattern that
+    # supersedes the http_controller late-binding shim.
 
     # Conversation / Session + Memory (Seam 3)
     get_project_memory = staticmethod(ConversationController.get_project_memory)

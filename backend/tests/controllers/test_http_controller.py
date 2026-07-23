@@ -198,48 +198,6 @@ class TestPostUpload:
         assert status == 400
 
 
-class TestListProjects:
-    @patch("app.controllers.http_controller.project_use_cases")
-    async def test_success_returns_200(self, mock_uc):
-        mock_uc.list_projects = AsyncMock(
-            return_value=Success(
-                {
-                    "items": [{"id": "p1", "name": "Proj", "datasets": []}],
-                    "next_cursor": None,
-                    "has_more": False,
-                    "page_size": 50,
-                }
-            )
-        )
-        body, status = await HTTPController.list_projects()
-        assert status == 200
-        assert body["data"][0]["type"] == "projects"
-        assert body["meta"]["page"]["has_more"] is False
-
-    @patch("app.controllers.http_controller.project_use_cases")
-    async def test_failure_returns_500(self, mock_uc):
-        mock_uc.list_projects = AsyncMock(return_value=Failure(RuntimeError("DB error")))
-        body, status = await HTTPController.list_projects()
-        assert status == 500
-        assert body["errors"][0]["status"] == "500"
-
-
-class TestGetProject:
-    @patch("app.controllers.http_controller.project_use_cases")
-    async def test_success_returns_200(self, mock_uc):
-        mock_uc.get_project = AsyncMock(return_value=Success(FakeModel("p1", "Proj")))
-        body, status = await HTTPController.get_project("p1")
-        assert status == 200
-        assert body["data"]["type"] == "projects"
-        mock_uc.get_project.assert_called_once_with("p1", user=None)
-
-    @patch("app.controllers.http_controller.project_use_cases")
-    async def test_not_found_returns_404(self, mock_uc):
-        mock_uc.get_project = AsyncMock(return_value=Failure(ProjectNotFound("p1")))
-        _, status = await HTTPController.get_project("p1")
-        assert status == 404
-
-
 class TestListProjectDatasets:
     @patch("app.controllers.http_controller.dataset_use_cases")
     async def test_success_returns_200(self, mock_uc):
@@ -264,41 +222,4 @@ class TestListProjectDatasets:
     async def test_project_not_found_returns_404(self, mock_uc):
         mock_uc.list_datasets_for_project = AsyncMock(return_value=Failure(ProjectNotFound("p1")))
         _, status = await HTTPController.list_project_datasets("p1")
-        assert status == 404
-
-
-class TestPostProject:
-    @patch("app.controllers.http_controller.project_use_cases")
-    async def test_success_returns_201(self, mock_uc):
-        mock_uc.create_project = AsyncMock(return_value=Success(FakeModel("p1", "New")))
-        _body, status = await HTTPController.post_project("New")
-        assert status == 201
-
-
-class TestPatchProject:
-    @patch("app.controllers.http_controller.project_use_cases")
-    async def test_success_returns_200(self, mock_uc):
-        mock_uc.update_project = AsyncMock(return_value=Success(FakeModel("p1", "Updated")))
-        _body, status = await HTTPController.patch_project("p1", name="Updated")
-        assert status == 200
-
-    @patch("app.controllers.http_controller.project_use_cases")
-    async def test_not_found_returns_404(self, mock_uc):
-        mock_uc.update_project = AsyncMock(return_value=Failure(ProjectNotFound("p1")))
-        _, status = await HTTPController.patch_project("p1", name="X")
-        assert status == 404
-
-
-class TestDeleteProject:
-    @patch("app.controllers.http_controller.project_use_cases")
-    async def test_success_returns_200_with_deleted(self, mock_uc):
-        mock_uc.delete_project = AsyncMock(return_value=Success(True))
-        body, status = await HTTPController.delete_project("p1")
-        assert status == 200
-        assert body == {"meta": {"deleted": True}}
-
-    @patch("app.controllers.http_controller.project_use_cases")
-    async def test_not_found_returns_404(self, mock_uc):
-        mock_uc.delete_project = AsyncMock(return_value=Failure(ProjectNotFound("p1")))
-        _, status = await HTTPController.delete_project("p1")
         assert status == 404
