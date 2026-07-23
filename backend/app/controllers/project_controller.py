@@ -8,9 +8,8 @@ Each endpoint declares its use case as an injected, typed dependency: a
 keyword-only ``*_func`` parameter defaulting to the real use case from
 ``app.use_cases.project``, typed against a ``Protocol`` that captures the call
 interface the controller relies on. Production passes nothing (the defaults
-bind); tests inject a function matching the Protocol instead of monkeypatching a
-module-level alias. This is the seam that replaces the ``_uc()`` late-binding
-shim inherited from the http_controller DDD refactor.
+bind); tests inject a function matching the Protocol, so a fake use case needs
+no module-level monkeypatching to intercept the call.
 """
 
 from typing import TYPE_CHECKING, Any, Protocol, TypedDict

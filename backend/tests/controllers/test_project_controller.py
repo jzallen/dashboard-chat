@@ -134,7 +134,7 @@ async def test_delete_project__when_use_case_succeeds__returns_200_with_deleted_
     assert result == ({"meta": {"deleted": True}}, 200)
 
 
-async def test_delete_project__pipes_use_case_boolean_through_verbatim():
+async def test_delete_project__when_use_case_returns_false__passes_deleted_false_through_verbatim():
     """The controller does not interpret truthiness — ``Success(False)`` reaches
     the response body as ``deleted: False`` unchanged."""
 
@@ -146,7 +146,7 @@ async def test_delete_project__pipes_use_case_boolean_through_verbatim():
     assert result == ({"meta": {"deleted": False}}, 200)
 
 
-async def test_list_projects__forwards_user_and_pagination_kwargs_to_use_case():
+async def test_list_projects__when_given_user_and_pagination_args__forwards_them_to_use_case():
     fake = AsyncMock(return_value=Success({"items": [], "next_cursor": None, "has_more": False, "page_size": 25}))
 
     await ProjectController.list_projects(cursor="CUR", page_size=25, user="USER_SENTINEL", list_projects_func=fake)
@@ -154,7 +154,7 @@ async def test_list_projects__forwards_user_and_pagination_kwargs_to_use_case():
     fake.assert_awaited_once_with(user="USER_SENTINEL", cursor="CUR", page_size=25)
 
 
-async def test_post_project__forwards_name_description_and_user_to_use_case():
+async def test_post_project__when_given_name_description_and_user__forwards_them_to_use_case():
     fake = AsyncMock(return_value=Success({"id": "proj-1", "name": "Name"}))
 
     await ProjectController.post_project("Name", description="Desc", user="USER_SENTINEL", create_project_func=fake)
@@ -162,7 +162,7 @@ async def test_post_project__forwards_name_description_and_user_to_use_case():
     fake.assert_awaited_once_with(name="Name", description="Desc", user="USER_SENTINEL")
 
 
-async def test_patch_project__collapses_kwargs_into_update_body_and_forwards_context():
+async def test_patch_project__when_given_body_kwargs__collapses_them_into_update_data_and_forwards_context():
     fake = AsyncMock(return_value=Success({"id": "proj-1", "name": "Updated"}))
 
     await ProjectController.patch_project(
@@ -182,7 +182,7 @@ async def test_patch_project__collapses_kwargs_into_update_body_and_forwards_con
     )
 
 
-async def test_delete_project__forwards_user_and_project_context_to_use_case():
+async def test_delete_project__when_given_user_and_project__forwards_them_to_use_case():
     fake = AsyncMock(return_value=Success(True))
 
     await ProjectController.delete_project(
