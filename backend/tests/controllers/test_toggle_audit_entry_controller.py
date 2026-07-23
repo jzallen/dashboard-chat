@@ -1,4 +1,4 @@
-"""AssistantAuditController toggle (rich-catalog §2.6) — use-case injection.
+"""AssistantAuditController toggle — use-case injection.
 
 Exercises the DI seam that replaces the http_controller late-binding shim: the
 endpoint takes a keyword-only ``toggle_audit_entry_func`` dependency typed against

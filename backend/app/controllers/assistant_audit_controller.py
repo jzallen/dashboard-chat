@@ -1,16 +1,15 @@
-"""Assistant-audit HTTP controller — rich-catalog §2.11.
+"""Assistant-audit HTTP controller.
 
-Thin HTTP adapter for the reads/writes that back the UI's ``getAudit``. The
-router depends on this class directly — there is deliberately no roll-up through
-a god ``HTTPController``.
+Thin HTTP adapter for the assistant-audit reads/writes that back the UI's
+``getAudit``. The router depends on this class directly — there is deliberately
+no roll-up through a god ``HTTPController``.
 
 Each endpoint declares its use case as an injected, typed dependency: a
 keyword-only ``*_func`` parameter defaulting to the real use case from
 ``app.use_cases.assistant_audit``, typed against a ``Protocol`` that captures the
 call interface the controller relies on. Production passes nothing (the defaults
-bind); tests inject a function matching the Protocol instead of monkeypatching a
-module-level alias. This is the seam that replaces the ``_uc()`` late-binding
-shim inherited from the http_controller DDD refactor.
+bind); a test injects a function matching the Protocol so the controller can be
+exercised against a fake without a database or a module-level monkeypatch.
 
 Emits a JSON:API list whose item attributes carry ``node_id``/``node_kind`` +
 ``tool``/``say``/``tag`` (from the entry's JSON payload) + ``transform_id``/
@@ -87,7 +86,7 @@ class AssistantAuditController:
         *,
         toggle_audit_entry_func: ToggleAuditEntryProtocol = assistant_audit_use_cases.toggle_audit_entry,
     ) -> tuple[dict, int]:
-        """Toggle a transform-type audit entry (rich-catalog §2.5-2.6).
+        """Toggle a transform-type audit entry.
 
         Enables/disables the Transform pointing UP at the entry and returns the
         toggled entry as a JSON:API single (so the UI knows which node's audit to
@@ -115,7 +114,7 @@ class AssistantAuditController:
         *,
         create_audit_entry_func: CreateAuditEntryProtocol = assistant_audit_use_cases.create_audit_entry,
     ) -> tuple[dict, int]:
-        """Create an assistant-audit entry (rich-catalog §2.7 Option A)."""
+        """Create an assistant-audit entry."""
         result = await create_audit_entry_func(
             project_id,
             node_id=node_id,
