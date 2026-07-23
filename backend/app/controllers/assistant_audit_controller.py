@@ -72,8 +72,8 @@ class AssistantAuditController:
     ) -> tuple[dict, int]:
         result = await list_audit_entries_func(project_id, org_id=org_id)
         match result:
-            case Success(data):
-                items = serialize(data)
+            case Success(entries):
+                items = serialize(entries)
                 url = f"/api/projects/{project_id}/audit"
                 return wrap_jsonapi_list("audit-entries", items, url, len(items), None, False), 200
             case Failure(error):
@@ -99,9 +99,9 @@ class AssistantAuditController:
             org_id=org_id,
         )
         match result:
-            case Success(record):
-                url = f"/api/projects/{record['project_id']}/audit/{record['id']}"
-                return wrap_jsonapi_single("audit-entries", serialize(record), url), 200
+            case Success(entry):
+                url = f"/api/projects/{entry['project_id']}/audit/{entry['id']}"
+                return wrap_jsonapi_single("audit-entries", serialize(entry), url), 200
             case Failure(error):
                 return error_response(error)
 
@@ -124,8 +124,8 @@ class AssistantAuditController:
             org_id=org_id,
         )
         match result:
-            case Success(record):
+            case Success(entry):
                 url = f"/api/projects/{project_id}/audit"
-                return wrap_jsonapi_single("audit-entries", serialize(record), url), 201
+                return wrap_jsonapi_single("audit-entries", serialize(entry), url), 201
             case Failure(error):
                 return error_response(error)
