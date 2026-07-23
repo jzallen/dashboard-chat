@@ -82,7 +82,7 @@ class TestListSourcesColdStorageFilter:
             retention_until=datetime(2026, 10, 20, 12, 0, 0),
         )
 
-    async def test_default_excludes_archived_sources(self, repo_with_project):
+    async def test_list_sources__by_default__excludes_archived_sources(self, repo_with_project):
         await repo_with_project.create_source(project_id=PROJECT_1, name="Active")
         archived = await repo_with_project.create_source(project_id=PROJECT_1, name="Archived")
         await self._archive(repo_with_project, archived["id"])
@@ -91,7 +91,7 @@ class TestListSourcesColdStorageFilter:
 
         assert {s["name"] for s in sources} == {"Active"}
 
-    async def test_archived_false_excludes_archived_sources(self, repo_with_project):
+    async def test_list_sources__when_archived_false__excludes_archived_sources(self, repo_with_project):
         await repo_with_project.create_source(project_id=PROJECT_1, name="Active")
         archived = await repo_with_project.create_source(project_id=PROJECT_1, name="Archived")
         await self._archive(repo_with_project, archived["id"])
@@ -100,7 +100,7 @@ class TestListSourcesColdStorageFilter:
 
         assert {s["name"] for s in sources} == {"Active"}
 
-    async def test_archived_true_returns_only_archived_sources(self, repo_with_project):
+    async def test_list_sources__when_archived_true__returns_only_archived_sources(self, repo_with_project):
         await repo_with_project.create_source(project_id=PROJECT_1, name="Active")
         archived = await repo_with_project.create_source(project_id=PROJECT_1, name="Archived")
         await self._archive(repo_with_project, archived["id"])
@@ -109,7 +109,7 @@ class TestListSourcesColdStorageFilter:
 
         assert {s["name"] for s in sources} == {"Archived"}
 
-    async def test_archived_true_returns_empty_when_none_archived(self, repo_with_project):
+    async def test_list_sources__when_archived_true_and_none_archived__returns_empty(self, repo_with_project):
         await repo_with_project.create_source(project_id=PROJECT_1, name="Active")
 
         assert await repo_with_project.list_sources(PROJECT_1, archived=True) == []
