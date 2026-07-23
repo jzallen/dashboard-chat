@@ -133,7 +133,9 @@ class TestArchiveSource:
 class TestRestoreSource:
     """Restore is the same port with ``archived=False`` — it clears Cold Storage."""
 
-    async def test_restore_clears_archived_at_and_retention(self, seeded_db: AsyncSession):
+    async def test_archive_source__when_archived_false_on_archived_source__clears_cold_storage_fields(
+        self, seeded_db: AsyncSession
+    ):
         """Restoring an archived source clears both archived_at and retention_until."""
         set_session(seeded_db)
 
@@ -148,7 +150,9 @@ class TestRestoreSource:
             case Failure(error):
                 pytest.fail(f"restore should succeed, got: {error}")
 
-    async def test_restore_when_already_active_is_idempotent(self, seeded_db: AsyncSession):
+    async def test_archive_source__when_archived_false_on_active_source__leaves_fields_null(
+        self, seeded_db: AsyncSession
+    ):
         """Restoring a source that was never archived is a no-op — fields stay null."""
         set_session(seeded_db)
 

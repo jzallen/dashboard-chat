@@ -452,11 +452,11 @@ async def test_get_source_by_id__when_source_archived__returns_it_unfiltered(cli
 
 
 # ---------------------------------------------------------------------------
-# Slice 3 — Restore (symmetric PATCH {archived:false}) + round-trip
+# Restore — symmetric PATCH {archived:false} + archive/restore round-trip
 # ---------------------------------------------------------------------------
 
 
-async def test_patch_restore_clears_cold_storage_fields(client, seeded):
+async def test_patch_source__when_archived_false_on_archived_source__clears_cold_storage_fields(client, seeded):
     async with client:
         source_id = await _create_source(client)
         await _archive(client, source_id)
@@ -472,7 +472,7 @@ async def test_patch_restore_clears_cold_storage_fields(client, seeded):
     assert (attrs["archived_at"], attrs["retention_until"]) == (None, None)
 
 
-async def test_patch_restore_already_active_is_idempotent(client, seeded):
+async def test_patch_source__when_archived_false_on_active_source__leaves_fields_null(client, seeded):
     async with client:
         source_id = await _create_source(client)
 
@@ -487,7 +487,7 @@ async def test_patch_restore_already_active_is_idempotent(client, seeded):
     assert (attrs["archived_at"], attrs["retention_until"]) == (None, None)
 
 
-async def test_patch_restore_unknown_source_returns_404(client, seeded):
+async def test_patch_source__when_restoring_unknown_source__returns_404(client, seeded):
     async with client:
         res = await client.patch(
             "/api/sources/019515a0-b0ff-7000-8000-0000000000ff",
@@ -498,7 +498,7 @@ async def test_patch_restore_unknown_source_returns_404(client, seeded):
     assert res.status_code == 404, res.text
 
 
-async def test_patch_restore_cross_org_source_is_forbidden(client, seeded, db_session):
+async def test_patch_source__when_restoring_cross_org_source__returns_403(client, seeded, db_session):
     other_project = "019515a0-0004-7000-8000-000000000004"
     db_session.add(ProjectRecord(id=other_project, name="Other", org_id="other-org"))
     await db_session.flush()
@@ -530,7 +530,7 @@ async def _list_ids(client, *, archived: bool | None = None) -> set[str]:
     return {item["id"] for item in res.json()["data"]}
 
 
-async def test_archive_restore_round_trip_returns_source_to_active_catalog(client, seeded):
+async def test_patch_source__when_archived_then_restored__returns_source_to_active_catalog(client, seeded):
     async with client:
         source_id = await _create_source(client, name="RoundTrip")
 
