@@ -13,7 +13,7 @@ from app.auth.types import AuthUser
 from app.controllers import HTTPController
 
 from .deps import authorize_project_access, get_current_user, use_db_context
-from .schemas import ProcessUpload, RecordUpload, SourceCreate
+from .schemas import ProcessUpload, RecordUpload, SourceArchiveRequest, SourceCreate
 
 router = APIRouter(prefix="/api/sources", tags=["sources"])
 
@@ -73,6 +73,25 @@ async def get_source(
     await _authorize_source(source_id, user, db)
 
     body, status_code = await HTTPController.get_source(source_id)
+    return JSONResponse(content=body, status_code=status_code)
+
+
+@router.patch("/{source_id}")
+async def patch_source(
+    source_id: str,
+    data: SourceArchiveRequest,
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(use_db_context),
+):
+    """Toggle a source's Cold-Storage state (soft-delete / restore).
+
+    ``{"archived": true}`` moves the source to Cold Storage — stamps
+    ``archived_at`` + ``retention_until``; ``{"archived": false}`` restores it.
+    Authorized via the source's parent project (404 missing / 403 cross-org).
+    """
+    await _authorize_source(source_id, user, db)
+
+    body, status_code = await HTTPController.patch_source_archived(source_id, data.archived)
     return JSONResponse(content=body, status_code=status_code)
 
 

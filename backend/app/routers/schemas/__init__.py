@@ -42,6 +42,7 @@ from .session import (
 from .source import (
     ProcessUpload,
     RecordUpload,
+    SourceArchiveRequest,
     SourceCreate,
 )
 
@@ -70,6 +71,7 @@ __all__ = [
     "RecordUpload",
     "SchemaConfig",
     "SessionUpdate",
+    "SourceArchiveRequest",
     "SourceCreate",
     "TransformBase",
     "TransformBatchUpdate",

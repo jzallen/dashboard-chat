@@ -107,6 +107,8 @@ def source_to_dict(source: SourceRecord) -> dict[str, Any]:
         "created_by": source.created_by,
         "created_at": _iso(source.created_at),
         "updated_at": _iso(source.updated_at),
+        "archived_at": _iso(source.archived_at),
+        "retention_until": _iso(source.retention_until),
     }
 
 

@@ -86,6 +86,7 @@ class HTTPController:
     post_source = staticmethod(SourceController.post_source)
     list_sources = staticmethod(SourceController.list_sources)
     get_source = staticmethod(SourceController.get_source)
+    patch_source_archived = staticmethod(SourceController.patch_source_archived)
     list_source_uploads = staticmethod(SourceController.list_source_uploads)
     # Source aggregate (slice 2) — presigned upload + UI-triggered ingestion
     record_source_upload = staticmethod(SourceController.record_source_upload)

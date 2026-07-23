@@ -79,6 +79,16 @@ class SourceController:
                 return error_response(error)
 
     @staticmethod
+    async def patch_source_archived(source_id: str, archived: bool) -> tuple[dict, int]:
+        """Toggle a source's Cold-Storage state (PATCH ``{archived}``)."""
+        result = await _uc().archive_source(source_id, archived=archived)
+        match result:
+            case Success(data):
+                return wrap_jsonapi_single("sources", serialize(data), f"/api/sources/{source_id}"), 200
+            case Failure(error):
+                return error_response(error)
+
+    @staticmethod
     async def record_source_upload(
         source_id: str,
         filename: str,

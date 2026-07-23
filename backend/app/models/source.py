@@ -37,6 +37,11 @@ class Source:
     created_by: str | None = None  # User ID of creator
     created_at: datetime | str | None = None
     updated_at: datetime | str | None = None
+    # Cold-storage lifecycle: ``archived_at`` is stamped when the source is moved
+    # to Cold Storage; ``retention_until`` is ``archived_at`` + the 90-day retention
+    # window. Both are None for a live source and cleared on restore.
+    archived_at: datetime | str | None = None
+    retention_until: datetime | str | None = None
 
     @classmethod
     def from_record(cls, record: Any) -> "Source":
@@ -49,6 +54,8 @@ class Source:
             created_by=getattr(record, "created_by", None),
             created_at=getattr(record, "created_at", None),
             updated_at=getattr(record, "updated_at", None),
+            archived_at=getattr(record, "archived_at", None),
+            retention_until=getattr(record, "retention_until", None),
         )
 
     def serialize(self) -> dict[str, Any]:
@@ -61,4 +68,6 @@ class Source:
             "created_by": self.created_by,
             "created_at": _iso_or_none(self.created_at),
             "updated_at": _iso_or_none(self.updated_at),
+            "archived_at": _iso_or_none(self.archived_at),
+            "retention_until": _iso_or_none(self.retention_until),
         }

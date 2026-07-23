@@ -587,6 +587,26 @@ class MetadataRepository:
         return _mappers.source_to_dict(source)
 
     @handle_repository_exceptions
+    async def update_source(self, source_id: str, **kwargs: Any) -> dict[str, Any] | None:
+        """Update a source's fields generically (mirrors ``update_dataset``).
+
+        Backs the Cold-Storage lifecycle (archive stamps ``archived_at`` +
+        ``retention_until``; restore clears them). Returns the refreshed source
+        dict, or None when the source does not exist.
+        """
+        result = await self._session.execute(select(SourceRecord).where(SourceRecord.id == source_id))
+        source = result.scalar_one_or_none()
+        if not source:
+            return None
+
+        for key, value in kwargs.items():
+            setattr(source, key, value)
+
+        await self._session.flush()
+        await self._session.refresh(source)
+        return _mappers.source_to_dict(source)
+
+    @handle_repository_exceptions
     async def source_exists(self, source_id: str) -> bool:
         """Check if a source exists."""
         return (await self._session.execute(select(exists().where(SourceRecord.id == source_id)))).scalar()
