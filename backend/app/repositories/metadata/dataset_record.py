@@ -14,6 +14,7 @@ from ...database import Base
 
 if TYPE_CHECKING:
     from .project_record import ProjectRecord
+    from .source_record import SourceRecord
     from .transform_record import TransformRecord
 
 
@@ -103,6 +104,9 @@ class DatasetRecord(Base):
 
     # Relationships
     project: Mapped["ProjectRecord"] = relationship("ProjectRecord", back_populates="datasets")
+    # The Source this Dataset is the SELECT * view of (nullable link). Declared so
+    # the unit-of-work orders a Source insert before its child Dataset; no cascade.
+    source: Mapped["SourceRecord | None"] = relationship("SourceRecord")
     transforms: Mapped[list["TransformRecord"]] = relationship(
         "TransformRecord", back_populates="dataset", cascade="all, delete-orphan"
     )

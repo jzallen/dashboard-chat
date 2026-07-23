@@ -1,0 +1,136 @@
+{
+  "feature": "source-soft-delete-cold-storage",
+  "feature_dir": "docs/feature/source-soft-delete-cold-storage",
+  "produced_by": "DISTILL wave",
+  "produced_on": "2026-07-22",
+  "linear": "DC-199 (parent DC-195)",
+  "binding_decisions": "docs/feature/source-soft-delete-cold-storage/distill/wave-decisions.md",
+  "upstream_issues": "docs/feature/source-soft-delete-cold-storage/distill/upstream-issues.md",
+  "design_ratified_as": "docs/decisions/adr-055-patch-soft-delete-source-cold-storage.md (Accepted 2026-07-21)",
+  "acceptance_root": "tests/acceptance/source-soft-delete-cold-storage/",
+  "scenario_ssot": "tests/acceptance/source-soft-delete-cold-storage/source-cold-storage.feature",
+  "walking_skeleton_strategy": "Skipped (brownfield). Real-I/O (Strategy C) against a real seeded SQLite metadata DB; primary RED tests are backend pytest at the repository port, mirroring backend/tests/use_cases/dataset/test_archive_dataset.py.",
+  "reference_implementation": "dataset MR-7 cold storage: migrations/versions/015_add_dataset_cold_storage.py, app/use_cases/dataset/archive_dataset.py, app/repositories/metadata/repository.py:350-368",
+  "phases": [
+    {
+      "id": "01",
+      "title": "Slice 1 — Archive a source (PATCH → Cold Storage)",
+      "polecat_command": "/nw-deliver",
+      "slice": "slice1",
+      "scope": "Add recoverable Cold Storage to a source via PATCH. (1) Migration 021_add_source_cold_storage adds nullable archived_at + retention_until to sources, revising current head 020_add_dataset_model_name (confirm via `alembic heads`); portable add_column, no index (org-scoped via project_id). (2) Extend MetadataRepository.update_source(source_id, **kwargs) generic setter mirroring update_dataset (~12 LOC). (3) New use case archive_source(source_id, *, archived: bool) on @handle_returns/@with_repositories: when archived and archived_at IS NULL -> set archived_at=now(UTC), retention_until=now+90d; re-archive is a no-op preserving the original timestamp (idempotency, ADR-055 c/D4). (4) SourceController.patch_source_archived mirroring DatasetController.archive_dataset. (5) SourceArchiveRequest(BaseModel){archived: bool} + PATCH /api/sources/{source_id} route on the sources router, reusing _authorize_source (404 missing / 403 cross-org). (6) Read-contract exposure: source_to_dict (_mappers.py), Source.serialize()/from_record() gain archived_at + retention_until. (7) DELIVER kickoff: stand up the pytest-bdd harness for the acceptance suite (mirror an existing tests/acceptance/* suite) OR bind slice-1 scenarios onto backend pytest; either way the slice-1 anchor scenario is the regression that fails on today's tree and passes after.",
+      "acceptance_criteria": [
+        "AC1.1 — PATCH {archived:true} on active source -> 200, body has archived_at=request time and retention_until=archived_at+90d",
+        "AC1.4 — re-archiving an already-archived source -> 200, archived_at/retention_until unchanged (clock not advanced)",
+        "AC1.3 — PATCH on non-existent source_id -> 404 (SourceNotFound)",
+        "AC1.2 (corrected) — PATCH on a source in another org -> 403 (AuthorizationError), per ADR-055 amendment",
+        "AC1.5 — no warehouse/SQL-model side effects, no cascade to child datasets; only the source lifecycle fields change",
+        "AC2.4 — source read contract exposes archived_at + retention_until"
+      ],
+      "scenarios_to_unskip": [
+        "source-cold-storage.feature :: Archiving a source moves it to Cold Storage",
+        "source-cold-storage.feature :: Moving an already-archived source to Cold Storage changes nothing",
+        "source-cold-storage.feature :: Moving a source that isn't there tells me it isn't there",
+        "source-cold-storage.feature :: I cannot touch a source that belongs to another organization"
+      ],
+      "primary_tests": [
+        "backend/tests/use_cases/source/test_archive_source.py (port-level: sets both fields; re-archive preserves archived_at; unknown id -> SourceNotFound; db error -> Failure)",
+        "backend/tests/routers/test_sources.py (PATCH 200 round-trip fields; 404 unknown; 403 cross-org; 422 malformed body)",
+        "backend/tests/models/test_source.py (serialize()/from_record() carry the two fields)",
+        "migration up/down on SQLite"
+      ],
+      "files_changed_estimate": "migrations/versions/021_add_source_cold_storage.py (NEW). backend/app/repositories/metadata/repository.py (+update_source ~12 LOC). backend/app/use_cases/source/archive_source.py (NEW ~30 LOC). backend/app/controllers/source_controller.py (+patch_source_archived). backend/app/routers/sources.py (+PATCH route). backend/app/routers/schemas/source.py (+SourceArchiveRequest). backend/app/repositories/metadata/_mappers.py (+2 keys). backend/app/models/source.py (+2 fields). Estimated size: M.",
+      "exit_criteria": [
+        "Slice-1 anchor scenario GREEN; regression fails on origin/main (no endpoint) and passes after",
+        "AC1.1-1.5 + AC2.4 all satisfied by port-level and router tests",
+        "`alembic heads` single head; 021 up/down clean on SQLite",
+        "`./tools/test/test.sh --backend` GREEN",
+        "Reviewer approves hexagonal boundary (route -> controller -> use case -> repo port) and idempotency clock-preservation"
+      ],
+      "blocks": ["02"],
+      "estimated_size": "M",
+      "ac_references": ["ADR-055 (a)(b)(c)", "user-stories.md Story 1 + AC2.4", "design/application-architecture.md Reuse table + sequence", "story-map.md Slice 1"]
+    },
+    {
+      "id": "02",
+      "title": "Slice 2 — Cold-Storage listing (default-exclude + ?archived=true)",
+      "polecat_command": "/nw-deliver",
+      "slice": "slice2",
+      "scope": "Make the active catalog default-exclude archived sources and expose Cold Storage. (1) Extend MetadataRepository.list_sources(project_id, archived: bool | None) mirroring list_datasets (repository.py:350-368): None/False -> archived_at IS NULL; True -> archived_at IS NOT NULL. (2) Add archived query param (default false) to GET /api/sources on the sources router, threaded through SourceController. (3) GET /api/sources/{source_id} remains unfiltered (direct fetch returns an archived source).",
+      "acceptance_criteria": [
+        "AC2.1 — GET /api/sources default-excludes archived (archived_at IS NULL)",
+        "AC2.2 — GET /api/sources?archived=true returns only archived",
+        "AC2.3 — GET /api/sources/{source_id} returns an archived source (direct fetch not filtered)"
+      ],
+      "scenarios_to_unskip": [
+        "source-cold-storage.feature :: Archived sources leave the active catalog but stay findable"
+      ],
+      "primary_tests": [
+        "backend/tests/repositories/test_source_repository.py (list_sources both branches)",
+        "backend/tests/routers/test_sources.py (default excludes archived; ?archived=true only archived; GET by id returns archived)"
+      ],
+      "files_changed_estimate": "backend/app/repositories/metadata/repository.py (list_sources +archived filter). backend/app/routers/sources.py (+archived query param). backend/app/controllers/source_controller.py (thread param). Estimated size: S.",
+      "exit_criteria": [
+        "Slice-2 scenario GREEN; slice-1 scenarios still GREEN",
+        "AC2.1-2.3 satisfied by repository + router tests",
+        "`./tools/test/test.sh --backend` GREEN",
+        "Reviewer confirms the filter mirrors list_datasets shape"
+      ],
+      "blocks": ["03"],
+      "estimated_size": "S",
+      "ac_references": ["ADR-055 (b)", "user-stories.md Story 2", "story-map.md Slice 2", "repository.py:350-368"]
+    },
+    {
+      "id": "03",
+      "title": "Slice 3 — Restore (symmetric PATCH {archived:false}) + round-trip",
+      "polecat_command": "/nw-deliver",
+      "slice": "slice3",
+      "scope": "Restore is the same PATCH surface with {archived:false}: archive_source clears archived_at + retention_until unconditionally via update_source. No /restore endpoint. Add the full round-trip assertion (archive -> default-list excludes -> ?archived=true includes -> restore -> default-list includes).",
+      "acceptance_criteria": [
+        "AC3.1 — PATCH {archived:false} on an archived source -> 200, clears both archived_at and retention_until",
+        "AC3.2 — restoring an already-active source is idempotent -> 200, fields stay null",
+        "AC3.3 — org-scoped + 404/403 semantics identical to Slice 1"
+      ],
+      "scenarios_to_unskip": [
+        "source-cold-storage.feature :: Restoring a source brings it back into the active catalog",
+        "source-cold-storage.feature :: Restoring an already-active source changes nothing"
+      ],
+      "primary_tests": [
+        "backend/tests/use_cases/source/test_archive_source.py (restore clears both; restore-when-active idempotent)",
+        "backend/tests/routers/test_sources.py (round-trip: archive -> list-excluded -> ?archived=true -> restore -> list-included)"
+      ],
+      "files_changed_estimate": "backend/app/use_cases/source/archive_source.py (restore branch, mostly covered by the boolean already). backend/tests/* round-trip additions. Estimated size: S.",
+      "exit_criteria": [
+        "Slice-3 scenarios GREEN; slice-1 + slice-2 scenarios still GREEN",
+        "AC3.1-3.3 satisfied; round-trip test passes end to end",
+        "`./tools/test/test.sh --backend` GREEN",
+        "Polecat files follow-up: /nw-finalize source-soft-delete-cold-storage (migrate artifacts to docs/evolution/)",
+        "Reviewer approves PATCH symmetry (no /restore) and idempotent restore"
+      ],
+      "blocks": [],
+      "estimated_size": "S",
+      "ac_references": ["ADR-055 (a)(c)", "user-stories.md Story 3", "story-map.md Slice 3"]
+    }
+  ],
+  "manual_review_gates": [
+    {"after_phase": "01", "gate": "PATCH archive endpoint live + org-scoped; idempotent clock-preserving; migration head clean; read contract carries both fields; anchor regression green"},
+    {"after_phase": "02", "gate": "Default list excludes archived; ?archived=true returns Cold Storage; direct GET-by-id unfiltered; slice-1 still green"},
+    {"after_phase": "03", "gate": "Restore symmetric + idempotent; full round-trip green; ready for /nw-finalize"}
+  ],
+  "deliver_dispatch_notes": {
+    "agent": "nw-software-crafter",
+    "paradigm": "Python OOP; FastAPI route -> SourceController -> archive_source use case (@handle_returns/@with_repositories) -> MetadataRepository port. Mirror the dataset MR-7 cold-storage machinery WITHOUT extracting a shared abstraction (ADR-055 defers to the rule of three; prefer a Protocol later). Follow the backend-use-case + alembic-migration skills.",
+    "iron_rule": "NEVER modify a failing test to make it pass. The slice-1 anchor scenario must fail on origin/main (no endpoint) and pass after implementation. After 3 failed attempts on a step, revert and escalate.",
+    "tdd_cycle": "RED_ACCEPTANCE (unskip one scenario) -> RED_UNIT (smallest failing port-level use-case/router test) -> GREEN (minimum code) -> REFACTOR per RPP L1-L6 -> next scenario. One scenario per cycle.",
+    "context_handoff": [
+      "docs/decisions/adr-055-patch-soft-delete-source-cold-storage.md (Accepted)",
+      "docs/feature/source-soft-delete-cold-storage/design/application-architecture.md (Reuse table + sequence + contract)",
+      "docs/feature/source-soft-delete-cold-storage/design/wave-decisions.md DWD-1..6",
+      "docs/feature/source-soft-delete-cold-storage/distill/wave-decisions.md DWD-1..5",
+      "docs/feature/source-soft-delete-cold-storage/distill/upstream-issues.md (403 correction carried forward)",
+      "backend/app/use_cases/dataset/archive_dataset.py + backend/tests/use_cases/dataset/test_archive_dataset.py (reference impl + test shape)",
+      "backend/app/repositories/metadata/repository.py:350-368 (list_datasets filter to mirror)",
+      "migrations/versions/015_add_dataset_cold_storage.py (migration shape to mirror)",
+      "backend/app/routers/sources.py:22 (_authorize_source — 404 missing / 403 cross-org)"
+    ]
+  }
+}

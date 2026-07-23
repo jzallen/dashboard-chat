@@ -50,6 +50,14 @@ class SourceRecord(Base):
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False
     )
 
+    # Cold-storage lifecycle. ``archived_at`` is set when the source is moved to
+    # Cold Storage; ``retention_until`` = ``archived_at`` + the 90-day retention
+    # window. Both are cleared on restore. List endpoints default-exclude rows
+    # where ``archived_at IS NOT NULL``. Org-scoped transitively via project_id,
+    # so no index is added here (mirrors DatasetRecord).
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+    retention_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+
     # Relationships
     project: Mapped["ProjectRecord"] = relationship("ProjectRecord", back_populates="sources")
 

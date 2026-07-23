@@ -5,6 +5,8 @@ update_source_schema. Org scoping is transitive via project_id, so the FK
 prerequisite is ORG_1 + PROJECT_1 (the shared ``repo_with_project`` fixture).
 """
 
+from datetime import datetime
+
 from app.repositories.metadata import DatasetRecord, ProjectRecord
 from tests.uuidv7_fixtures import (
     DATASET_1,
@@ -63,6 +65,54 @@ class TestListSources:
 
     async def test_returns_empty_list_when_no_sources(self, repo_with_project):
         assert await repo_with_project.list_sources(PROJECT_1) == []
+
+
+class TestListSourcesColdStorageFilter:
+    """Cold-Storage filter on list_sources (mirrors list_datasets, MR-7).
+
+    ``archived=None``/``False`` returns only active rows (``archived_at IS NULL``) —
+    the default catalog view; ``archived=True`` returns only archived rows
+    (``archived_at IS NOT NULL``) — the Cold-Storage list.
+    """
+
+    async def _archive(self, repo, source_id):
+        await repo.update_source(
+            source_id,
+            archived_at=datetime(2026, 7, 22, 12, 0, 0),
+            retention_until=datetime(2026, 10, 20, 12, 0, 0),
+        )
+
+    async def test_list_sources__by_default__excludes_archived_sources(self, repo_with_project):
+        await repo_with_project.create_source(project_id=PROJECT_1, name="Active")
+        archived = await repo_with_project.create_source(project_id=PROJECT_1, name="Archived")
+        await self._archive(repo_with_project, archived["id"])
+
+        sources = await repo_with_project.list_sources(PROJECT_1)
+
+        assert {s["name"] for s in sources} == {"Active"}
+
+    async def test_list_sources__when_archived_false__excludes_archived_sources(self, repo_with_project):
+        await repo_with_project.create_source(project_id=PROJECT_1, name="Active")
+        archived = await repo_with_project.create_source(project_id=PROJECT_1, name="Archived")
+        await self._archive(repo_with_project, archived["id"])
+
+        sources = await repo_with_project.list_sources(PROJECT_1, archived=False)
+
+        assert {s["name"] for s in sources} == {"Active"}
+
+    async def test_list_sources__when_archived_true__returns_only_archived_sources(self, repo_with_project):
+        await repo_with_project.create_source(project_id=PROJECT_1, name="Active")
+        archived = await repo_with_project.create_source(project_id=PROJECT_1, name="Archived")
+        await self._archive(repo_with_project, archived["id"])
+
+        sources = await repo_with_project.list_sources(PROJECT_1, archived=True)
+
+        assert {s["name"] for s in sources} == {"Archived"}
+
+    async def test_list_sources__when_archived_true_and_none_archived__returns_empty(self, repo_with_project):
+        await repo_with_project.create_source(project_id=PROJECT_1, name="Active")
+
+        assert await repo_with_project.list_sources(PROJECT_1, archived=True) == []
 
 
 class TestLinkDatasetToSource:

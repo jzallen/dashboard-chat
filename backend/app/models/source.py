@@ -6,9 +6,12 @@ share a schema (dbt-style). The public ``SELECT *`` view over a Source is a
 Source domain object only; persistence lives in the repository layer.
 """
 
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime, timedelta
 from typing import Any
+
+# 90-day recoverable Cold-Storage window before a source may be purged.
+RETENTION_WINDOW = timedelta(days=90)
 
 
 def _iso_or_none(value: Any) -> str | None:
@@ -37,6 +40,36 @@ class Source:
     created_by: str | None = None  # User ID of creator
     created_at: datetime | str | None = None
     updated_at: datetime | str | None = None
+    # Cold-storage lifecycle: ``archived_at`` is stamped when the source is moved
+    # to Cold Storage; ``retention_until`` is ``archived_at`` + the 90-day retention
+    # window. Both are None for a live source and cleared on restore.
+    archived_at: datetime | str | None = None
+    retention_until: datetime | str | None = None
+
+    @property
+    def is_archived(self) -> bool:
+        """True when the source currently sits in Cold Storage."""
+        return self.archived_at is not None
+
+    def mark_archived(self, should_archive: bool) -> "Source":
+        """Return this source transitioned to the requested Cold-Storage state.
+
+        ``should_archive`` carries the caller's intent. ``True`` stamps
+        ``archived_at = now`` and ``retention_until = now + RETENTION_WINDOW``;
+        ``False`` clears both. Each direction is idempotent — an already-archived
+        source keeps its original archive time (the retention clock never advances)
+        and an already-active source stays cleared — returning ``self`` unchanged
+        when the requested state already holds.
+        """
+        if is_already_archived := should_archive and self.is_archived:  # noqa: F841
+            return self
+        if should_archive:
+            archived_at = datetime.now(UTC)
+            return replace(self, archived_at=archived_at, retention_until=archived_at + RETENTION_WINDOW)
+        if is_already_restored := not self.is_archived:  # noqa: F841
+            return self
+        # restore source
+        return replace(self, archived_at=None, retention_until=None)
 
     @classmethod
     def from_record(cls, record: Any) -> "Source":
@@ -49,6 +82,8 @@ class Source:
             created_by=getattr(record, "created_by", None),
             created_at=getattr(record, "created_at", None),
             updated_at=getattr(record, "updated_at", None),
+            archived_at=getattr(record, "archived_at", None),
+            retention_until=getattr(record, "retention_until", None),
         )
 
     def serialize(self) -> dict[str, Any]:
@@ -61,4 +96,6 @@ class Source:
             "created_by": self.created_by,
             "created_at": _iso_or_none(self.created_at),
             "updated_at": _iso_or_none(self.updated_at),
+            "archived_at": _iso_or_none(self.archived_at),
+            "retention_until": _iso_or_none(self.retention_until),
         }

@@ -16,7 +16,12 @@ if TYPE_CHECKING:
 async def list_sources(
     project_id: str,
     *,
+    archived: bool = False,
     repositories: "RepositoryContainer",
 ) -> Result[list[dict], str]:
-    """List all sources for a project (used by the lineage canvas)."""
-    return await repositories.metadata.list_sources(project_id)
+    """List a project's sources (lineage canvas / Cold-Storage browser).
+
+    ``archived=False`` returns the active catalog (excludes Cold Storage);
+    ``archived=True`` returns only the archived sources.
+    """
+    return await repositories.metadata.list_sources(project_id, archived=archived)

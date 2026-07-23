@@ -15,6 +15,17 @@ class SourceCreate(BaseModel):
     schema_config: dict[str, Any] | None = Field(default=None)
 
 
+class SourceArchiveRequest(BaseModel):
+    """Schema for PATCH /api/sources/{source_id} — toggle Cold Storage.
+
+    ``archived=True`` moves the source to Cold Storage; ``archived=False``
+    restores it (restore lands in a later slice). The symmetric PATCH surface is
+    the ratified verb (ADR-055); there is no separate ``/restore`` endpoint.
+    """
+
+    archived: bool
+
+
 class RecordUpload(BaseModel):
     """Schema for recording an upload (mints a presigned PUT URL)."""
 

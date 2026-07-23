@@ -559,11 +559,23 @@ class MetadataRepository:
         return _mappers.source_to_dict(source)
 
     @handle_repository_exceptions
-    async def list_sources(self, project_id: str) -> list[dict[str, Any]]:
-        """List sources for a project, ordered by ID (UUIDv7 = chronological)."""
-        result = await self._session.execute(
-            select(SourceRecord).where(SourceRecord.project_id == project_id).order_by(SourceRecord.id)
-        )
+    async def list_sources(self, project_id: str, archived: bool | None = None) -> list[dict[str, Any]]:
+        """List sources for a project, ordered by ID (UUIDv7 = chronological).
+
+        ``archived`` filters by Cold-Storage state (mirrors ``list_datasets``):
+        ``None``/``False`` returns only active rows (``archived_at IS NULL``) — the
+        default catalog view; ``True`` returns only archived rows
+        (``archived_at IS NOT NULL``) — the Cold-Storage list. Org scoping is
+        transitive via ``project_id``.
+        """
+        query = select(SourceRecord).where(SourceRecord.project_id == project_id)
+
+        if archived:
+            query = query.where(SourceRecord.archived_at.is_not(None))
+        else:
+            query = query.where(SourceRecord.archived_at.is_(None))
+
+        result = await self._session.execute(query.order_by(SourceRecord.id))
         return [_mappers.source_to_dict(s) for s in result.scalars().all()]
 
     @handle_repository_exceptions
@@ -582,6 +594,26 @@ class MetadataRepository:
         if not source:
             return None
         source.schema_config = schema_config
+        await self._session.flush()
+        await self._session.refresh(source)
+        return _mappers.source_to_dict(source)
+
+    @handle_repository_exceptions
+    async def update_source(self, source_id: str, **kwargs: Any) -> dict[str, Any] | None:
+        """Update a source's fields generically (mirrors ``update_dataset``).
+
+        Backs the Cold-Storage lifecycle (archive stamps ``archived_at`` +
+        ``retention_until``; restore clears them). Returns the refreshed source
+        dict, or None when the source does not exist.
+        """
+        result = await self._session.execute(select(SourceRecord).where(SourceRecord.id == source_id))
+        source = result.scalar_one_or_none()
+        if not source:
+            return None
+
+        for key, value in kwargs.items():
+            setattr(source, key, value)
+
         await self._session.flush()
         await self._session.refresh(source)
         return _mappers.source_to_dict(source)

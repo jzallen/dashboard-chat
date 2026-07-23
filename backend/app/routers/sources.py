@@ -10,10 +10,10 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.types import AuthUser
-from app.controllers import HTTPController
+from app.controllers.source_controller import SourceController
 
 from .deps import authorize_project_access, get_current_user, use_db_context
-from .schemas import ProcessUpload, RecordUpload, SourceCreate
+from .schemas import ProcessUpload, RecordUpload, SourceArchiveRequest, SourceCreate
 
 router = APIRouter(prefix="/api/sources", tags=["sources"])
 
@@ -41,7 +41,7 @@ async def create_source(
     # Verify the user's org owns the project before creating the source.
     _, _project = await authorize_project_access(project_id=data.project_id, user=user, db=db)
 
-    body, status_code = await HTTPController.post_source(
+    body, status_code = await SourceController.post_source(
         project_id=data.project_id,
         name=data.name,
         schema_config=data.schema_config,
@@ -53,13 +53,14 @@ async def create_source(
 @router.get("")
 async def list_sources(
     project_id: str = Query(..., description="Parent project UUID"),
+    archived: bool = Query(False, description="Return Cold Storage (archived sources) instead of the active catalog"),
     user: AuthUser = Depends(get_current_user),
     db: AsyncSession = Depends(use_db_context),
 ):
-    """List the sources for a project (backs the lineage canvas)."""
+    """List a project's sources — the active catalog, or Cold Storage when ``archived=true``."""
     _, _project = await authorize_project_access(project_id=project_id, user=user, db=db)
 
-    body, status_code = await HTTPController.list_sources(project_id)
+    body, status_code = await SourceController.list_sources(project_id, archived=archived)
     return JSONResponse(content=body, status_code=status_code)
 
 
@@ -72,7 +73,26 @@ async def get_source(
     """Get a single source by ID, authorized via its parent project."""
     await _authorize_source(source_id, user, db)
 
-    body, status_code = await HTTPController.get_source(source_id)
+    body, status_code = await SourceController.get_source(source_id)
+    return JSONResponse(content=body, status_code=status_code)
+
+
+@router.patch("/{source_id}")
+async def patch_source(
+    source_id: str,
+    data: SourceArchiveRequest,
+    user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(use_db_context),
+):
+    """Toggle a source's Cold-Storage state (soft-delete / restore).
+
+    ``{"archived": true}`` moves the source to Cold Storage — stamps
+    ``archived_at`` + ``retention_until``; ``{"archived": false}`` restores it.
+    Authorized via the source's parent project (404 missing / 403 cross-org).
+    """
+    await _authorize_source(source_id, user, db)
+
+    body, status_code = await SourceController.patch_source_archived(source_id, should_archive=data.archived)
     return JSONResponse(content=body, status_code=status_code)
 
 
@@ -89,7 +109,7 @@ async def list_source_uploads(
     """
     await _authorize_source(source_id, user, db)
 
-    body, status_code = await HTTPController.list_source_uploads(source_id)
+    body, status_code = await SourceController.list_source_uploads(source_id)
     return JSONResponse(content=body, status_code=status_code)
 
 
@@ -108,7 +128,7 @@ async def record_source_upload(
     """
     await _authorize_source(source_id, user, db)
 
-    body, status_code = await HTTPController.record_source_upload(
+    body, status_code = await SourceController.record_source_upload(
         source_id=source_id,
         filename=data.filename,
         content_type=data.content_type,
@@ -138,7 +158,7 @@ async def process_source_upload(
     plugin_registry = request.app.state.plugin_registry
     choices = body.choices if body else None
 
-    resp_body, status_code = await HTTPController.process_source_upload(
+    resp_body, status_code = await SourceController.process_source_upload(
         source_id=source_id,
         upload_id=upload_id,
         plugin_registry=plugin_registry,

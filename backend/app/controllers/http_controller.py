@@ -30,7 +30,6 @@ from app.use_cases import organization as organization_use_cases  # noqa: F401
 from app.use_cases import project as project_use_cases  # noqa: F401
 from app.use_cases import query_engine as query_engine_use_cases  # noqa: F401
 from app.use_cases import report as report_use_cases  # noqa: F401
-from app.use_cases import source as source_use_cases  # noqa: F401
 from app.use_cases import sql_access as sql_access_use_cases  # noqa: F401
 from app.use_cases import upload as upload_use_cases  # noqa: F401
 from app.use_cases import view as view_use_cases  # noqa: F401
@@ -55,7 +54,6 @@ from .organization_controller import OrganizationController
 from .project_controller import ProjectController
 from .query_engine_controller import QueryEngineController
 from .report_controller import ReportController
-from .source_controller import SourceController
 from .sql_access_controller import SQLAccessController
 from .view_controller import ViewController
 
@@ -82,14 +80,9 @@ class HTTPController:
     preview_transform = staticmethod(DatasetController.preview_transform)
     search_datasets = staticmethod(DatasetController.search_datasets)
 
-    # Source aggregate (slice 1)
-    post_source = staticmethod(SourceController.post_source)
-    list_sources = staticmethod(SourceController.list_sources)
-    get_source = staticmethod(SourceController.get_source)
-    list_source_uploads = staticmethod(SourceController.list_source_uploads)
-    # Source aggregate (slice 2) — presigned upload + UI-triggered ingestion
-    record_source_upload = staticmethod(SourceController.record_source_upload)
-    process_source_upload = staticmethod(SourceController.process_source_upload)
+    # Source aggregate — routed directly via SourceController (app/routers/sources.py);
+    # deliberately not rolled up here. See source_controller.py for the DI pattern that
+    # supersedes the http_controller late-binding shim.
 
     # Project & Workspace (Seam 2)
     list_projects = staticmethod(ProjectController.list_projects)
