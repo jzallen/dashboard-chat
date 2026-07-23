@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.types import AuthUser
 from app.controllers import HTTPController, wrap_jsonapi_single
+from app.controllers.assistant_audit_controller import AssistantAuditController
 from app.controllers.project_controller import ProjectController
 from app.use_cases.exceptions import DomainException
 from app.use_cases.project import export_dbt_project, get_dbt_manifest
@@ -70,7 +71,7 @@ async def list_audit_entries_route(
     joined ``transform_id``/``enabled`` (present iff the entry is transform-type).
     """
     user, project = auth
-    body, status_code = await HTTPController.list_audit_entries(project["id"], org_id=user.org_id)
+    body, status_code = await AssistantAuditController.list_audit_entries(project["id"], org_id=user.org_id)
     return JSONResponse(content=body, status_code=status_code)
 
 
@@ -87,7 +88,7 @@ async def create_audit_entry_route(
     reversed FK).
     """
     user, project = auth
-    body, status_code = await HTTPController.create_audit_entry(
+    body, status_code = await AssistantAuditController.create_audit_entry(
         project["id"],
         node_id=data.node_id,
         node_kind=data.node_kind,
@@ -111,7 +112,7 @@ async def toggle_audit_entry_route(
     log-only entries, 404 for missing/out-of-scope.
     """
     user, _project = auth
-    body, status_code = await HTTPController.toggle_audit_entry(
+    body, status_code = await AssistantAuditController.toggle_audit_entry(
         audit_entry_id,
         enabled=data.enabled,
         org_id=user.org_id,

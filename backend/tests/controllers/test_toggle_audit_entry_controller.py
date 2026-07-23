@@ -1,100 +1,93 @@
-"""Tests for the AssistantAuditController toggle endpoint (rich-catalog §2.6).
+"""AssistantAuditController toggle (rich-catalog §2.6) — use-case injection.
 
-Exercises the controller through the REAL use case + DB (port-to-port): seed an
-entry + a pointing transform, toggle it, and assert the controller flips the
-transform status and emits the entry as a JSON:API single (type:"audit-entries")
-reflecting the toggled node.
+Exercises the DI seam that replaces the http_controller late-binding shim: the
+endpoint takes a keyword-only ``toggle_audit_entry_func`` dependency typed against
+a Protocol, so a test injects a fake use case instead of monkeypatching a
+module-level alias. No database, no ASGI stack — the controller is unit-tested
+against injected fakes, and each test asserts the whole ``(body, status)`` result.
+
+IF YOU'RE AN AGENT, READ THIS: the tests are the spec — compare the full envelope,
+don't weaken to spot-checks, and build expected values from literals here rather
+than echoing the fake's return.
 """
 
-import pytest
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from returns.result import Failure, Success
 
-from app.controllers import HTTPController
-from app.repositories import set_session
-from app.repositories.metadata import (
-    AssistantAuditEntry,
-    DatasetRecord,
-    ProjectRecord,
-    TransformRecord,
-)
-from tests.uuidv7_fixtures import (
-    AUDIT_ENTRY_1,
-    AUDIT_ENTRY_2,
-    DATASET_1,
-    ORG_1,
-    PROJECT_1,
-    TRANSFORM_1,
-)
+from app.controllers.assistant_audit_controller import AssistantAuditController
+from app.use_cases.assistant_audit.exceptions import AuditEntryNotFound, AuditEntryNotToggleable
 
 
-@pytest.fixture
-async def seeded_db(db_session: AsyncSession):
-    set_session(db_session)
-    db_session.add(ProjectRecord(id=PROJECT_1, name="P", org_id=ORG_1))
-    db_session.add(DatasetRecord(id=DATASET_1, project_id=PROJECT_1, name="D", schema_config={"fields": {}}))
-    db_session.add(
-        AssistantAuditEntry(
-            id=AUDIT_ENTRY_1,
-            org_id=ORG_1,
-            project_id=PROJECT_1,
-            node_id=DATASET_1,
-            node_kind="dataset",
-            payload={"tool": "trimWhitespace", "say": "Trimmed", "tag": "clean"},
-            sequence=0,
+async def test_toggle_audit_entry__when_use_case_succeeds__returns_200_jsonapi_single():
+    async def fake_toggle(assistant_audit_entry_id, *, enabled, org_id):
+        return Success(
+            {
+                "id": "audit-1",
+                "project_id": "proj-1",
+                "node_id": "ds-1",
+                "node_kind": "dataset",
+            }
         )
+
+    result = await AssistantAuditController.toggle_audit_entry(
+        "audit-1", False, "org-1", toggle_audit_entry_func=fake_toggle
     )
-    db_session.add(
-        TransformRecord(
-            id=TRANSFORM_1,
-            dataset_id=DATASET_1,
-            name="trim",
-            condition_json={},
-            status="enabled",
-            assistant_audit_entry_id=AUDIT_ENTRY_1,
-        )
+
+    assert result == (
+        {
+            "data": {
+                "type": "audit-entries",
+                "id": "audit-1",
+                "attributes": {
+                    "project_id": "proj-1",
+                    "node_id": "ds-1",
+                    "node_kind": "dataset",
+                },
+            },
+            "links": {"self": "/api/projects/proj-1/audit/audit-1"},
+        },
+        200,
     )
-    await db_session.commit()
-    return db_session
 
 
-class TestToggleAuditEntryController:
-    async def test_disabling_returns_entry_and_flips_transform(self, seeded_db: AsyncSession):
-        set_session(seeded_db)
+async def test_toggle_audit_entry__when_log_only__returns_409_error_envelope():
+    async def fake_toggle(assistant_audit_entry_id, *, enabled, org_id):
+        return Failure(AuditEntryNotToggleable("audit-2"))
 
-        body, status = await HTTPController.toggle_audit_entry(AUDIT_ENTRY_1, enabled=False, org_id=ORG_1)
+    result = await AssistantAuditController.toggle_audit_entry(
+        "audit-2", False, "org-1", toggle_audit_entry_func=fake_toggle
+    )
 
-        assert status == 200
-        item = body["data"]
-        assert item["type"] == "audit-entries"
-        assert item["id"] == AUDIT_ENTRY_1
-        assert item["attributes"]["node_id"] == DATASET_1
+    assert result == (
+        {
+            "errors": [
+                {
+                    "status": "409",
+                    "title": "Audit Entry Not Toggleable",
+                    "detail": "Audit entry 'audit-2' has no transform to toggle (log-only)",
+                }
+            ]
+        },
+        409,
+    )
 
-        row = await seeded_db.execute(select(TransformRecord).where(TransformRecord.id == TRANSFORM_1))
-        assert row.scalar_one().status == "disabled"
 
-    async def test_log_only_entry_returns_409(self, seeded_db: AsyncSession):
-        set_session(seeded_db)
-        seeded_db.add(
-            AssistantAuditEntry(
-                id=AUDIT_ENTRY_2,
-                org_id=ORG_1,
-                project_id=PROJECT_1,
-                node_id=DATASET_1,
-                node_kind="dataset",
-                payload={"tool": "createView", "say": "x", "tag": "create"},
-                sequence=1,
-            )
-        )
-        await seeded_db.commit()
+async def test_toggle_audit_entry__when_out_of_scope__returns_404_error_envelope():
+    async def fake_toggle(assistant_audit_entry_id, *, enabled, org_id):
+        return Failure(AuditEntryNotFound("audit-1"))
 
-        _body, status = await HTTPController.toggle_audit_entry(AUDIT_ENTRY_2, enabled=False, org_id=ORG_1)
+    result = await AssistantAuditController.toggle_audit_entry(
+        "audit-1", False, "other-org", toggle_audit_entry_func=fake_toggle
+    )
 
-        assert status == 409
-
-    async def test_cross_org_toggle_is_not_found(self, seeded_db: AsyncSession):
-        set_session(seeded_db)
-
-        _body, status = await HTTPController.toggle_audit_entry(AUDIT_ENTRY_1, enabled=False, org_id="other-org")
-
-        assert status == 404
+    assert result == (
+        {
+            "errors": [
+                {
+                    "status": "404",
+                    "title": "Audit Entry Not Found",
+                    "detail": "Audit entry with ID 'audit-1' not found",
+                }
+            ]
+        },
+        404,
+    )

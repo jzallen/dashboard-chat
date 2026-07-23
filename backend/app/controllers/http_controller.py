@@ -24,7 +24,6 @@ them are rewritten to patch the per-context controllers directly.
 """
 
 # --- Use-case module aliases (retained for test patching) ---------------
-from app.use_cases import assistant_audit as assistant_audit_use_cases  # noqa: F401
 from app.use_cases import dataset as dataset_use_cases  # noqa: F401
 from app.use_cases import organization as organization_use_cases  # noqa: F401
 from app.use_cases import query_engine as query_engine_use_cases  # noqa: F401
@@ -44,7 +43,6 @@ from app.use_cases.session import update_session as update_session_uc  # noqa: F
 # --- Legacy helper re-exports (tests import these names from here) ------
 from ._result_mapper import error_response as _error_response  # noqa: F401
 from ._result_mapper import serialize as _serialize  # noqa: F401
-from .assistant_audit_controller import AssistantAuditController
 
 # --- Per-context controller composition ---------------------------------
 from .conversation_controller import ConversationController
@@ -99,10 +97,9 @@ class HTTPController:
     get_my_organization = staticmethod(OrganizationController.get_my_organization)
     check_org_availability = staticmethod(OrganizationController.check_org_availability)
 
-    # Assistant audit — read (rich-catalog §2.11) + create (§2.7) + toggle (§2.6)
-    list_audit_entries = staticmethod(AssistantAuditController.list_audit_entries)
-    create_audit_entry = staticmethod(AssistantAuditController.create_audit_entry)
-    toggle_audit_entry = staticmethod(AssistantAuditController.toggle_audit_entry)
+    # Assistant audit — routed directly via AssistantAuditController (app/routers/projects.py);
+    # deliberately not rolled up here. See assistant_audit_controller.py for the DI pattern that
+    # supersedes the http_controller late-binding shim.
 
     # Analytics Authoring — Views (Seam 5a)
     list_views = staticmethod(ViewController.list_views)
