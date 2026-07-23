@@ -1,12 +1,13 @@
 """Archive a source (move it to Cold Storage) or restore it.
 
 Boolean-driven: ``archived=True`` stamps ``archived_at = now`` and
-``retention_until = now + RETENTION_WINDOW`` via the generic
-``MetadataRepository.update_source(**kwargs)``. Archiving is idempotency-preserving
-— re-archiving an already-archived source is a no-op that keeps the original
-``archived_at`` (the retention clock is not advanced), an improvement over
-``archive_dataset``. Returns the refreshed source dict (the source path returns
-dicts, not domain objects — mirrors ``get_source``).
+``retention_until = now + RETENTION_WINDOW``; ``archived=False`` restores the source
+by clearing both fields. Both paths go through the generic
+``MetadataRepository.update_source(**kwargs)``. Each direction is idempotency-preserving
+— re-archiving an already-archived source keeps the original ``archived_at`` (the
+retention clock is not advanced) and restoring an already-active source is a no-op,
+both an improvement over ``archive_dataset``. Returns the refreshed source dict (the
+source path returns dicts, not domain objects — mirrors ``get_source``).
 """
 
 from datetime import UTC, datetime, timedelta
@@ -33,7 +34,7 @@ async def archive_source(
     archived: bool,
     repositories: "RepositoryContainer",
 ) -> Result[dict, str]:
-    """Move a source to Cold Storage (``archived=True``).
+    """Move a source to Cold Storage (``archived=True``) or restore it (``archived=False``).
 
     Raises:
         SourceNotFound: If the source does not exist.
@@ -45,12 +46,21 @@ async def archive_source(
     if source is None:
         raise SourceNotFound(source_id)
 
-    if archived and source.get("archived_at") is None:
-        archived_at = datetime.now(UTC)
+    if archived:
+        if source.get("archived_at") is None:
+            archived_at = datetime.now(UTC)
+            return await metadata_repo.update_source(
+                source_id,
+                archived_at=archived_at,
+                retention_until=archived_at + RETENTION_WINDOW,
+            )
+        return source
+
+    if source.get("archived_at") is not None:
         return await metadata_repo.update_source(
             source_id,
-            archived_at=archived_at,
-            retention_until=archived_at + RETENTION_WINDOW,
+            archived_at=None,
+            retention_until=None,
         )
 
     return source
