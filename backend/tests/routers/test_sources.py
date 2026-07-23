@@ -400,3 +400,59 @@ async def test_patch_archive_malformed_body_returns_422(client, seeded):
         )
 
     assert res.status_code == 422, res.text
+
+
+# ---------------------------------------------------------------------------
+# Slice 2 — Cold-Storage listing (default-exclude + ?archived=true)
+# ---------------------------------------------------------------------------
+
+
+async def _archive(client, source_id: str) -> None:
+    res = await client.patch(f"/api/sources/{source_id}", json={"archived": True}, headers=IDENTITY_HEADERS)
+    assert res.status_code == 200, res.text
+
+
+async def test_get_sources_default_excludes_archived(client, seeded):
+    async with client:
+        active_id = await _create_source(client, name="Active")
+        archived_id = await _create_source(client, name="Archived")
+        await _archive(client, archived_id)
+
+        res = await client.get("/api/sources", params={"project_id": PROJECT_1}, headers=IDENTITY_HEADERS)
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    ids = {item["id"] for item in body["data"]}
+    assert ids == {active_id}, "the default catalog must not include archived sources"
+
+
+async def test_get_sources_archived_true_returns_only_cold_storage(client, seeded):
+    async with client:
+        await _create_source(client, name="Active")
+        archived_id = await _create_source(client, name="Archived")
+        await _archive(client, archived_id)
+
+        res = await client.get(
+            "/api/sources",
+            params={"project_id": PROJECT_1, "archived": "true"},
+            headers=IDENTITY_HEADERS,
+        )
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    ids = {item["id"] for item in body["data"]}
+    assert ids == {archived_id}, "?archived=true must return only Cold-Storage sources"
+    assert body["data"][0]["attributes"]["archived_at"] is not None
+
+
+async def test_get_source_by_id_returns_archived_source_unfiltered(client, seeded):
+    async with client:
+        archived_id = await _create_source(client, name="Archived")
+        await _archive(client, archived_id)
+
+        res = await client.get(f"/api/sources/{archived_id}", headers=IDENTITY_HEADERS)
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["data"]["id"] == archived_id
+    assert body["data"]["attributes"]["archived_at"] is not None
