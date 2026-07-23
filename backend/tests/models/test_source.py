@@ -1,9 +1,11 @@
 """Tests for the Source domain model."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
-from app.models.source import Source
+from freezegun import freeze_time
+
+from app.models.source import RETENTION_WINDOW, Source
 
 
 class TestSourceConstruction:
@@ -187,3 +189,63 @@ class TestSourceColdStorageFields:
             schema_config={"fields": {}},
             created_by="user-1",
         )
+
+
+class TestSourceIsArchived:
+    """Source.is_archived reflects Cold-Storage state off archived_at."""
+
+    def test_is_archived__when_archived_at_set__returns_true(self):
+        source = Source(id="src-1", archived_at=datetime(2026, 7, 22, 12, 0, tzinfo=UTC))
+        assert source.is_archived is True
+
+    def test_is_archived__when_archived_at_none__returns_false(self):
+        source = Source(id="src-1")
+        assert source.is_archived is False
+
+
+class TestSourceMarkArchived:
+    """Source.mark_archived owns the Cold-Storage lifecycle transition."""
+
+    def test_mark_archived__when_true_on_active_source__stamps_now_and_90_day_retention(self):
+        """archived=True on a live source stamps archived_at=now + retention_until=now+90d."""
+        source = Source(id="src-1")
+
+        with freeze_time("2026-07-22T12:00:00+00:00"):
+            archived = source.mark_archived(True)
+
+        assert archived.archived_at == datetime(2026, 7, 22, 12, 0, tzinfo=UTC)
+        assert archived.retention_until - archived.archived_at == timedelta(days=90)
+
+    def test_mark_archived__when_true_on_archived_source__returns_self_unchanged(self):
+        """Re-archiving is idempotent — the original archive time is preserved (clock not advanced)."""
+        archived_at = datetime(2026, 7, 22, 12, 0, tzinfo=UTC)
+        source = Source(id="src-1", archived_at=archived_at, retention_until=archived_at + RETENTION_WINDOW)
+
+        with freeze_time("2026-08-30T09:00:00+00:00"):
+            result = source.mark_archived(True)
+
+        assert result is source
+
+    def test_mark_archived__when_false_on_archived_source__clears_both_fields(self):
+        """archived=False restores the source, clearing archived_at + retention_until."""
+        archived_at = datetime(2026, 7, 22, 12, 0, tzinfo=UTC)
+        source = Source(id="src-1", archived_at=archived_at, retention_until=archived_at + RETENTION_WINDOW)
+
+        restored = source.mark_archived(False)
+
+        assert (restored.archived_at, restored.retention_until) == (None, None)
+
+    def test_mark_archived__when_false_on_active_source__returns_self_unchanged(self):
+        """Restoring an already-active source is a no-op."""
+        source = Source(id="src-1")
+
+        assert source.mark_archived(False) is source
+
+    def test_mark_archived__does_not_mutate_the_receiver(self):
+        """The frozen model transitions by returning a new instance, never mutating in place."""
+        source = Source(id="src-1")
+
+        with freeze_time("2026-07-22T12:00:00+00:00"):
+            source.mark_archived(True)
+
+        assert source.archived_at is None

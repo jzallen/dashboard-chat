@@ -6,9 +6,12 @@ share a schema (dbt-style). The public ``SELECT *`` view over a Source is a
 Source domain object only; persistence lives in the repository layer.
 """
 
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime, timedelta
 from typing import Any
+
+# 90-day recoverable Cold-Storage window before a source may be purged.
+RETENTION_WINDOW = timedelta(days=90)
 
 
 def _iso_or_none(value: Any) -> str | None:
@@ -42,6 +45,31 @@ class Source:
     # window. Both are None for a live source and cleared on restore.
     archived_at: datetime | str | None = None
     retention_until: datetime | str | None = None
+
+    @property
+    def is_archived(self) -> bool:
+        """True when the source currently sits in Cold Storage."""
+        return self.archived_at is not None
+
+    def mark_archived(self, archived: bool) -> "Source":
+        """Return this source transitioned to the requested Cold-Storage state.
+
+        The ``archived`` flag carries the caller's intent. ``True`` stamps
+        ``archived_at = now`` and ``retention_until = now + RETENTION_WINDOW``;
+        ``False`` clears both. Each direction is idempotent — an already-archived
+        source keeps its original archive time (the retention clock never advances)
+        and an already-active source stays cleared — returning ``self`` unchanged
+        when the requested state already holds.
+        """
+        if archived:
+            if self.is_archived:
+                return self
+            archived_at = datetime.now(UTC)
+            return replace(self, archived_at=archived_at, retention_until=archived_at + RETENTION_WINDOW)
+
+        if not self.is_archived:
+            return self
+        return replace(self, archived_at=None, retention_until=None)
 
     @classmethod
     def from_record(cls, record: Any) -> "Source":
