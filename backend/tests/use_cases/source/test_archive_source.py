@@ -128,3 +128,34 @@ class TestArchiveSource:
                 assert str(error) == "Database connection lost"
             case Success(_):
                 pytest.fail("archive_source should fail when a database error occurs")
+
+
+class TestRestoreSource:
+    """Restore is the same port with ``archived=False`` — it clears Cold Storage."""
+
+    async def test_restore_clears_archived_at_and_retention(self, seeded_db: AsyncSession):
+        """Restoring an archived source clears both archived_at and retention_until."""
+        set_session(seeded_db)
+
+        with freeze_time("2026-07-22T12:00:00+00:00"):
+            await archive_source(source_id=SOURCE_1, archived=True)
+
+        result = await archive_source(source_id=SOURCE_1, archived=False)
+
+        match result:
+            case Success(source):
+                assert (source["archived_at"], source["retention_until"]) == (None, None)
+            case Failure(error):
+                pytest.fail(f"restore should succeed, got: {error}")
+
+    async def test_restore_when_already_active_is_idempotent(self, seeded_db: AsyncSession):
+        """Restoring a source that was never archived is a no-op — fields stay null."""
+        set_session(seeded_db)
+
+        result = await archive_source(source_id=SOURCE_1, archived=False)
+
+        match result:
+            case Success(source):
+                assert (source["archived_at"], source["retention_until"]) == (None, None)
+            case Failure(error):
+                pytest.fail(f"restore of an active source should succeed, got: {error}")

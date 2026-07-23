@@ -449,3 +449,101 @@ async def test_get_source_by_id__when_source_archived__returns_it_unfiltered(cli
 
     assert res.status_code == 200, res.text
     assert res.json()["data"]["id"] == archived_id
+
+
+# ---------------------------------------------------------------------------
+# Slice 3 — Restore (symmetric PATCH {archived:false}) + round-trip
+# ---------------------------------------------------------------------------
+
+
+async def test_patch_restore_clears_cold_storage_fields(client, seeded):
+    async with client:
+        source_id = await _create_source(client)
+        await _archive(client, source_id)
+
+        res = await client.patch(
+            f"/api/sources/{source_id}",
+            json={"archived": False},
+            headers=IDENTITY_HEADERS,
+        )
+
+    assert res.status_code == 200, res.text
+    attrs = res.json()["data"]["attributes"]
+    assert (attrs["archived_at"], attrs["retention_until"]) == (None, None)
+
+
+async def test_patch_restore_already_active_is_idempotent(client, seeded):
+    async with client:
+        source_id = await _create_source(client)
+
+        res = await client.patch(
+            f"/api/sources/{source_id}",
+            json={"archived": False},
+            headers=IDENTITY_HEADERS,
+        )
+
+    assert res.status_code == 200, res.text
+    attrs = res.json()["data"]["attributes"]
+    assert (attrs["archived_at"], attrs["retention_until"]) == (None, None)
+
+
+async def test_patch_restore_unknown_source_returns_404(client, seeded):
+    async with client:
+        res = await client.patch(
+            "/api/sources/019515a0-b0ff-7000-8000-0000000000ff",
+            json={"archived": False},
+            headers=IDENTITY_HEADERS,
+        )
+
+    assert res.status_code == 404, res.text
+
+
+async def test_patch_restore_cross_org_source_is_forbidden(client, seeded, db_session):
+    other_project = "019515a0-0004-7000-8000-000000000004"
+    db_session.add(ProjectRecord(id=other_project, name="Other", org_id="other-org"))
+    await db_session.flush()
+
+    async with client:
+        other_headers = {**IDENTITY_HEADERS, "X-Org-Id": "other-org"}
+        created = await client.post(
+            "/api/sources",
+            json={"project_id": other_project, "name": "Theirs"},
+            headers=other_headers,
+        )
+        other_source_id = created.json()["data"]["id"]
+
+        res = await client.patch(
+            f"/api/sources/{other_source_id}",
+            json={"archived": False},
+            headers=IDENTITY_HEADERS,
+        )
+
+    assert res.status_code == 403, res.text
+
+
+async def _list_ids(client, *, archived: bool | None = None) -> set[str]:
+    params = {"project_id": PROJECT_1}
+    if archived is not None:
+        params["archived"] = "true" if archived else "false"
+    res = await client.get("/api/sources", params=params, headers=IDENTITY_HEADERS)
+    assert res.status_code == 200, res.text
+    return {item["id"] for item in res.json()["data"]}
+
+
+async def test_archive_restore_round_trip_returns_source_to_active_catalog(client, seeded):
+    async with client:
+        source_id = await _create_source(client, name="RoundTrip")
+
+        await _archive(client, source_id)
+        assert source_id not in await _list_ids(client)
+        assert source_id in await _list_ids(client, archived=True)
+
+        restored = await client.patch(
+            f"/api/sources/{source_id}",
+            json={"archived": False},
+            headers=IDENTITY_HEADERS,
+        )
+        assert restored.status_code == 200, restored.text
+
+        assert source_id in await _list_ids(client)
+        assert source_id not in await _list_ids(client, archived=True)
