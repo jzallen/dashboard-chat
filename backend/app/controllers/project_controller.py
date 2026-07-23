@@ -108,9 +108,14 @@ class ProjectController:
     ) -> tuple[dict, int]:
         result = await list_projects_func(user=user, cursor=cursor, page_size=page_size)
         match result:
-            case Success(page):
+            case Success(projects_page):
                 resp = wrap_jsonapi_list(
-                    "projects", page["items"], "/api/projects", page["page_size"], page["next_cursor"], page["has_more"]
+                    "projects",
+                    projects_page["items"],
+                    "/api/projects",
+                    projects_page["page_size"],
+                    projects_page["next_cursor"],
+                    projects_page["has_more"],
                 )
                 return resp, 200
             case Failure(error):
@@ -140,8 +145,8 @@ class ProjectController:
     ) -> tuple[dict, int]:
         result = await create_project_func(name=name, description=description, user=user)
         match result:
-            case Success(created):
-                serialized = serialize(created)
+            case Success(created_project):
+                serialized = serialize(created_project)
                 return wrap_jsonapi_single("projects", serialized, f"/api/projects/{serialized['id']}"), 201
             case Failure(error):
                 return error_response(error)
@@ -157,8 +162,8 @@ class ProjectController:
     ) -> tuple[dict, int]:
         result = await update_project_func(project_id, kwargs, user=user, project=project)
         match result:
-            case Success(updated):
-                return wrap_jsonapi_single("projects", serialize(updated), f"/api/projects/{project_id}"), 200
+            case Success(updated_project):
+                return wrap_jsonapi_single("projects", serialize(updated_project), f"/api/projects/{project_id}"), 200
             case Failure(error):
                 return error_response(error)
 
