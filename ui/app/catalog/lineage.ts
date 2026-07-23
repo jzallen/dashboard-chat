@@ -144,6 +144,12 @@ export type Edge = [string, string];
 export interface ColdStorageItem {
   id: string;
   name: string;
+  /**
+   * The retired node's pipeline layer. Drives restore routing: a `source` was
+   * archived client-side (no backend entity) and restores locally; any other
+   * layer is a server-archived dataset and restores through the backend.
+   */
+  layer: Layer;
   schema?: FieldDef[];
   files?: { name: string; rows: number; when: string }[];
   retiredAt: number;

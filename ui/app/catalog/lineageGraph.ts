@@ -236,6 +236,35 @@ export class LineageGraph {
     return orphans;
   }
 
+  /**
+   * Ids of active nodes that should render disabled-but-visible (greyed, still
+   * on the canvas). Superset of {@link orphans}: every structural orphan PLUS a
+   * `staging` node that has lost its only source ingress — one whose feeding
+   * source has been archived (its incident source→staging edge now sits in a
+   * cold-storage record) and which has no remaining active parent.
+   *
+   * Unlike {@link orphans}, which treats every staging node as a legitimate
+   * graph root and never dims it, this captures a downstream staging node whose
+   * source was moved to cold storage: the node stays visible for later remap but
+   * is flagged disabled. A staging root that never had an archived source is NOT
+   * included (no cold record points at it), so genuine entry points are untouched.
+   */
+  disabledNodes(): Set<string> {
+    const disabled = this.orphans();
+    const targetsWithArchivedIngress = new Set<string>();
+    for (const record of this.cold.values()) {
+      for (const [, to] of record.edges) {
+        targetsWithArchivedIngress.add(to);
+      }
+    }
+    for (const n of this.nodes.values()) {
+      if (n.layer !== "staging") continue;
+      if (this.parents.get(n.id)?.length) continue; // still has a live ingress
+      if (targetsWithArchivedIngress.has(n.id)) disabled.add(n.id);
+    }
+    return disabled;
+  }
+
   /** True if a direct edge connects nodes `a` and `b` in either direction. */
   isNodeAdjacent(a: string, b: string): boolean {
     return (
@@ -273,6 +302,7 @@ export class LineageGraph {
       .map((r) => ({
         id: r.node.id,
         name: r.node.label,
+        layer: r.node.layer,
         schema: r.node.schema,
         files: r.node.files,
         retiredAt: r.retiredAt,

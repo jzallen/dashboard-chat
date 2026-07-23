@@ -103,15 +103,26 @@ export function useUpload(flash: (id: string) => void) {
   const cancelArchive = useCallback(() => setConfirmArchive(null), []);
   const archiveSource = useCallback(
     (src: LineageNode) => {
-      archiveFetcher.submit(null, {
-        method: "POST",
-        action: `/ui-server/datasets/${encodeURIComponent(src.id)}/archive`,
-        encType: "application/json",
-      });
+      // Archive is routed by entity. A SOURCE node backs no backend entity, so
+      // archiving one is a CLIENT-ONLY lineage update: move it into the working
+      // graph's cold storage and let its connected staging datasets render
+      // disabled-but-visible. Nothing is POSTed — no source id threaded to the
+      // dataset route (that 404s) and no cascading dataset archive/delete. A
+      // genuine DATASET node is a backend entity and still archives through the
+      // dataset route, which persists `archived_at`.
+      if (src.layer === "source") {
+        catalog.archiveSource(src.id);
+      } else {
+        archiveFetcher.submit(null, {
+          method: "POST",
+          action: `/ui-server/datasets/${encodeURIComponent(src.id)}/archive`,
+          encType: "application/json",
+        });
+      }
       setConfirmArchive(null);
       closeUpload();
     },
-    [archiveFetcher, closeUpload],
+    [archiveFetcher, catalog, closeUpload],
   );
   const renameSource = useCallback(
     (id: string, name: string) => catalog.renameSource(id, name),

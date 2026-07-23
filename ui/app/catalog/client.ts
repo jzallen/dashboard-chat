@@ -313,6 +313,12 @@ export async function createDataCatalog(
     childrenOf: (id: string) => snapshot.graph.childrenOf(id),
     /** Ids of non-source nodes with no incoming edge. */
     orphans: () => snapshot.graph.orphans(),
+    /**
+     * Ids of active nodes that render disabled-but-visible: the structural
+     * orphans plus any staging node whose only source ingress was archived
+     * (source moved to cold storage). Superset of {@link orphans}.
+     */
+    disabledNodes: () => snapshot.graph.disabledNodes(),
     /** True if a direct edge connects nodes `a` and `b` in either direction. */
     isNodeAdjacent: (a: string, b: string) =>
       snapshot.graph.isNodeAdjacent(a, b),
@@ -344,6 +350,24 @@ export async function createDataCatalog(
     /** Add a live source node (dedup by id). */
     addSource: (node: LineageNode) =>
       commit({ graph: snapshot.graph.addSource(node) }),
+    /**
+     * Archive a source LOCALLY — move it (and its incident edges) into the
+     * working graph's cold storage. A source node backs no backend entity, so
+     * this posts NOTHING: it is a pure client lineage update. Its staging
+     * children lose their only live ingress and render disabled-but-visible via
+     * {@link disabledNodes}; no downstream dataset is touched (no cascading
+     * archive). `Date.now()` is injected here, out of the pure reducer.
+     */
+    archiveSource: (id: string): void =>
+      commit({ graph: snapshot.graph.archive(id, Date.now()) }),
+    /**
+     * Restore a locally-archived source from the working graph's cold storage —
+     * re-wire its node and stashed edges back into the active DAG. The
+     * client-only counterpart of {@link archiveSource}; server-archived datasets
+     * restore through the backend instead.
+     */
+    restoreSource: (id: string): void =>
+      commit({ graph: snapshot.graph.restore(id) }),
     /** Add a live model node and the edge feeding it (each deduped). */
     addModel: (node: LineageNode, edge: Edge) =>
       commit({ graph: snapshot.graph.addModel(node, edge) }),

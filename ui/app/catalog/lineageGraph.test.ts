@@ -122,6 +122,73 @@ describe("LineageGraph — topology + audit", () => {
     expect(orphans.has("int.active")).toBe(true);
   });
 
+  it("disabledNodes: a staging node whose only source ingress was archived is disabled-but-visible", () => {
+    const source: LineageNode = {
+      id: "src.people",
+      label: "people",
+      sub: "source",
+      layer: "source",
+      schema: [{ name: "id", type: "integer" }],
+    };
+    const staging: LineageNode = {
+      id: "stg.people",
+      label: "people",
+      sub: "staging",
+      layer: "staging",
+      ref: { kind: "dataset", fields: [] },
+    };
+    const graph = makeGraph()
+      .addSource(source)
+      .addModel(staging, ["src.people", "stg.people"])
+      .archive("src.people", 0);
+    const disabled = graph.disabledNodes();
+    expect(disabled.has("stg.people")).toBe(true);
+    expect(graph.getNode("stg.people")).toBeDefined();
+  });
+
+  it("disabledNodes: a staging node still fed by a live source is NOT disabled", () => {
+    const source: LineageNode = {
+      id: "src.people",
+      label: "people",
+      sub: "source",
+      layer: "source",
+      schema: [{ name: "id", type: "integer" }],
+    };
+    const staging: LineageNode = {
+      id: "stg.people",
+      label: "people",
+      sub: "staging",
+      layer: "staging",
+      ref: { kind: "dataset", fields: [] },
+    };
+    const graph = makeGraph()
+      .addSource(source)
+      .addModel(staging, ["src.people", "stg.people"]);
+    expect(graph.disabledNodes().has("stg.people")).toBe(false);
+  });
+
+  it("disabledNodes: subsumes orphans() and leaves orphans() itself unchanged for rootless intermediate/mart", () => {
+    const staging: LineageNode = {
+      id: "stg.customers",
+      label: "customers",
+      sub: "staging",
+      layer: "staging",
+      ref: { kind: "dataset", fields: [] },
+    };
+    const intermediate: LineageNode = {
+      id: "int.active",
+      label: "active",
+      sub: "intermediate",
+      layer: "intermediate",
+      ref: { columns: [] },
+    };
+    const graph = makeGraph().addSource(staging).addSource(intermediate);
+    expect(graph.orphans().has("stg.customers")).toBe(false);
+    expect(graph.orphans().has("int.active")).toBe(true);
+    expect(graph.disabledNodes().has("int.active")).toBe(true);
+    expect(graph.disabledNodes().has("stg.customers")).toBe(false);
+  });
+
   it("isNodeAdjacent is true for a real edge in either direction, false otherwise", () => {
     const graph = makeGraph();
     expect(graph.isNodeAdjacent("src.orders", "mart.revenue")).toBe(true);

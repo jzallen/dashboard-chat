@@ -1,12 +1,14 @@
 // @vitest-environment happy-dom
 //
-// Wiring spec: restore in useColdStorage submits via a useFetcher POST to
-// /ui-server/datasets/:id/restore — NOT via catalog.restoreSource (deleted in Task B).
-// Follows the ModelDetail.wiring.test.tsx spy-action pattern.
+// Wiring spec: restore in useColdStorage is routed by the retired node's entity.
+//   - A server-archived DATASET restores via a useFetcher POST to
+//     /ui-server/datasets/:id/restore (the backend clears `archived_at`).
+//   - A client-archived SOURCE restores LOCALLY through the catalog graph and
+//     must NOT hit the backend (a source id is not a dataset id — it would 404).
 //
-// IF YOU'RE AN AGENT, READ THIS: the fetcher submission IS the contract.
-// Do NOT weaken the captured-request assertions.
-import { act, fireEvent,render, screen, waitFor } from "@testing-library/react";
+// IF YOU'RE AN AGENT, READ THIS: the routing IS the contract — a dataset hits
+// the fetcher, a source never does. Do NOT weaken these assertions.
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   createMemoryRouter,
   type RouteObject,
@@ -14,8 +16,9 @@ import {
 } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { CatalogSource, LineageNode } from "../../catalog";
 import { fixtureSource } from "../../catalog";
-import { installCatalogForTest } from "../useCatalog";
+import { installCatalogForTest, useCatalogFromContext } from "../useCatalog";
 import { useColdStorage } from "./hooks";
 
 afterEach(() => vi.restoreAllMocks());
@@ -23,8 +26,11 @@ afterEach(() => vi.restoreAllMocks());
 type Captured = { method: string; params: Record<string, string | undefined> };
 
 /** Render useColdStorage inside a router that carries the restore action as a spy. */
-async function setupRestoreHook() {
-  await installCatalogForTest({}, fixtureSource);
+async function setupRestoreHook(
+  onClick: (hook: ReturnType<typeof useColdStorage>, catalog: ReturnType<typeof useCatalogFromContext>) => void,
+  fallback: CatalogSource = fixtureSource,
+) {
+  await installCatalogForTest({}, fallback);
 
   const captured: Captured[] = [];
   const restoreAction = async ({
@@ -43,10 +49,11 @@ async function setupRestoreHook() {
       path: "/host",
       Component: function Host() {
         const hook = useColdStorage();
+        const catalog = useCatalogFromContext();
         return (
           <button
             data-testid="restore-btn"
-            onClick={() => hook.restore("ds-archived")}
+            onClick={() => onClick(hook, catalog)}
           >
             Restore
           </button>
@@ -63,9 +70,11 @@ async function setupRestoreHook() {
   return { router, captured };
 }
 
-describe("useColdStorage.restore — submits via fetcher, not catalog.restoreSource", () => {
-  it("POSTs to /ui-server/datasets/:id/restore when restore is called", async () => {
-    const { router, captured } = await setupRestoreHook();
+describe("useColdStorage.restore — routes by entity", () => {
+  it("POSTs a server-archived DATASET to /ui-server/datasets/:id/restore", async () => {
+    const { router, captured } = await setupRestoreHook((hook) =>
+      hook.restore("ds-archived"),
+    );
 
     render(<RouterProvider router={router} />);
 
@@ -78,5 +87,36 @@ describe("useColdStorage.restore — submits via fetcher, not catalog.restoreSou
       method: "POST",
       params: { datasetId: "ds-archived" },
     });
+  });
+
+  it("restores a client-archived SOURCE locally, never touching the backend", async () => {
+    const source: LineageNode = {
+      id: "src.people",
+      label: "people",
+      sub: "source",
+      layer: "source",
+      schema: [{ name: "id", type: "integer" }],
+    };
+    const topology: CatalogSource = {
+      ...fixtureSource,
+      getNodes: () => Promise.resolve({ [source.id]: source }),
+      getEdges: () => Promise.resolve([]),
+      getAudit: () => Promise.resolve({}),
+    };
+
+    const { router, captured } = await setupRestoreHook((hook, catalog) => {
+      // Archive the source client-side first, then restore it through the hook.
+      catalog.archiveSource(source.id);
+      hook.restore(source.id);
+    }, topology);
+
+    render(<RouterProvider router={router} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("restore-btn"));
+    });
+
+    // The source is active again and no backend restore was ever submitted.
+    await waitFor(() => expect(captured).toEqual([]));
   });
 });

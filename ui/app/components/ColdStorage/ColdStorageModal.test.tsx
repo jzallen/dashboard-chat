@@ -8,6 +8,7 @@ import { ColdStorageModal } from "./ColdStorageModal";
 const item: ColdStorageItem = {
   id: "src.retired",
   name: "Patients",
+  layer: "source",
   retiredAt: 1_700_000_000_000,
   retentionDays: 90,
   files: [{ name: "patients.csv" }] as ColdStorageItem["files"],

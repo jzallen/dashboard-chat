@@ -115,7 +115,7 @@ export function SwimView({
   sel: string | null;
   flashedNodeId: string | null;
 }) {
-  const orphans = catalog.orphans();
+  const orphans = catalog.disabledNodes();
   const isSelected = (id: string) => selectedId === id;
   const isOrphaned = (id: string) => orphans.has(id);
   const wasJustAdded = (id: string) => id === flashedNodeId;
