@@ -1,17 +1,13 @@
 """Characterization tests — Seam 2: Project & Workspace controller.
 
-Pins the CURRENT observable behavior of the project endpoints on HTTPController
-(L200-257). These tests must remain green after extraction to
-`project_controller.py`.
+Pins the observable forwarding behavior of the project endpoints. Originally
+written against the ``HTTPController`` roll-up (which patched the
+``project_use_cases`` module alias); reconciled to the use-case injection seam
+after DC-202 — each test now injects a fake use case via the controller's
+keyword-only ``*_func`` dependency and calls ``ProjectController`` directly.
+The behavioral assertions are unchanged.
 
-Existing coverage in test_http_controller.py covers:
-- TestListProjects (success 200 / 500)
-- TestGetProject (success 200 / 404)
-- TestPostProject (success 201)
-- TestPatchProject (success 200 / 404)
-- TestDeleteProject (success 200 / 404)
-
-Gaps pinned here:
+Gaps pinned here (beyond the happy paths in test_project_controller.py):
 - list_projects forwards `user` and cursor/page_size kwargs.
 - post_project forwards `description` and `user`.
 - patch_project forwards `**kwargs` (the update body) and `project` context.
@@ -22,11 +18,11 @@ Gaps pinned here:
 
 from dataclasses import dataclass
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 from returns.result import Failure, Success
 
-from app.controllers.http_controller import HTTPController
+from app.controllers.project_controller import ProjectController
 from app.use_cases.project.exceptions import ProjectNotFound
 
 
@@ -40,14 +36,13 @@ class _Model:
 
 
 # ---------------------------------------------------------------------------
-# list_projects — forward user + cursor + page_size (L201-216)
+# list_projects — forward user + cursor + page_size
 # ---------------------------------------------------------------------------
 
 
 class TestListProjectsForwarding:
-    @patch("app.controllers.http_controller.project_use_cases")
-    async def test_forwards_user_cursor_page_size(self, mock_uc):
-        mock_uc.list_projects = AsyncMock(
+    async def test_forwards_user_cursor_page_size(self):
+        fake = AsyncMock(
             return_value=Success(
                 {
                     "items": [],
@@ -57,12 +52,13 @@ class TestListProjectsForwarding:
                 }
             )
         )
-        await HTTPController.list_projects(cursor="IN", page_size=25, base_url="/api/p", user="USER_SENTINEL")
-        mock_uc.list_projects.assert_awaited_once_with(user="USER_SENTINEL", cursor="IN", page_size=25)
+        await ProjectController.list_projects(
+            cursor="IN", page_size=25, base_url="/api/p", user="USER_SENTINEL", list_projects_func=fake
+        )
+        fake.assert_awaited_once_with(user="USER_SENTINEL", cursor="IN", page_size=25)
 
-    @patch("app.controllers.http_controller.project_use_cases")
-    async def test_envelope_uses_base_url(self, mock_uc):
-        mock_uc.list_projects = AsyncMock(
+    async def test_envelope_uses_base_url(self):
+        fake = AsyncMock(
             return_value=Success(
                 {
                     "items": [],
@@ -72,47 +68,45 @@ class TestListProjectsForwarding:
                 }
             )
         )
-        body, _ = await HTTPController.list_projects(base_url="/api/custom-projects")
+        body, _ = await ProjectController.list_projects(base_url="/api/custom-projects", list_projects_func=fake)
         assert "/api/custom-projects" in body["links"]["self"]
 
 
 # ---------------------------------------------------------------------------
-# post_project — forward description + user (L227-235)
+# post_project — forward description + user
 # ---------------------------------------------------------------------------
 
 
 class TestPostProjectForwarding:
-    @patch("app.controllers.http_controller.project_use_cases")
-    async def test_forwards_name_description_user(self, mock_uc):
-        mock_uc.create_project = AsyncMock(return_value=Success(_Model("p1", "Name")))
-        await HTTPController.post_project("Name", description="Desc", user="USER_SENTINEL")
-        mock_uc.create_project.assert_awaited_once_with(name="Name", description="Desc", user="USER_SENTINEL")
+    async def test_forwards_name_description_user(self):
+        fake = AsyncMock(return_value=Success(_Model("p1", "Name")))
+        await ProjectController.post_project("Name", description="Desc", user="USER_SENTINEL", create_project_func=fake)
+        fake.assert_awaited_once_with(name="Name", description="Desc", user="USER_SENTINEL")
 
-    @patch("app.controllers.http_controller.project_use_cases")
-    async def test_self_link_contains_new_project_id(self, mock_uc):
-        mock_uc.create_project = AsyncMock(return_value=Success(_Model("NEW-P-ID", "Fresh")))
-        body, status = await HTTPController.post_project("Fresh")
+    async def test_self_link_contains_new_project_id(self):
+        fake = AsyncMock(return_value=Success(_Model("NEW-P-ID", "Fresh")))
+        body, status = await ProjectController.post_project("Fresh", create_project_func=fake)
         assert status == 201
         assert body["links"]["self"] == "/api/projects/NEW-P-ID"
 
 
 # ---------------------------------------------------------------------------
-# patch_project — forward kwargs body + project context (L237-246)
+# patch_project — forward kwargs body + project context
 # ---------------------------------------------------------------------------
 
 
 class TestPatchProjectForwarding:
-    @patch("app.controllers.http_controller.project_use_cases")
-    async def test_forwards_kwargs_as_update_body(self, mock_uc):
-        mock_uc.update_project = AsyncMock(return_value=Success(_Model("p1", "Updated")))
-        await HTTPController.patch_project(
+    async def test_forwards_kwargs_as_update_body(self):
+        fake = AsyncMock(return_value=Success(_Model("p1", "Updated")))
+        await ProjectController.patch_project(
             "p1",
             user="U",
             project={"id": "p1"},
             name="Updated",
             description="New",
+            update_project_func=fake,
         )
-        mock_uc.update_project.assert_awaited_once_with(
+        fake.assert_awaited_once_with(
             "p1",
             {"name": "Updated", "description": "New"},
             user="U",
@@ -121,35 +115,33 @@ class TestPatchProjectForwarding:
 
 
 # ---------------------------------------------------------------------------
-# delete_project — body shape + forwarding (L248-257)
+# delete_project — body shape + forwarding
 # ---------------------------------------------------------------------------
 
 
 class TestDeleteProjectBodyAndForwarding:
-    @patch("app.controllers.http_controller.project_use_cases")
-    async def test_body_is_meta_deleted_true(self, mock_uc):
-        mock_uc.delete_project = AsyncMock(return_value=Success(True))
-        body, status = await HTTPController.delete_project("p1")
+    async def test_body_is_meta_deleted_true(self):
+        fake = AsyncMock(return_value=Success(True))
+        body, status = await ProjectController.delete_project("p1", delete_project_func=fake)
         assert status == 200
         assert body == {"meta": {"deleted": True}}
 
-    @patch("app.controllers.http_controller.project_use_cases")
-    async def test_body_is_meta_deleted_false_when_use_case_returns_false(self, mock_uc):
+    async def test_body_is_meta_deleted_false_when_use_case_returns_false(self):
         """The controller does NOT interpret truthiness — it pipes through
         whatever the use case returned. Characterize this verbatim."""
-        mock_uc.delete_project = AsyncMock(return_value=Success(False))
-        body, status = await HTTPController.delete_project("p1")
+        fake = AsyncMock(return_value=Success(False))
+        body, status = await ProjectController.delete_project("p1", delete_project_func=fake)
         assert status == 200
         assert body == {"meta": {"deleted": False}}
 
-    @patch("app.controllers.http_controller.project_use_cases")
-    async def test_forwards_user_and_project(self, mock_uc):
-        mock_uc.delete_project = AsyncMock(return_value=Success(True))
-        await HTTPController.delete_project("p1", user="USER_SENTINEL", project={"id": "p1"})
-        mock_uc.delete_project.assert_awaited_once_with("p1", user="USER_SENTINEL", project={"id": "p1"})
+    async def test_forwards_user_and_project(self):
+        fake = AsyncMock(return_value=Success(True))
+        await ProjectController.delete_project(
+            "p1", user="USER_SENTINEL", project={"id": "p1"}, delete_project_func=fake
+        )
+        fake.assert_awaited_once_with("p1", user="USER_SENTINEL", project={"id": "p1"})
 
-    @patch("app.controllers.http_controller.project_use_cases")
-    async def test_not_found_returns_404(self, mock_uc):
-        mock_uc.delete_project = AsyncMock(return_value=Failure(ProjectNotFound("p1")))
-        _, status = await HTTPController.delete_project("p1")
+    async def test_not_found_returns_404(self):
+        fake = AsyncMock(return_value=Failure(ProjectNotFound("p1")))
+        _, status = await ProjectController.delete_project("p1", delete_project_func=fake)
         assert status == 404
