@@ -12,9 +12,10 @@ Before writing or refactoring tests, read the references in
 tests:
 
 - [`references/general_rules_for_testing.md`](references/general_rules_for_testing.md) —
-  test-as-specification, docstrings over comment diaries, one aggregate assertion per
-  test, building expected values from literals (not the input's fixtures), builders for
-  repeated construction, and pytest helper-naming/fixture rules.
+  test-as-specification, the `test_<unit>__<condition>__<outcome>` naming convention,
+  docstrings over comment diaries, one aggregate assertion per test, building expected
+  values from literals (not the input's fixtures), builders for repeated construction, and
+  pytest helper-naming/fixture rules.
 - [`references/aws.python.md`](references/aws.python.md) — mocking `boto3` with the
   `botocore` Stubber: client injection, queuing responses, asserting request params, and
   `assert_no_pending_responses()`.

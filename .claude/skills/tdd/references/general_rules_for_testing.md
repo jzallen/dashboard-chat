@@ -20,6 +20,23 @@ conventions, not just style — follow them unless a test has a documented reaso
   `IF YOU'RE AN AGENT, READ THIS:` holding short process rules (e.g. "tests are the
   spec — don't weaken assertions"), never running commentary.
 
+## Test naming: `test_<unit>__<condition>__<outcome>`
+
+- Name every test with three parts separated by **double underscores**:
+  `test_<service or method>__<under-condition>__<produces-outcome>`. The name alone
+  should read as a spec line — *what* is exercised, *under which* condition, and the
+  *observable* result.
+  ```python
+  async def test_patch_source_archived__when_use_case_succeeds__returns_200_with_cold_storage_envelope(): ...
+  async def test_patch_source_archived__when_source_not_found__returns_404_error_envelope(): ...
+  ```
+- The first segment is the unit under test (the method/function/service), **not** a vague
+  "success"/"failure". The condition and outcome carry the behavior — if you can't name a
+  distinct condition and outcome, the test is probably describing more than one behavior
+  (see the one-assertion rule below).
+- The self-describing name replaces grouping-by-class as the primary organizer; a class is
+  optional sugar, never where the behavior description lives.
+
 ## Assertions: one per test, aggregate-to-aggregate
 
 - Aim for **a single assertion per test**. If you find yourself making several, the test
