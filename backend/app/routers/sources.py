@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.types import AuthUser
-from app.controllers import HTTPController
+from app.controllers.source_controller import SourceController
 
 from .deps import authorize_project_access, get_current_user, use_db_context
 from .schemas import ProcessUpload, RecordUpload, SourceArchiveRequest, SourceCreate
@@ -41,7 +41,7 @@ async def create_source(
     # Verify the user's org owns the project before creating the source.
     _, _project = await authorize_project_access(project_id=data.project_id, user=user, db=db)
 
-    body, status_code = await HTTPController.post_source(
+    body, status_code = await SourceController.post_source(
         project_id=data.project_id,
         name=data.name,
         schema_config=data.schema_config,
@@ -59,7 +59,7 @@ async def list_sources(
     """List the sources for a project (backs the lineage canvas)."""
     _, _project = await authorize_project_access(project_id=project_id, user=user, db=db)
 
-    body, status_code = await HTTPController.list_sources(project_id)
+    body, status_code = await SourceController.list_sources(project_id)
     return JSONResponse(content=body, status_code=status_code)
 
 
@@ -72,7 +72,7 @@ async def get_source(
     """Get a single source by ID, authorized via its parent project."""
     await _authorize_source(source_id, user, db)
 
-    body, status_code = await HTTPController.get_source(source_id)
+    body, status_code = await SourceController.get_source(source_id)
     return JSONResponse(content=body, status_code=status_code)
 
 
@@ -91,7 +91,7 @@ async def patch_source(
     """
     await _authorize_source(source_id, user, db)
 
-    body, status_code = await HTTPController.patch_source_archived(source_id, data.archived)
+    body, status_code = await SourceController.patch_source_archived(source_id, data.archived)
     return JSONResponse(content=body, status_code=status_code)
 
 
@@ -108,7 +108,7 @@ async def list_source_uploads(
     """
     await _authorize_source(source_id, user, db)
 
-    body, status_code = await HTTPController.list_source_uploads(source_id)
+    body, status_code = await SourceController.list_source_uploads(source_id)
     return JSONResponse(content=body, status_code=status_code)
 
 
@@ -127,7 +127,7 @@ async def record_source_upload(
     """
     await _authorize_source(source_id, user, db)
 
-    body, status_code = await HTTPController.record_source_upload(
+    body, status_code = await SourceController.record_source_upload(
         source_id=source_id,
         filename=data.filename,
         content_type=data.content_type,
@@ -157,7 +157,7 @@ async def process_source_upload(
     plugin_registry = request.app.state.plugin_registry
     choices = body.choices if body else None
 
-    resp_body, status_code = await HTTPController.process_source_upload(
+    resp_body, status_code = await SourceController.process_source_upload(
         source_id=source_id,
         upload_id=upload_id,
         plugin_registry=plugin_registry,
