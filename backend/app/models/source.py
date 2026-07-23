@@ -51,24 +51,26 @@ class Source:
         """True when the source currently sits in Cold Storage."""
         return self.archived_at is not None
 
-    def mark_archived(self, archived: bool) -> "Source":
+    def mark_archived(self, should_archive: bool) -> "Source":
         """Return this source transitioned to the requested Cold-Storage state.
 
-        The ``archived`` flag carries the caller's intent. ``True`` stamps
+        ``should_archive`` carries the caller's intent. ``True`` stamps
         ``archived_at = now`` and ``retention_until = now + RETENTION_WINDOW``;
         ``False`` clears both. Each direction is idempotent — an already-archived
         source keeps its original archive time (the retention clock never advances)
         and an already-active source stays cleared — returning ``self`` unchanged
         when the requested state already holds.
         """
-        if archived:
-            if self.is_archived:
-                return self
+        is_already_archived = self.is_archived
+        if should_archive and is_already_archived:
+            return self
+        if should_archive:
             archived_at = datetime.now(UTC)
             return replace(self, archived_at=archived_at, retention_until=archived_at + RETENTION_WINDOW)
-
-        if not self.is_archived:
+        is_already_restored = not is_already_archived
+        if is_already_restored:
             return self
+        # restore source
         return replace(self, archived_at=None, retention_until=None)
 
     @classmethod

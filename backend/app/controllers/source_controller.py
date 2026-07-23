@@ -53,7 +53,7 @@ class GetSourceProtocol(Protocol):
 class ArchiveSourceProtocol(Protocol):
     """Call interface for the archive-source use case (Cold-Storage toggle)."""
 
-    async def __call__(self, source_id: str, *, archived: bool) -> Result: ...
+    async def __call__(self, source_id: str, *, should_archive: bool) -> Result: ...
 
 
 class ListSourceUploadsProtocol(Protocol):
@@ -162,12 +162,12 @@ class SourceController:
     @staticmethod
     async def patch_source_archived(
         source_id: str,
-        archived: bool,
+        should_archive: bool,
         *,
         archive_source_func: ArchiveSourceProtocol = source_use_cases.archive_source,
     ) -> tuple[dict, int]:
         """Toggle a source's Cold-Storage state (PATCH ``{archived}``)."""
-        result = await archive_source_func(source_id, archived=archived)
+        result = await archive_source_func(source_id, should_archive=should_archive)
         match result:
             case Success(data):
                 return wrap_jsonapi_single("sources", serialize(data), f"/api/sources/{source_id}"), 200

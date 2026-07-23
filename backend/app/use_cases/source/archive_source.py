@@ -1,7 +1,7 @@
 """Archive a source (move it to Cold Storage) or restore it.
 
-Boolean-driven: ``archived=True`` moves the source to Cold Storage and
-``archived=False`` restores it. The lifecycle transition — stamping/clearing
+Boolean-driven: ``should_archive=True`` moves the source to Cold Storage and
+``should_archive=False`` restores it. The lifecycle transition — stamping/clearing
 ``archived_at`` + ``retention_until`` and the idempotency rules — belongs to the
 ``Source`` domain model (``Source.mark_archived``); this use case only fetches
 the source, delegates the transition, and persists the result through the generic
@@ -28,10 +28,10 @@ if TYPE_CHECKING:
 async def archive_source(
     source_id: str,
     *,
-    archived: bool,
+    should_archive: bool,
     repositories: "RepositoryContainer",
 ) -> Result[dict, str]:
-    """Move a source to Cold Storage (``archived=True``) or restore it (``archived=False``).
+    """Move a source to Cold Storage (``should_archive=True``) or restore it (``should_archive=False``).
 
     Raises:
         SourceNotFound: If the source does not exist.
@@ -44,7 +44,7 @@ async def archive_source(
         raise SourceNotFound(source_id)
 
     source = Source(**source_dict)
-    updated = source.mark_archived(archived)
+    updated = source.mark_archived(should_archive)
     if updated is source:
         return source_dict
 

@@ -61,7 +61,7 @@ class TestArchiveSource:
         set_session(seeded_db)
 
         with freeze_time("2026-07-22T12:00:00+00:00"):
-            result = await archive_source(source_id=SOURCE_1, archived=True)
+            result = await archive_source(source_id=SOURCE_1, should_archive=True)
 
         match result:
             case Success(source):
@@ -77,9 +77,9 @@ class TestArchiveSource:
         set_session(seeded_db)
 
         with freeze_time("2026-07-22T12:00:00+00:00"):
-            first = (await archive_source(source_id=SOURCE_1, archived=True)).unwrap()
+            first = (await archive_source(source_id=SOURCE_1, should_archive=True)).unwrap()
         with freeze_time("2026-08-30T09:00:00+00:00"):
-            second = (await archive_source(source_id=SOURCE_1, archived=True)).unwrap()
+            second = (await archive_source(source_id=SOURCE_1, should_archive=True)).unwrap()
 
         assert second == first
 
@@ -87,7 +87,7 @@ class TestArchiveSource:
         """Archiving a source does not cascade to the Dataset built from it."""
         set_session(seeded_db)
 
-        await archive_source(source_id=SOURCE_1, archived=True)
+        await archive_source(source_id=SOURCE_1, should_archive=True)
 
         dataset = await seeded_db.get(DatasetRecord, DATASET_1)
         await seeded_db.refresh(dataset)
@@ -98,7 +98,7 @@ class TestArchiveSource:
         """Archiving a non-existent source returns Failure(SourceNotFound)."""
         set_session(seeded_db)
 
-        result = await archive_source(source_id="019515a0-b0ff-7000-8000-0000000000ff", archived=True)
+        result = await archive_source(source_id="019515a0-b0ff-7000-8000-0000000000ff", should_archive=True)
 
         match result:
             case Failure(error):
@@ -119,7 +119,7 @@ class TestArchiveSource:
 
         result = await archive_source(
             source_id=SOURCE_1,
-            archived=True,
+            should_archive=True,
             repositories={"metadata_repository": FailingMetadataRepository},
         )
 
@@ -131,7 +131,7 @@ class TestArchiveSource:
 
 
 class TestRestoreSource:
-    """Restore is the same port with ``archived=False`` — it clears Cold Storage."""
+    """Restore is the same port with ``should_archive=False`` — it clears Cold Storage."""
 
     async def test_archive_source__when_archived_false_on_archived_source__clears_cold_storage_fields(
         self, seeded_db: AsyncSession
@@ -140,9 +140,9 @@ class TestRestoreSource:
         set_session(seeded_db)
 
         with freeze_time("2026-07-22T12:00:00+00:00"):
-            await archive_source(source_id=SOURCE_1, archived=True)
+            await archive_source(source_id=SOURCE_1, should_archive=True)
 
-        result = await archive_source(source_id=SOURCE_1, archived=False)
+        result = await archive_source(source_id=SOURCE_1, should_archive=False)
 
         match result:
             case Success(source):
@@ -156,7 +156,7 @@ class TestRestoreSource:
         """Restoring a source that was never archived is a no-op — fields stay null."""
         set_session(seeded_db)
 
-        result = await archive_source(source_id=SOURCE_1, archived=False)
+        result = await archive_source(source_id=SOURCE_1, should_archive=False)
 
         match result:
             case Success(source):

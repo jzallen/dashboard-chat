@@ -92,7 +92,7 @@ async def patch_source(
     """
     await _authorize_source(source_id, user, db)
 
-    body, status_code = await SourceController.patch_source_archived(source_id, data.archived)
+    body, status_code = await SourceController.patch_source_archived(source_id, should_archive=data.archived)
     return JSONResponse(content=body, status_code=status_code)
 
 

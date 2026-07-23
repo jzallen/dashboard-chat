@@ -18,7 +18,7 @@ from app.use_cases.source.exceptions import SourceNotFound
 
 
 async def test_patch_source_archived__when_use_case_succeeds__returns_200_with_cold_storage_envelope():
-    async def fake_archive_source(source_id, *, archived):
+    async def fake_archive_source(source_id, *, should_archive):
         return Success(
             {
                 "id": "src-1",
@@ -50,7 +50,7 @@ async def test_patch_source_archived__when_use_case_succeeds__returns_200_with_c
 
 
 async def test_patch_source_archived__when_source_not_found__returns_404_error_envelope():
-    async def fake_archive_source(source_id, *, archived):
+    async def fake_archive_source(source_id, *, should_archive):
         return Failure(SourceNotFound(source_id))
 
     result = await SourceController.patch_source_archived("missing", True, archive_source_func=fake_archive_source)
