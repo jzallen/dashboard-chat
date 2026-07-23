@@ -1,48 +1,20 @@
 /* Upload flow: browse → 3-leg dial-up progress → schema + name + upload-another,
-   plus the archive-confirm dialog its "move to cold storage" action opens. */
-import {
-  type ChangeEvent,
-  type DragEvent,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+   plus the archive-confirm dialog its "move to cold storage" action opens. The
+   view/leg/pct saga, the seeded/optimistic Files list, and CSV schema inference
+   live in sibling units (useUploadProgress, inferSchema); this component stays
+   presentational. */
+import { type ChangeEvent, type DragEvent, useRef, useState } from "react";
 
-import type { FieldDef, LineageNode } from "../../catalog";
-import type { SourceUpload } from "../../catalog/dataSources/source";
-import { Icon } from "../primitives";
+import type { LineageNode, SourceUpload } from "../../catalog";
+import { ConfirmDialog, Icon } from "../primitives";
 import styles from "./Upload.module.css";
+import { UploadingView } from "./UploadingView";
+import { summarizeRowCount, useUploadProgress } from "./useUploadProgress";
 
-type UploadView = "browse" | "uploading" | "schema";
-type UploadFile = { name: string; rows: number; when: string; fresh?: boolean };
 type CreateSourcePayload = {
   file: File | null;
   name: string;
 };
-
-const uSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
-function inferSchema(text: string): { cols: FieldDef[]; rows: number } | null {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim().length);
-  if (!lines.length) return null;
-  const strip = (s: string) => (s || "").trim().replace(/^"|"$/g, "");
-  const headers = lines[0].split(",").map(strip);
-  const sample = lines.slice(1, 8).map((l) => l.split(","));
-  const cols = headers.map((h, i) => {
-    const vals = sample
-      .map((r) => (r[i] !== undefined ? r[i].trim() : ""))
-      .filter((v) => v !== "");
-    const numeric = vals.length > 0 && vals.every((v) => !isNaN(Number(v)));
-    return { name: h || `column_${i + 1}`, type: numeric ? "number" : "text" };
-  });
-  return { cols, rows: lines.length - 1 };
-}
-
-const LEG_DEFS = [
-  { key: "handshake", name: "Handshake", ms: 22 },
-  { key: "transfer", name: "Transfer", ms: 34 },
-  { key: "parse", name: "Parse", ms: 18 },
-];
 
 /** Schema-mismatch detail surfaced for the recovery UX (slice 5). */
 type MismatchDetail = {
@@ -53,15 +25,18 @@ type MismatchDetail = {
 
 export function UploadModal({
   source,
+  files: seededFiles,
   onClose,
   onCreateSource,
   onRename,
   onArchive,
   mismatch = null,
   onRetry,
-  onLoadUploads,
 }: {
   source: LineageNode | null;
+  /** The source's persisted upload history, seeded from the source-uploads
+   *  loader (oldest-first). Fresh in-session uploads append after these. */
+  files?: SourceUpload[];
   onClose: () => void;
   onCreateSource: (src: CreateSourcePayload) => void | Promise<void>;
   onRename: (id: string, name: string) => void;
@@ -71,110 +46,24 @@ export function UploadModal({
   mismatch?: MismatchDetail | null;
   /** Clear the mismatch and let the user pick a different file. */
   onRetry?: () => void;
-  /** Load the existing source's uploaded files from the backend (the initial
-   *  Files list). Optional — when absent (a brand-new source) the list starts
-   *  empty and grows from fresh uploads only. */
-  onLoadUploads?: (sourceId: string) => Promise<SourceUpload[]>;
 }) {
   const existing = !!source;
-  const [view, setView] = useState<UploadView>(existing ? "schema" : "browse");
-  const [leg, setLeg] = useState(0);
-  const [pct, setPct] = useState(0);
-  const [schema, setSchema] = useState<FieldDef[] | null>(
-    source ? source.schema || [] : null,
-  );
-  // The Files list. For an existing source it is loaded from the backend (the
-  // UploadRecorded history) via onLoadUploads on open; fresh uploads append
-  // optimistically on top of it. A brand-new source starts empty.
-  const [files, setFiles] = useState<UploadFile[]>([]);
-  const [filesLoading, setFilesLoading] = useState<boolean>(!!source);
-  const [freshFile, setFreshFile] = useState<string | null>(null);
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [name, setName] = useState(source ? source.label : "");
   const [drag, setDrag] = useState(false);
   const [committed] = useState(existing);
   const inputRef = useRef<HTMLInputElement>(null);
-  const runningRef = useRef(false);
-
-  // Load the existing source's uploaded files from the backend once on open.
-  // Fresh uploads (runUpload) append on top, so we prepend the loaded history
-  // before any optimistic rows rather than clobbering them.
-  useEffect(() => {
-    if (!source || !onLoadUploads) {
-      setFilesLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setFilesLoading(true);
-    onLoadUploads(source.id)
-      .then((loaded) => {
-        if (cancelled) return;
-        const initial: UploadFile[] = loaded.map((u) => ({
-          name: u.name,
-          rows: u.rows ?? 0,
-          when: u.when,
-        }));
-        setFiles((fresh) => [...initial, ...fresh]);
-      })
-      .catch(() => {
-        /* leave the list empty on a load error — the canvas surfaces failures */
-      })
-      .finally(() => {
-        if (!cancelled) setFilesLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [source?.id, onLoadUploads]);
-
-  async function runUpload(file: File) {
-    if (runningRef.current) return;
-    runningRef.current = true;
-    setPendingFile(file);
-    setView("uploading");
-    setLeg(0);
-    setPct(0);
-    setFreshFile(null);
-    for (let L = 0; L < LEG_DEFS.length; L++) {
-      setLeg(L);
-      for (let p = 0; p <= 100; p += 8) {
-        setPct(p);
-        await uSleep(LEG_DEFS[L].ms);
-      }
-      setPct(100);
-      await uSleep(170);
-    }
-    setLeg(3);
-    let parsed: { cols: FieldDef[]; rows: number } | null = null;
-    try {
-      if (file && file.text) parsed = inferSchema(await file.text());
-    } catch {
-      /* ignore */
-    }
-    const cols =
-      schema && schema.length
-        ? schema
-        : parsed
-          ? parsed.cols
-          : [{ name: "column_1", type: "text" }];
-    const rows = parsed ? parsed.rows : Math.floor(180 + Math.random() * 1600);
-    const fname = file ? file.name : `upload_${files.length + 1}.csv`;
-    setSchema(cols);
-    setFreshFile(fname);
-    setFiles((prev) => [
-      ...prev,
-      { name: fname, rows, when: "just now", fresh: true },
-    ]);
-    if (!existing && !name)
-      setName(
-        fname
-          .replace(/\.[^.]+$/, "")
-          .replace(/[_-]+/g, " ")
-          .trim(),
-      );
-    setView("schema");
-    runningRef.current = false;
-  }
+  const {
+    view,
+    setView,
+    leg,
+    pct,
+    schema,
+    files,
+    freshFile,
+    pendingFile,
+    runUpload,
+    overallPct,
+  } = useUploadProgress({ source, existing, name, setName, seededFiles });
 
   function pick(e: ChangeEvent<HTMLInputElement>) {
     const f = e.target.files && e.target.files[0];
@@ -196,9 +85,6 @@ export function UploadModal({
     }
     onClose();
   }
-
-  const totalRows = files.reduce((s, f) => s + (f.rows || 0), 0);
-  const overallPct = Math.round((leg * 100 + (leg < 3 ? pct : 0)) / 3);
 
   return (
     <>
@@ -234,7 +120,7 @@ export function UploadModal({
         <div className="up-body">
           {mismatch && (
             <div className={styles.mismatch} role="alert">
-              <div className={styles.mismatchHead}>
+              <div className={styles.mismatchHeader}>
                 <Icon name="x" size={14} />
                 <span>This file doesn&apos;t match the source schema</span>
               </div>
@@ -315,45 +201,15 @@ export function UploadModal({
           )}
 
           {view === "uploading" && (
-            <div className={styles.legs}>
-              <div className={styles.legStatus}>
-                Connecting to query engine — <b>{overallPct}%</b>
-              </div>
-              {LEG_DEFS.map((L, i) => {
-                const state = leg > i ? "done" : leg === i ? "active" : "";
-                const w = leg > i ? 100 : leg === i ? pct : 0;
-                return (
-                  <div
-                    className={`${styles.leg} ${styles[state] ?? ""}`}
-                    key={L.key}
-                  >
-                    <span className={styles.legName}>
-                      <span className={styles.legDot} />
-                      {L.name}
-                    </span>
-                    <span className={styles.legTrack}>
-                      <span
-                        className={styles.legFill}
-                        style={{ width: w + "%" }}
-                      />
-                    </span>
-                    <span className={styles.legPct}>{w}%</span>
-                  </div>
-                );
-              })}
-              <div className={styles.legsFoot}>
-                <Icon name="database" size={12} />
-                duckdb · local engine
-              </div>
-            </div>
+            <UploadingView leg={leg} pct={pct} overallPct={overallPct} />
           )}
 
           {view === "schema" && (
             <>
-              <div className={styles.upNameRow}>
-                <div className={styles.upNameLabel}>Display name</div>
+              <div className={styles.nameRow}>
+                <div className={styles.nameLabel}>Display name</div>
                 <input
-                  className={styles.upNameInput}
+                  className={styles.nameInput}
                   value={name}
                   placeholder="Name this source…"
                   onChange={(e) => {
@@ -365,24 +221,24 @@ export function UploadModal({
               </div>
               {/* Schema sits ABOVE Files so adding a file grows the list at the
                   bottom and never pushes the schema down. */}
-              <div className={styles.upSectionH}>
+              <div className={styles.sectionHeader}>
                 <Icon
                   name="table"
                   size={14}
                   style={{ color: "var(--text-500)" }}
                 />
-                <span className={styles.shT}>Schema</span>
-                <span className={styles.shC}>
+                <span className={styles.sectionTitle}>Schema</span>
+                <span className={styles.sectionCount}>
                   {(schema || []).length} columns
                 </span>
               </div>
               <div className={styles.schemaGrid}>
                 {(schema || []).map((c, i) => (
                   <div className={styles.schemaCol} key={i}>
-                    <span className={styles.scIdx}>
+                    <span className={styles.columnIndex}>
                       {String(i + 1).padStart(2, "0")}
                     </span>
-                    <span className={styles.scName}>{c.name}</span>
+                    <span className={styles.columnName}>{c.name}</span>
                     <span
                       className={
                         "badge " + (c.type === "number" ? "number" : "text")
@@ -393,25 +249,20 @@ export function UploadModal({
                   </div>
                 ))}
               </div>
-              <div className={styles.upSectionH}>
+              <div className={styles.sectionHeader}>
                 <Icon
                   name="file"
                   size={14}
                   style={{ color: "var(--text-500)" }}
                 />
-                <span className={styles.shT}>Files</span>
-                <span className={styles.shC}>
-                  {files.length} · {totalRows.toLocaleString()} rows
+                <span className={styles.sectionTitle}>Files</span>
+                <span className={styles.sectionCount}>
+                  {files.length} · {summarizeRowCount(files)}
                 </span>
               </div>
-              {filesLoading && files.length === 0 && (
+              {files.length === 0 && (
                 <div className={styles.fileRow}>
-                  <span className={styles.frName}>Loading files…</span>
-                </div>
-              )}
-              {!filesLoading && files.length === 0 && (
-                <div className={styles.fileRow}>
-                  <span className={styles.frName}>No files yet</span>
+                  <span className={styles.fileName}>No files yet</span>
                 </div>
               )}
               {files.map((f, i) => (
@@ -419,14 +270,16 @@ export function UploadModal({
                   className={`${styles.fileRow}${f.fresh ? " " + styles.fresh : ""}`}
                   key={i}
                 >
-                  <span className={styles.frIc}>
+                  <span className={styles.fileIcon}>
                     <Icon name="file" size={14} />
                   </span>
-                  <span className={styles.frName}>{f.name}</span>
-                  <span className={styles.frRows}>
-                    {(f.rows || 0).toLocaleString()} rows
+                  <span className={styles.fileName}>{f.name}</span>
+                  <span className={styles.fileRows}>
+                    {f.rows === null
+                      ? "processing…"
+                      : `${f.rows.toLocaleString()} rows`}
                   </span>
-                  <span className={styles.frWhen}>{f.when}</span>
+                  <span className={styles.fileWhen}>{f.when}</span>
                 </div>
               ))}
             </>
@@ -434,7 +287,7 @@ export function UploadModal({
         </div>
 
         {view === "schema" && (
-          <div className={styles.upFoot}>
+          <div className={styles.footer}>
             {source && (
               <button
                 className="btn sq cold-ghost"
@@ -474,29 +327,22 @@ export function ConfirmArchive({
 }) {
   const n = (source.files || []).length;
   return (
-    <>
-      <div className="up-scrim" style={{ zIndex: 46 }} onClick={onCancel} />
-      <div className={styles.confirmDialog} role="dialog">
-        <div className={styles.cdIc}>
-          <Icon name="snow" size={24} />
-        </div>
-        <div className={styles.cdTitle}>Move to cold storage?</div>
-        <div className={styles.cdBody}>
+    <ConfirmDialog
+      icon="snow"
+      title="Move to cold storage?"
+      tone="cold"
+      confirmIcon="snow"
+      confirmLabel="Move to cold storage"
+      onCancel={onCancel}
+      onConfirm={() => onConfirm(source)}
+      body={
+        <>
           <b>{source.label}</b>
           {n ? ` and its ${n} file${n > 1 ? "s" : ""}` : ""} will be moved to
           cold storage and kept for <b>90 days</b> before permanent deletion.
           You can restore it any time before then.
-        </div>
-        <div className={styles.cdActions}>
-          <button className="btn sq" onClick={onCancel}>
-            Cancel
-          </button>
-          <button className="btn sq cold-btn" onClick={() => onConfirm(source)}>
-            <Icon name="snow" size={15} />
-            Move to cold storage
-          </button>
-        </div>
-      </div>
-    </>
+        </>
+      }
+    />
   );
 }

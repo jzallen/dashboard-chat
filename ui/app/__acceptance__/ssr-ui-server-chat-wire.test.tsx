@@ -115,8 +115,8 @@ afterAll(() => {
 });
 
 beforeEach(async () => {
-  // A fixture-backed catalog so the overlay's useCatalog() has a live store and
-  // makes no real network calls of its own.
+  // A fixture-backed catalog so the overlay's useCatalogWithSelector has a live
+  // store and makes no real network calls of its own.
   await installCatalogForTest(fixtureSource, fixtureSource);
 });
 

@@ -1,9 +1,8 @@
 // @vitest-environment happy-dom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { LineageNode } from "../../catalog";
-import type { SourceUpload } from "../../catalog/dataSources/source";
 import { UploadModal } from "./Upload";
 
 const existingSource: LineageNode = {
@@ -32,7 +31,9 @@ describe("UploadModal — schema-mismatch recovery UX (slice 5)", () => {
         mismatch={{
           missing: ["active"],
           extra: ["email"],
-          type_mismatch: [{ column: "age", expected: "number", actual: "text" }],
+          type_mismatch: [
+            { column: "age", expected: "number", actual: "text" },
+          ],
         }}
         onRetry={onRetry}
       />,
@@ -47,53 +48,98 @@ describe("UploadModal — schema-mismatch recovery UX (slice 5)", () => {
     expect(text).toContain("age"); // type mismatch
 
     // A retry / pick-a-different-file affordance is offered.
-    const retry = screen.getByRole("button", { name: /different file|retry|try again/i });
+    const retry = screen.getByRole("button", {
+      name: /different file|retry|try again/i,
+    });
     fireEvent.click(retry);
     expect(onRetry).toHaveBeenCalled();
   });
 
   it("renders no mismatch banner when there is no mismatch", () => {
-    render(<UploadModal {...noopProps} source={existingSource} mismatch={null} />);
+    render(
+      <UploadModal {...noopProps} source={existingSource} mismatch={null} />,
+    );
     expect(screen.queryByRole("alert")).toBe(null);
   });
 });
 
-describe("UploadModal — backend-loaded Files list + section ordering", () => {
-  const uploads: SourceUpload[] = [
-    { name: "patients.csv", rows: 42, when: "just now", status: "ingested" },
-    { name: "more.csv", rows: 7, when: "3d ago", status: "ingested" },
+describe("UploadModal — unparseable fresh upload row count", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("shows the pending placeholder — never 0 or a made-up number — when a fresh file can't be parsed", async () => {
+    vi.useFakeTimers();
+    const { container } = render(<UploadModal {...noopProps} source={null} />);
+
+    const input = container.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    const file = new File([""], "empty.csv", { type: "text/csv" });
+
+    await act(async () => {
+      fireEvent.change(input, { target: { files: [file] } });
+      await vi.runAllTimersAsync();
+    });
+
+    expect(screen.getByText("empty.csv")).toBeTruthy();
+    expect(container.textContent).toContain("processing…");
+    expect(container.textContent).not.toContain("0 rows");
+  });
+});
+
+describe("UploadModal — seeded persisted upload history", () => {
+  const seeded = [
+    { name: "jan.csv", rows: 100, when: "Jan 5", status: "ingested" },
+    { name: "feb.csv", rows: null, when: "Feb 14", status: "pending" },
   ];
 
-  it("populates the Files list from onLoadUploads when an existing source opens", async () => {
-    const onLoadUploads = vi.fn(async () => uploads);
+  it("renders the seeded persisted files oldest-first, a pending file showing no row count", () => {
     render(
-      <UploadModal
-        {...noopProps}
-        source={existingSource}
-        onLoadUploads={onLoadUploads}
-      />,
+      <UploadModal {...noopProps} source={existingSource} files={seeded} />,
     );
 
-    expect(onLoadUploads).toHaveBeenCalledWith("src.real");
-    await waitFor(() => {
-      expect(screen.getByText("patients.csv")).toBeTruthy();
-    });
-    expect(screen.getByText("more.csv")).toBeTruthy();
+    const rows = screen.getAllByText(/\.csv$/).map((el) => el.textContent);
+    expect(rows).toEqual(["jan.csv", "feb.csv"]);
+
+    // The ingested file shows its row count; the still-pending file shows no
+    // count (a "processing…" placeholder), never a misleading "0 rows".
+    expect(screen.getByText("100 rows")).toBeTruthy();
+    expect(screen.getByText("processing…")).toBeTruthy();
+    expect(screen.queryByText("0 rows")).toBe(null);
   });
 
-  it("renders the Schema section BEFORE the Files section in the DOM", async () => {
-    const onLoadUploads = vi.fn(async () => uploads);
-    const { container } = render(
-      <UploadModal
-        {...noopProps}
-        source={existingSource}
-        onLoadUploads={onLoadUploads}
-      />,
+  it("appends a fresh in-session upload AFTER the seeded history, preserving the earlier order", async () => {
+    render(
+      <UploadModal {...noopProps} source={existingSource} files={seeded} />,
     );
 
-    await waitFor(() => {
-      expect(screen.getByText("patients.csv")).toBeTruthy();
-    });
+    // Drive a fresh upload through the browse → schema flow.
+    fireEvent.click(
+      screen.getByRole("button", { name: /upload another file/i }),
+    );
+    const input = document.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    const file = new File(["a,b\n1,2\n3,4"], "mar.csv", { type: "text/csv" });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    // Once the fresh row lands, it sits AFTER the seeded rows (persisted-first).
+    // The modal's dial-up upload animation runs ~1.5s, past findByText's 1s default.
+    await screen.findByText("mar.csv", {}, { timeout: 4000 });
+    const order = screen.getAllByText(/\.csv$/).map((el) => el.textContent);
+    expect(order).toEqual(["jan.csv", "feb.csv", "mar.csv"]);
+  });
+
+  it("keeps the empty 'No files yet' state when no persisted files are seeded", () => {
+    render(<UploadModal {...noopProps} source={existingSource} />);
+    expect(screen.getByText(/no files yet/i)).toBeTruthy();
+  });
+});
+
+describe("UploadModal — section ordering", () => {
+  it("renders the Schema section BEFORE the Files section in the DOM", () => {
+    const { container } = render(
+      <UploadModal {...noopProps} source={existingSource} />,
+    );
 
     const body = container.textContent ?? "";
     const schemaIdx = body.indexOf("Schema");

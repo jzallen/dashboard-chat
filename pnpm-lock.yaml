@@ -170,9 +170,15 @@ importers:
       react-router:
         specifier: ^7.17.0
         version: 7.17.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      use-sync-external-store:
+        specifier: ^1.6.0
+        version: 1.6.0(react@18.3.1)
       xstate:
         specifier: ^5.28.0
         version: 5.32.0
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
     devDependencies:
       '@react-router/dev':
         specifier: ^7.17.0

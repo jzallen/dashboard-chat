@@ -3,10 +3,11 @@
 import { useCallback, useState } from "react";
 import { useFetcher, useRevalidator } from "react-router";
 
-import type { LineageNode } from "../../catalog";
+import type { LineageNode, SourceUpload } from "../../catalog";
 import { createLogger } from "../../lib/log";
 import { useStateProxy } from "../../lib/StateProxyProvider";
-import { catalog } from "../useCatalog";
+import type { SourceUploadsData } from "../../routes/ui-server/upload-request";
+import { useCatalogFromContext } from "../useCatalog";
 
 const log = createLogger("upload");
 
@@ -29,7 +30,9 @@ export type SchemaMismatchDetail = {
  *  when it is not a 422 schema-mismatch (a network/auth/other failure). The
  *  gateway client throws an `ApiError` whose `body` is the JSON:API error
  *  envelope `{ errors: [{ detail: {missing, extra, type_mismatch} }] }`. */
-export function parseSchemaMismatch(error: unknown): SchemaMismatchDetail | null {
+export function parseSchemaMismatch(
+  error: unknown,
+): SchemaMismatchDetail | null {
   if (!error || typeof error !== "object") return null;
   const status = (error as { status?: unknown }).status;
   if (status !== 422) return null;
@@ -50,10 +53,15 @@ export function parseSchemaMismatch(error: unknown): SchemaMismatchDetail | null
 
 /** @param flash - mark a freshly created node so the canvas can pop it. */
 export function useUpload(flash: (id: string) => void) {
+  const catalog = useCatalogFromContext();
   // The StateProxy.postEvent is the saga's report sink — the browser narrates
   // each past-tense Source-creation outcome to ui-state (zero-egress model).
   const { proxy } = useStateProxy();
   const archiveFetcher = useFetcher();
+  // The read leg for the modal's Files list: when the modal opens for an existing
+  // source, `.load()` the same-origin source-uploads loader so the browser never
+  // hits the backend /api directly. `historyFetcher.data` seeds the modal.
+  const historyFetcher = useFetcher<SourceUploadsData>();
   const { revalidate } = useRevalidator();
   const [modal, setModal] = useState<{
     open: boolean;
@@ -68,10 +76,21 @@ export function useUpload(flash: (id: string) => void) {
   // generic "Failed" badge.
   const [mismatch, setMismatch] = useState<SchemaMismatchDetail | null>(null);
 
-  const openUpload = useCallback((source: LineageNode | null) => {
-    setMismatch(null);
-    setModal({ open: true, source });
-  }, []);
+  const openUpload = useCallback(
+    (source: LineageNode | null) => {
+      setMismatch(null);
+      setModal({ open: true, source });
+      // Load the persisted upload history only for an existing source (a brand-new
+      // upload has none). The loader runs server-side; the browser only hits the
+      // same-origin `.data` endpoint, so the no-direct-backend boundary holds.
+      if (source) {
+        historyFetcher.load(
+          `/ui-server/sources/${encodeURIComponent(source.id)}/uploads`,
+        );
+      }
+    },
+    [historyFetcher],
+  );
   const closeUpload = useCallback(() => {
     setMismatch(null);
     setModal({ open: false, source: null });
@@ -96,7 +115,7 @@ export function useUpload(flash: (id: string) => void) {
   );
   const renameSource = useCallback(
     (id: string, name: string) => catalog.renameSource(id, name),
-    [],
+    [catalog],
   );
   const existingSource = modal.source;
   const createSource = useCallback(
@@ -135,11 +154,17 @@ export function useUpload(flash: (id: string) => void) {
         if (detail) setMismatch(detail);
       }
     },
-    [flash, proxy, existingSource, revalidate],
+    [catalog, flash, proxy, existingSource, revalidate],
   );
+
+  // The persisted history for the open source, once its loader has resolved
+  // (undefined while in-flight, or for a brand-new upload). The modal seeds its
+  // Files list from this and appends fresh optimistic rows after.
+  const uploadFiles: SourceUpload[] | undefined = historyFetcher.data?.uploads;
 
   return {
     modal,
+    uploadFiles,
     openUpload,
     closeUpload,
     confirmArchive,

@@ -9,7 +9,7 @@ import { useLocation, useNavigate, useParams } from "react-router";
 
 import type { LineageNode, ProjectSummary } from "../catalog";
 import { modelKindForLayer } from "../catalog";
-import { catalog } from "../components/useCatalog";
+import { useCatalogFromContext } from "../components/useCatalog";
 import { useChat } from "./chatContext";
 
 /**
@@ -49,7 +49,7 @@ export type NavIntent =
   | { name: "chat" };
 
 /** Resolves a node id to its lineage node (or undefined). The default reaches
- *  the catalog singleton; injectable so the recent→node lookup is an explicit
+ *  the catalog from context; injectable so the recent→node lookup is an explicit
  *  dependency rather than a hidden module import. */
 export type NodeResolver = (nodeId: string) => LineageNode | undefined;
 
@@ -58,10 +58,12 @@ export type NodeResolver = (nodeId: string) => LineageNode | undefined;
  * to URL changes (useNavigate); chat-open intents reach the useChat() setter.
  *
  * `resolveNode` is the seam for the openRecent lookup — it defaults to the
- * catalog singleton so production call sites need no argument, but making it a
- * parameter keeps that store dependency explicit and swappable.
+ * context catalog's `getNode` so production call sites need no argument, but
+ * making it a parameter keeps that store dependency explicit and swappable.
  */
-export function useNavIntents(resolveNode: NodeResolver = catalog.getNode) {
+export function useNavIntents(resolveNode?: NodeResolver) {
+  const catalog = useCatalogFromContext();
+  const resolve = resolveNode ?? catalog.getNode;
   const navigate = useNavigate();
   const location = useLocation();
   const { projectId } = useParams();
@@ -97,7 +99,7 @@ export function useNavIntents(resolveNode: NodeResolver = catalog.getNode) {
 
   const openRecent = useCallback(
     (nodeId: string | null) => {
-      const node = nodeId ? resolveNode(nodeId) : undefined;
+      const node = nodeId ? resolve(nodeId) : undefined;
       if (node && node.ref && projectId) {
         navigate(nodeToPath(node, projectId));
         openChat();
@@ -106,7 +108,7 @@ export function useNavIntents(resolveNode: NodeResolver = catalog.getNode) {
       navigate(projectId ? "/project/" + projectId : "/");
       openChat();
     },
-    [navigate, openChat, projectId, resolveNode],
+    [navigate, openChat, projectId, resolve],
   );
 
   /** Dispatches a {@link NavIntent} from the Chat / ChatSessionList call sites

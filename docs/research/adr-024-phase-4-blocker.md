@@ -3,7 +3,7 @@
 **Date**: 2026-05-11
 **Author**: nw-software-crafter agent (crew/immortan)
 **Status**: BLOCKER — Phase 4 paused before any deletion
-**Roadmap**: `docs/feature/rebalance-dbt-test-validation/design/migration-roadmap.md` §Phase 4
+**Roadmap**: `docs/architecture/dbt-test-validation/migration-roadmap.md` §Phase 4
 
 ## Summary
 

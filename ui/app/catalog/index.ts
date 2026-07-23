@@ -8,7 +8,7 @@
  * today, an HTTP source later). Which source to use is a composition decision
  * left to the app — app/components/useCatalog.ts pairs one with createDataCatalog.
  */
-export type { DataCatalog } from "./client";
+export type { CatalogState, DataCatalog } from "./client";
 export { createDataCatalog } from "./client";
 export { fixtureSource } from "./dataSources/fixtureSource";
 export type { MetadataApiSourceDeps } from "./dataSources/metadataApiSource";

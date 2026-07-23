@@ -29,7 +29,7 @@ import {
   isCatalogMutatingEvent,
   readChatStream,
 } from "../../lib/chat-stream";
-import { catalog } from "../useCatalog";
+import { useCatalogFromContext } from "../useCatalog";
 
 /** A message in a chat transcript: prose bubbles from the user or the assistant.
  *  `id` is stamped at insertion so lists key by identity, not array position (the
@@ -63,7 +63,10 @@ export function agentContext(node: LineageNode | null): {
   contextId: string | null;
 } {
   if (!node) return { contextType: null, contextId: null };
-  return { contextType: modelKindForLayer(node.layer) ?? null, contextId: node.id };
+  return {
+    contextType: modelKindForLayer(node.layer) ?? null,
+    contextId: node.id,
+  };
 }
 
 /** Fire the framework revalidation on the first dataset-mutating event of a turn;
@@ -91,6 +94,7 @@ export function useChatTurn(
   context: LineageNode | null,
   revalidate: () => void,
 ): ChatTurn {
+  const catalog = useCatalogFromContext();
   const [msgs, setMsgs] = useState<TurnMessage[]>([]);
   const [busy, setBusy] = useState(false);
   const [typing, setTyping] = useState(false);
@@ -191,7 +195,7 @@ export function useChatTurn(
         }
       }
     },
-    [busy, context, revalidate],
+    [busy, catalog, context, revalidate],
   );
 
   const reset = useCallback(() => {

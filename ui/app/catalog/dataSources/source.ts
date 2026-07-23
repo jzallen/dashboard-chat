@@ -57,12 +57,6 @@ export interface CatalogSource {
    */
   getSources?(): Promise<BackendSource[]>;
   /**
-   * List the files uploaded to a Source (backs the upload modal's Files list).
-   * Resolves the mapped {@link SourceUpload}[] (both ingested and pending);
-   * rejects on a fetch/auth error.
-   */
-  getSourceUploads?(sourceId: string): Promise<SourceUpload[]>;
-  /**
    * Create a Source (the logical table behind one or more uploaded files). The
    * active project scope is the source's own concern. Resolves with the new
    * Source's id; rejects on failure (the saga reports `source_upload_failed`).

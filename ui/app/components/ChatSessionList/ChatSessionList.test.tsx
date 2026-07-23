@@ -20,7 +20,7 @@ function fallbackWithChat(): ReturnType<typeof fixtureFallback> {
 }
 
 describe("ChatSessionList — reactivity to backend session commits", () => {
-  it("re-renders when the project's sessions land (subscribes via useCatalog)", async () => {
+  it("re-renders when the project's sessions land (subscribes via useCatalogWithSelector)", async () => {
     // The project-layout loader seeds the scoped project's sessions via
     // seedProjectScoped — so the seeded fixture chat paints first, then the
     // component re-renders on the catalog commit with no user interaction.
@@ -42,8 +42,8 @@ describe("ChatSessionList — reactivity to backend session commits", () => {
     expect(screen.getByText("Fixture Session")).toBeTruthy();
 
     // …the loader seeds the scoped project's sessions, re-rendering the list with
-    // NO user interaction. (Without the useCatalog() subscription the component
-    // would stay on the seed.)
+    // NO user interaction. (Without the useCatalogWithSelector subscription the
+    // component would stay on the seed.)
     await act(async () => {
       seedProjectScoped({
         projectId: "p1",

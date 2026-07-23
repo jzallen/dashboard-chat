@@ -16,7 +16,7 @@
   background: var(--surface-2);
   margin-bottom: 9px;
 }
-.coldIc {
+.coldIcon {
   width: 32px;
   height: 32px;
   flex: 0 0 32px;
@@ -48,7 +48,7 @@
   color: var(--text-500);
   margin-top: 3px;
 }
-.coldMeta .cdot {
+.coldMeta .metaDot {
   color: var(--text-400);
 }
 .coldLeft {

@@ -37,7 +37,6 @@ import {
 import type {
   CatalogSource,
   PartialCatalogSource,
-  SourceUpload,
 } from "./dataSources/source";
 import type { AuditEntry, Edge, Layer, LineageNode } from "./lineage";
 import { type ColdStorageRecord, LineageGraph } from "./lineageGraph";
@@ -46,6 +45,7 @@ import type {
   ChatScript,
   CurrentProject,
   DbtFile,
+  Model,
   OrgSettings,
   ProjectSummary,
 } from "./models";
@@ -67,6 +67,51 @@ interface CatalogSnapshot {
   chatScript: ChatScript;
   dbtFiles: DbtFile[];
 }
+
+/**
+ * The closed set of keys a commit may carry. The `satisfies` clause ties it to
+ * {@link CatalogSnapshot}: adding a field to the snapshot without listing it here
+ * (or listing a field the snapshot lacks) is a compile error, so the runtime
+ * allowlist can never drift out of sync with the type.
+ */
+const SNAPSHOT_KEYS = {
+  graph: true,
+  projects: true,
+  currentProject: true,
+  org: true,
+  recents: true,
+  chats: true,
+  chatScript: true,
+  dbtFiles: true,
+} satisfies Record<keyof CatalogSnapshot, true>;
+
+/**
+ * Fail fast on a commit carrying a key outside {@link SNAPSHOT_KEYS}. The store's
+ * shallow merge is otherwise unvalidated: a misspelled or unknown key from a
+ * dynamically-built seed or a loosely-typed feed would merge into the snapshot as
+ * junk that TypeScript cannot catch at a cast call site. Throwing surfaces the bad
+ * key at the offending call rather than letting corruption spread silently. Its own
+ * driving port — a pure predicate over the partial's keys.
+ */
+export function assertKnownSnapshotKeys(partial: object): void {
+  for (const key of Object.keys(partial)) {
+    if (!(key in SNAPSHOT_KEYS)) {
+      throw new Error(`catalog commit rejected unknown key: ${key}`);
+    }
+  }
+}
+
+/**
+ * The immutable state the reactive store hands to a selector-based subscription
+ * (`useCatalogWithSelector`). It is the {@link CatalogSnapshot} narrowed to a
+ * read-only projection: every commit replaces the snapshot object wholesale, so
+ * the reference is stable between mutations and changes on every mutation —
+ * exactly the identity a `useSyncExternalStoreWithSelector` selector memoizes
+ * against. The {@link LineageGraph} aggregate is exposed by reference (it is
+ * itself immutable), keeping its encapsulation; a selector reads through its
+ * query methods rather than any mutable internals.
+ */
+export type CatalogState = Readonly<CatalogSnapshot>;
 
 export async function createDataCatalog(
   primary: PartialCatalogSource,
@@ -114,9 +159,12 @@ export async function createDataCatalog(
   /**
    * Merge a partial state into the snapshot, bump the version, and notify. A
    * `graph` whose reducer returned the same instance (a no-op) is skipped so
-   * referential stability is preserved and no spurious re-render fires.
+   * referential stability is preserved and no spurious re-render fires. In
+   * development every partial is first checked against {@link SNAPSHOT_KEYS} and an
+   * unknown key throws; production skips the check.
    */
   const commit = (partial: Partial<CatalogSnapshot>) => {
+    if (import.meta.env.DEV) assertKnownSnapshotKeys(partial);
     if ("graph" in partial && partial.graph === snapshot.graph) {
       const { graph: _drop, ...rest } = partial;
       if (Object.keys(rest).length === 0) return;
@@ -163,6 +211,11 @@ export async function createDataCatalog(
           .catch((err) => log.warn("read.org.failed", { err: String(err) })),
       );
     }
+    // TODO: no backend source implements getChatScript, so this branch is
+    // currently dead and chatScript stays the fixture seed — the scripted
+    // dependency-graph demo behind the chat-overlay pills. Backing it for real
+    // needs the agent to iteratively build the graph in a loop, and may be
+    // subsumed by the ghost-nodes work; deferred until then.
     if (primary.getChatScript) {
       tasks.push(
         primary
@@ -239,6 +292,13 @@ export async function createDataCatalog(
     /* ─── lineage reads (delegated to the snapshot's graph) ──────────────── */
     /** A node by id from the visible graph, or undefined if absent/archived. */
     getNode: (id: string) => snapshot.graph.getNode(id),
+    /**
+     * The typed {@link Model} projection of a node by id, or undefined when the
+     * node is absent/archived, carries no model ref, or bears an unrecognised
+     * `kind`. Presentation reads a discriminated `Model` here rather than
+     * narrowing a loose node itself.
+     */
+    getModel: (id: string): Model | undefined => snapshot.graph.getModel(id),
     /** All active nodes. */
     listNodes: () => snapshot.graph.allNodes(),
     /** All active edges. */
@@ -340,17 +400,6 @@ export async function createDataCatalog(
     },
 
     /**
-     * List an existing source's uploaded files (backs the upload modal's Files
-     * list). Delegates to the backend source's getSourceUploads; resolves `[]`
-     * when no backend source backs the port (the fixture fallback), so the modal
-     * simply shows an empty list rather than crashing.
-     */
-    getSourceUploads: async (sourceId: string): Promise<SourceUpload[]> => {
-      if (!primary.getSourceUploads) return [];
-      return primary.getSourceUploads(sourceId);
-    },
-
-    /**
      * Re-fetch the org-global payloads (projects/org/chatScript). Called by the
      * authenticated app shell on entry so real projects replace the fixture seed
      * before any redirect decision. Resolves once all settle (rejections keep the
@@ -439,6 +488,14 @@ export async function createDataCatalog(
     },
     /** Opaque store version — bumps on every commit; a memo/dep token. */
     getSnapshot: (): number => version,
+    /**
+     * The immutable store state for a selector-based subscription. Every commit
+     * replaces the snapshot object, so this reference is stable between
+     * mutations and fresh on each — the store-state a
+     * `useSyncExternalStoreWithSelector` selector projects a slice off. Kept
+     * alongside {@link getSnapshot} (the opaque version) for back-compat.
+     */
+    getStateSnapshot: (): CatalogState => snapshot,
   };
 }
 

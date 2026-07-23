@@ -38,7 +38,16 @@ async def list_sessions(
 
     memory = await metadata_repo.get_project_memory(project_id)
     if not memory:
-        raise ProjectNotFound(project_id)
+        # project_memory is provisioned lazily on first session creation, so a
+        # project that has never been chatted in has no row yet. Existence and
+        # org ownership are already enforced upstream, so a missing row means
+        # "zero sessions" — return an empty page like the sibling reads, not 404.
+        return {
+            "items": [],
+            "next_cursor": None,
+            "has_more": False,
+            "page_size": page_size,
+        }
 
     if memory["org_id"] != user.org_id:
         raise ProjectNotFound(project_id)

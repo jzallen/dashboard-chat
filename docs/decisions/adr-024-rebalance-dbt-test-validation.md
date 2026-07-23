@@ -8,7 +8,7 @@
 - Prior decision: [ADR-019 — Eject-then-Test as the Dataset-Layer Validation Strategy](./adr-019-eject-then-test-validation.md)
 - Shipped feature lifecycle: [docs/evolution/2026-05-11-dbt-test-validation.md](../evolution/2026-05-11-dbt-test-validation.md)
 - Original design: [docs/architecture/dbt-test-validation/design.md](../architecture/dbt-test-validation/design.md)
-- Migration roadmap: [docs/feature/rebalance-dbt-test-validation/design/migration-roadmap.md](../feature/rebalance-dbt-test-validation/design/migration-roadmap.md)
+- Migration roadmap: [docs/architecture/dbt-test-validation/migration-roadmap.md](../architecture/dbt-test-validation/migration-roadmap.md)
 - Spike evidence: branch `spike/dbt-test-driver-simplification`, commits `f846d7d` (thin driver POC) and `b2c0c9f` (WS+M1+M5.1 reproduction)
 
 ## Context
@@ -375,7 +375,7 @@ were). γ is preserved as a future option; ADR-024 does not retire it.
 
 - **Partial supersession of**: [ADR-019 — Eject-then-Test as the Dataset-Layer Validation Strategy](./adr-019-eject-then-test-validation.md). ADR-019 is not retired — its decision drivers (JOB-001/O4, AC1.6, ADR-016 fidelity, ADR-007 separation, Earned-Trust principle) all stand. This ADR partially supersedes ADR-019 by replacing the realization of the per-flow orchestrator mechanism.
 - **Evidence base**: branch `spike/dbt-test-driver-simplification`, commits `f846d7d` (thin driver POC) + `b2c0c9f` (WS + M1 + M5.1 reproduction). The spike's findings doc was not merged into the repo; this ADR is the evidence record.
-- **Companion migration roadmap**: [docs/feature/rebalance-dbt-test-validation/design/migration-roadmap.md](../feature/rebalance-dbt-test-validation/design/migration-roadmap.md) — six phases, each independently revertable.
+- **Companion migration roadmap**: [docs/architecture/dbt-test-validation/migration-roadmap.md](../architecture/dbt-test-validation/migration-roadmap.md) — six phases, each independently revertable.
 - **Shipped feature lifecycle**: [docs/evolution/2026-05-11-dbt-test-validation.md](../evolution/2026-05-11-dbt-test-validation.md).
 - **Original design**: [docs/architecture/dbt-test-validation/design.md](../architecture/dbt-test-validation/design.md).
 - **Constraint ADRs** (all preserved): ADR-007 (Ibis), ADR-014 (ChatEvent stratification), ADR-015 (presentation-state log), ADR-016 (5-service compose), ADR-017 (SessionEventReader dispatch).

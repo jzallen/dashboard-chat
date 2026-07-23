@@ -4,22 +4,23 @@ import { useState } from "react";
 
 import { useNavIntents } from "../../lib/nav";
 import { Icon } from "../primitives";
-import { catalog, useCatalog } from "../useCatalog";
+import { useCatalogFromContext, useCatalogWithSelector } from "../useCatalog";
 import styles from "./ChatSessionList.module.css";
 
 export function ChatSessionList() {
   const { navigateTo } = useNavIntents();
   const [q, setQ] = useState("");
-  // Subscribe to catalog commits so the list re-renders when sessions land from
-  // the backend (getAllChats resolves a beat after first paint).
-  useCatalog();
-  const list = catalog
-    .listChats()
-    .filter((c) =>
-      (c.title + " " + (c.snippet ?? ""))
-        .toLowerCase()
-        .includes(q.trim().toLowerCase()),
-    );
+  const catalog = useCatalogFromContext();
+  // Re-render when backend sessions land (getAllChats resolves a beat after
+  // first paint), or when the graph mutates — each row reads its backing node's
+  // label off the graph.
+  const chats = useCatalogWithSelector((s) => s.chats);
+  useCatalogWithSelector((s) => s.graph);
+  const list = chats.filter((c) =>
+    (c.title + " " + (c.snippet ?? ""))
+      .toLowerCase()
+      .includes(q.trim().toLowerCase()),
+  );
   return (
     <div className={styles.chatsPage}>
       <h1 className={styles.chatsTitle}>All Chats</h1>

@@ -4,21 +4,35 @@
  * with `createDataCatalog`; swap that one argument for an HTTP source to point
  * the whole app at the backend, with nothing else changing.
  *
- * useCatalog — subscribe a React component to the catalog's mutations. The
- * catalog owns the rename/archive/restore/live-add working state and bumps a
- * version counter after every mutation; this hook bridges that store into React
- * via useSyncExternalStore so any consumer re-renders when the catalog changes.
+ * Two ways to subscribe a React component to the catalog's mutations, both over
+ * the same reactive store:
  *
- * Returns the opaque store version — read lineage data off the `catalog`
- * methods (getNode, getNodesByLayer, parentsOf, …), and use the returned version
- * as a memo/effect dependency to recompute after a mutation. The catalog's
- * internal LineageGraph is never exposed.
+ *   - useCatalogWithSelector(selector) — the granular path: projects a SLICE off the
+ *     immutable CatalogState and re-renders only when that slice changes, so an
+ *     unrelated commit (e.g. a single audit toggle) skips the component.
+ *   - useCatalogVersion() — the coarse back-compat path: returns the opaque store
+ *     version, re-rendering on EVERY commit. Read lineage data off the catalog
+ *     methods and use the version as a memo/effect dependency.
+ *
+ * Components reach the catalog instance through useCatalogFromContext() (an injected
+ * abstraction) rather than the raw `catalog` binding; CatalogProvider mounts the
+ * module singleton as its default so migration is incremental. The catalog owns
+ * the rename/archive/restore/live-add working state and bumps a version counter
+ * after every mutation; the internal LineageGraph is never exposed mutably.
  */
-import { useSyncExternalStore } from "react";
+import {
+  createContext,
+  createElement,
+  type ReactNode,
+  useContext,
+  useSyncExternalStore,
+} from "react";
+import { useSyncExternalStoreWithSelector } from "use-sync-external-store/with-selector";
 
 import {
   type AuditEntry,
   type CatalogSource,
+  type CatalogState,
   type ChatHistoryItem,
   createDataCatalog,
   type DataCatalog,
@@ -222,10 +236,77 @@ export async function loadTestScope(projectId: string): Promise<void> {
 }
 
 /** Subscribe a component to catalog mutations; returns the store version. */
-export function useCatalog(): number {
+export function useCatalogVersion(): number {
+  const instance = useCatalogFromContext();
   return useSyncExternalStore(
-    catalog.subscribe,
-    catalog.getSnapshot,
-    catalog.getSnapshot,
+    instance.subscribe,
+    instance.getSnapshot,
+    instance.getSnapshot,
+  );
+}
+
+/**
+ * The React context carrying the catalog instance. Its default is the module
+ * singleton (read lazily via {@link resolveCatalog}) so a component rendered
+ * outside a {@link CatalogProvider} still reaches the app's one catalog — the
+ * provider is a seam for injecting a test/alternate instance, not a hard
+ * requirement. `null` marks "no explicit provider", distinct from a provided
+ * instance.
+ */
+const CatalogContext = createContext<DataCatalog | null>(null);
+
+/** The catalog a consumer sees: the explicitly provided instance, else the
+ *  module singleton assigned by {@link initCatalog} / {@link installCatalogForTest}. */
+function resolveCatalog(provided: DataCatalog | null): DataCatalog {
+  return provided ?? catalog;
+}
+
+/**
+ * Provide a catalog instance to the subtree. Mounted high in the app tree with
+ * the module singleton as its default value, so components depend on the
+ * injected {@link useCatalogFromContext} abstraction rather than the raw `catalog`
+ * binding. Tests can wrap a subtree to inject an explicit instance.
+ */
+export function CatalogProvider({
+  value,
+  children,
+}: {
+  value?: DataCatalog;
+  children: ReactNode;
+}): ReactNode {
+  return createElement(
+    CatalogContext.Provider,
+    { value: value ?? null },
+    children,
+  );
+}
+
+/** The catalog instance for the current subtree — the injected abstraction the
+ *  presentation depends on instead of the raw `catalog` binding. Falls back to
+ *  the module singleton when no provider is mounted. */
+export function useCatalogFromContext(): DataCatalog {
+  return resolveCatalog(useContext(CatalogContext));
+}
+
+/**
+ * Subscribe to a SLICE of the catalog state, re-rendering only when that slice
+ * changes. Built on `useSyncExternalStoreWithSelector` over the store's
+ * immutable {@link CatalogState}: the selector projects the slice a component
+ * reads, and `isEqual` (defaulting to `Object.is`) decides whether a commit
+ * that produced a new state actually changed this slice — so toggling one audit
+ * entry no longer re-renders every subscriber. Replaces the opaque-`version`
+ * {@link useCatalogVersion} for granular reads.
+ */
+export function useCatalogWithSelector<T>(
+  selector: (state: CatalogState) => T,
+  isEqual?: (a: T, b: T) => boolean,
+): T {
+  const instance = useCatalogFromContext();
+  return useSyncExternalStoreWithSelector(
+    instance.subscribe,
+    instance.getStateSnapshot,
+    instance.getStateSnapshot,
+    selector,
+    isEqual,
   );
 }
