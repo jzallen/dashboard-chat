@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.types import AuthUser
-from app.controllers import HTTPController
+from app.controllers.dataset_controller import DatasetController
 from app.infra.idempotency import idempotent_request
 
 from .deps import get_current_user, use_db_context
@@ -31,7 +31,7 @@ async def create_transforms(
     transforms = [t.model_dump() for t in data.transforms]
 
     async def handler() -> tuple[dict, int]:
-        return await HTTPController.post_transforms(dataset_id, transforms)
+        return await DatasetController.post_transforms(dataset_id, transforms)
 
     return await idempotent_request(
         request=request,
@@ -58,7 +58,7 @@ async def update_transforms(
     updates = [u.model_dump(exclude_unset=True) for u in data.updates]
 
     async def handler() -> tuple[dict, int]:
-        return await HTTPController.patch_transforms(dataset_id, updates)
+        return await DatasetController.patch_transforms(dataset_id, updates)
 
     return await idempotent_request(
         request=request,
@@ -76,5 +76,7 @@ async def preview_transform(
     _: AsyncSession = Depends(use_db_context),
 ):
     """Preview a cleaning transform without persisting anything."""
-    body, status_code = await HTTPController.preview_transform(dataset_id, data.target_column, data.expression_config)
+    body, status_code = await DatasetController.preview_transform(
+        dataset_id, data.target_column, data.expression_config
+    )
     return JSONResponse(content=body, status_code=status_code)

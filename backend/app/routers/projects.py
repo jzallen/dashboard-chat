@@ -6,8 +6,9 @@ from returns.result import Failure, Success
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.types import AuthUser
-from app.controllers import HTTPController, wrap_jsonapi_single
+from app.controllers import wrap_jsonapi_single
 from app.controllers.assistant_audit_controller import AssistantAuditController
+from app.controllers.dataset_controller import DatasetController
 from app.controllers.project_controller import ProjectController
 from app.use_cases.exceptions import DomainException
 from app.use_cases.project import export_dbt_project, get_dbt_manifest
@@ -54,7 +55,7 @@ async def list_project_datasets(
     return ONLY the cold-storage list.
     """
     _user, _ = auth
-    body, status_code = await HTTPController.list_project_datasets(
+    body, status_code = await DatasetController.list_project_datasets(
         project_id, cursor=page_after, page_size=page_size, archived=archived
     )
     return JSONResponse(content=body, status_code=status_code)

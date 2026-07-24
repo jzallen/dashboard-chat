@@ -7,7 +7,7 @@ of:
      per-context characterization tests patch
      `app.controllers.http_controller.<alias>` expecting the name to live on
      this module. Per-context controllers read these aliases off this module
-     at call time (see e.g. `DatasetController._dataset_uc()`), so patches
+     at call time (see e.g. `ConversationController._memory_uc()`), so patches
      flow through naturally.
   2. Legacy `_serialize` / `_error_response` re-exports from
      `_result_mapper` — kept because `test_http_controller.py`,
@@ -24,14 +24,11 @@ them are rewritten to patch the per-context controllers directly.
 """
 
 # --- Use-case module aliases (retained for test patching) ---------------
-from app.use_cases import dataset as dataset_use_cases  # noqa: F401
 from app.use_cases import organization as organization_use_cases  # noqa: F401
 from app.use_cases import query_engine as query_engine_use_cases  # noqa: F401
 from app.use_cases import report as report_use_cases  # noqa: F401
 from app.use_cases import sql_access as sql_access_use_cases  # noqa: F401
-from app.use_cases import upload as upload_use_cases  # noqa: F401
 from app.use_cases import view as view_use_cases  # noqa: F401
-from app.use_cases.dataset import search_datasets as search_datasets_uc  # noqa: F401
 from app.use_cases.exceptions import DomainException  # noqa: F401
 from app.use_cases.memory import get_project_memory as get_project_memory_uc  # noqa: F401
 from app.use_cases.session import create_session as create_session_uc  # noqa: F401
@@ -46,7 +43,6 @@ from ._result_mapper import serialize as _serialize  # noqa: F401
 
 # --- Per-context controller composition ---------------------------------
 from .conversation_controller import ConversationController
-from .dataset_controller import DatasetController
 from .organization_controller import OrganizationController
 from .query_engine_controller import QueryEngineController
 from .report_controller import ReportController
@@ -62,19 +58,10 @@ class HTTPController:
     `app/controllers/`.
     """
 
-    # Dataset Ingestion (Seam 1)
-    list_datasets = staticmethod(DatasetController.list_datasets)
-    list_project_datasets = staticmethod(DatasetController.list_project_datasets)
-    get_dataset = staticmethod(DatasetController.get_dataset)
-    patch_dataset = staticmethod(DatasetController.patch_dataset)
-    archive_dataset = staticmethod(DatasetController.archive_dataset)
-    restore_dataset = staticmethod(DatasetController.restore_dataset)
-    post_dataset = staticmethod(DatasetController.post_dataset)
-    post_upload = staticmethod(DatasetController.post_upload)
-    post_transforms = staticmethod(DatasetController.post_transforms)
-    patch_transforms = staticmethod(DatasetController.patch_transforms)
-    preview_transform = staticmethod(DatasetController.preview_transform)
-    search_datasets = staticmethod(DatasetController.search_datasets)
+    # Dataset Ingestion — routed directly via DatasetController (app/routers/datasets.py,
+    # uploads.py, transforms.py, and the search/list-project-datasets routes); deliberately
+    # not rolled up here. See dataset_controller.py for the DI pattern that supersedes the
+    # http_controller late-binding shim.
 
     # Source aggregate — routed directly via SourceController (app/routers/sources.py);
     # deliberately not rolled up here. See source_controller.py for the DI pattern that

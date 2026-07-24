@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.types import AuthUser
-from app.controllers import HTTPController
+from app.controllers.dataset_controller import DatasetController
 
 from .deps import authorize_dataset_access, get_current_user, use_db_context
 from .schemas import DatasetCreate, DatasetUpdate
@@ -27,7 +27,7 @@ async def list_datasets(
     By default archived (cold-storage) datasets are excluded; pass ``?archived=true`` to
     return ONLY the cold-storage list (MR-7).
     """
-    body, status_code = await HTTPController.list_datasets(
+    body, status_code = await DatasetController.list_datasets(
         project_id, cursor=page_after, page_size=page_size, archived=archived
     )
     return JSONResponse(content=body, status_code=status_code)
@@ -40,7 +40,7 @@ async def create_dataset(
     _: AsyncSession = Depends(use_db_context),
 ):
     """Create a dataset from an upload event with partition configuration."""
-    body, status_code = await HTTPController.post_dataset(
+    body, status_code = await DatasetController.post_dataset(
         upload_id=data.upload_id,
         partition_fields=data.partition_fields,
         description=data.description,
@@ -58,7 +58,9 @@ async def get_dataset(
 ):
     """Get a single dataset by ID with optional transforms and preview."""
     _user, _ = auth
-    body, status_code = await HTTPController.get_dataset(dataset_id, include_transforms, include_preview, preview_limit)
+    body, status_code = await DatasetController.get_dataset(
+        dataset_id, include_transforms, include_preview, preview_limit
+    )
     return JSONResponse(content=body, status_code=status_code)
 
 
@@ -70,7 +72,7 @@ async def update_dataset(
     """Update a dataset's metadata."""
     _user, dataset = auth
     dataset_kwargs = update_data.model_dump(exclude_unset=True)
-    body, status_code = await HTTPController.patch_dataset(dataset["id"], **dataset_kwargs)
+    body, status_code = await DatasetController.patch_dataset(dataset["id"], **dataset_kwargs)
     return JSONResponse(content=body, status_code=status_code)
 
 
@@ -80,7 +82,7 @@ async def archive_dataset(
 ):
     """Move a source to cold storage — sets archived_at + retention_until (MR-7)."""
     _user, dataset = auth
-    body, status_code = await HTTPController.archive_dataset(dataset["id"])
+    body, status_code = await DatasetController.archive_dataset(dataset["id"])
     return JSONResponse(content=body, status_code=status_code)
 
 
@@ -90,7 +92,7 @@ async def restore_dataset(
 ):
     """Bring a source back from cold storage — clears archived_at + retention_until (MR-7)."""
     _user, dataset = auth
-    body, status_code = await HTTPController.restore_dataset(dataset["id"])
+    body, status_code = await DatasetController.restore_dataset(dataset["id"])
     return JSONResponse(content=body, status_code=status_code)
 
 
