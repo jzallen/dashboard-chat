@@ -95,6 +95,15 @@ Each rib carries a short user-value phrase:
 The bands slice the ribs horizontally by the outcome each release delivers, not by
 table. Each band is an independently valuable increment.
 
+**User story → Release Slice mapping** (a Release Slice groups one or more stories;
+in Linear each Release Slice becomes a milestone — `linear-cyrus/milestone.md`):
+
+| Release Slice (→ Linear milestone) | Outcome | User stories |
+|---|---|---|
+| **R1 — Type-safety & unified rendering** | Report joins View on one typed kernel; the model renders through a single visitor with a build-time completeness check | 01 Report-typed kernel (DC-81) · 02 Kernel visitor + report extension (DC-82) |
+| **R2 — Normalized component tables** | Each component is an individually-addressable, queryable row; adds are single-row writes; join order honored; report rules over typed rows | 03 `relation_filters` (DC-83) · 04 `relation_columns` (DC-84) · 05 `relation_joins` (DC-85) · 06 `relation_grain` (DC-86) · 07 `relation_aggregations` + report rules (DC-87) |
+| **R3 — Contract** | Embedded-JSON columns retired after one safe release; one source of truth | 08 Drop embedded-JSON columns (DC-88, `@infrastructure`) |
+
 ### R1 — Type-safety & unified rendering
 
 **Outcome:** Report joins View on one typed kernel, and the model renders through a
