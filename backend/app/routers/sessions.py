@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 
 from app.auth.types import AuthUser
 from app.controllers import HTTPController
+from app.controllers.dataset_controller import DatasetController
 
 from .deps import authorize_project_access, get_current_user, use_db_context
 from .schemas import SessionUpdate
@@ -79,7 +80,7 @@ async def search_datasets(
 ):
     """Search datasets by name within a project."""
     user, project = auth
-    body, status_code = await HTTPController.search_datasets(project["id"], q, user=user)
+    body, status_code = await DatasetController.search_datasets(project["id"], q, user=user)
     return JSONResponse(content=body, status_code=status_code)
 
 

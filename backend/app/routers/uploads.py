@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.types import AuthUser
-from app.controllers import HTTPController
+from app.controllers.dataset_controller import DatasetController
 
 from .deps import authorize_project_access, get_current_user, use_db_context
 
@@ -44,7 +44,7 @@ async def upload_file(
     plugin_registry = request.app.state.plugin_registry
 
     # Step 1: Upload file
-    upload_body, upload_status = await HTTPController.post_upload(
+    upload_body, upload_status = await DatasetController.post_upload(
         content, file.filename, project_id, plugin_registry, dataset_id, project=project
     )
     if upload_status != 201:
@@ -57,7 +57,7 @@ async def upload_file(
 
     # Step 2: Redirect — create dataset from upload
     upload_id = upload_data["id"]
-    dataset_body, dataset_status = await HTTPController.post_dataset(
+    dataset_body, dataset_status = await DatasetController.post_dataset(
         upload_id=upload_id, plugin_registry=plugin_registry
     )
     return JSONResponse(content=dataset_body, status_code=dataset_status)
@@ -89,7 +89,7 @@ async def process_upload(
 
     plugin_registry = request.app.state.plugin_registry
 
-    dataset_body, dataset_status = await HTTPController.post_dataset(
+    dataset_body, dataset_status = await DatasetController.post_dataset(
         upload_id=upload_id, plugin_registry=plugin_registry, choices=choices
     )
     return JSONResponse(content=dataset_body, status_code=dataset_status)
