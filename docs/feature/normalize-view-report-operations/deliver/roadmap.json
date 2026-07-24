@@ -9,6 +9,7 @@
     {
       "id": "01",
       "name": "Lift Report columns onto a typed discriminated-union kernel so malformed columns are rejected at the boundary",
+      "depends_on": [],
       "steps": [
         {
           "id": "01-01",
@@ -36,6 +37,7 @@
     {
       "id": "02",
       "name": "Consolidate the View/Report compilers into one kernel visitor + report extension with a build-time completeness check",
+      "depends_on": ["01"],
       "steps": [
         {
           "id": "02-01",
@@ -63,6 +65,7 @@
     {
       "id": "03",
       "name": "Disaggregate filters into the shared relation_filters table, establishing the component-table repository + polymorphic cascade",
+      "depends_on": ["02"],
       "steps": [
         {
           "id": "03-01",
@@ -104,6 +107,7 @@
     {
       "id": "04",
       "name": "Move view and report projected columns into one shared relation_columns table",
+      "depends_on": ["01", "03"],
       "steps": [
         {
           "id": "04-01",
@@ -138,6 +142,7 @@
     {
       "id": "05",
       "name": "Normalize joins with an explicit declaration-ordered sequence, preserving compiled SQL",
+      "depends_on": ["03"],
       "steps": [
         {
           "id": "05-01",
@@ -165,6 +170,7 @@
     {
       "id": "06",
       "name": "Store a relation's grain as queryable rows, one row per parent",
+      "depends_on": ["03"],
       "steps": [
         {
           "id": "06-01",
@@ -192,6 +198,7 @@
     {
       "id": "07",
       "name": "Add the report-only relation_aggregations table and enforce report rules over typed rows",
+      "depends_on": ["04", "06"],
       "steps": [
         {
           "id": "07-01",
@@ -226,6 +233,7 @@
     {
       "id": "08",
       "name": "Drop the embedded-JSON columns after one safe release, leaving one source of truth",
+      "depends_on": ["03", "04", "05", "06", "07"],
       "steps": [
         {
           "id": "08-01",
