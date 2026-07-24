@@ -34,9 +34,7 @@ async def test_list_audit_entries__when_use_case_succeeds__returns_200_jsonapi_l
             ]
         )
 
-    result = await AssistantAuditController.list_audit_entries(
-        "proj-1", "org-1", list_audit_entries_func=fake_list
-    )
+    result = await AssistantAuditController.list_audit_entries("proj-1", "org-1", list_audit_entries_func=fake_list)
 
     assert result == (
         {
@@ -66,9 +64,7 @@ async def test_list_audit_entries__when_no_records__returns_empty_jsonapi_list()
     async def fake_list(project_id, *, org_id):
         return Success([])
 
-    result = await AssistantAuditController.list_audit_entries(
-        "proj-1", "org-1", list_audit_entries_func=fake_list
-    )
+    result = await AssistantAuditController.list_audit_entries("proj-1", "org-1", list_audit_entries_func=fake_list)
 
     assert result == (
         {
