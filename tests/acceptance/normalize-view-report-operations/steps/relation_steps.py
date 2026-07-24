@@ -123,22 +123,71 @@ def then_rejected_by_union(capture: Capture) -> None:
     )
 
 
+_PRODUCTION_REPORT_SHAPES: dict[str, list[dict]] = {
+    "entity-only": [
+        {"name": "order_id", "semantic_role": "entity", "semantic_type": "primary",
+         "source_column": "order_id", "source_ref": "ds-orders"},
+        {"name": "customer_id", "semantic_role": "entity", "semantic_type": "foreign",
+         "source_column": "customer_id", "source_ref": "ds-orders"},
+    ],
+    "dimension+measure": [
+        {"name": "region", "semantic_role": "dimension", "semantic_type": "categorical",
+         "source_column": "region", "source_ref": "ds-orders"},
+        {"name": "order_month", "semantic_role": "dimension", "semantic_type": "time",
+         "time_granularity": "month", "source_column": "ordered_at", "source_ref": "ds-orders"},
+        {"name": "revenue", "semantic_role": "measure", "semantic_type": "sum",
+         "source_column": "amount", "source_ref": "ds-orders"},
+    ],
+    "multi-measure": [
+        {"name": "region", "semantic_role": "dimension", "semantic_type": "categorical",
+         "source_column": "region", "source_ref": "ds-orders"},
+        {"name": "order_count", "semantic_role": "measure", "semantic_type": "count",
+         "source_column": "order_id", "source_ref": "ds-orders"},
+        {"name": "customers", "semantic_role": "measure", "semantic_type": "count_distinct",
+         "source_column": "customer_id", "source_ref": "ds-orders"},
+        {"name": "avg_order", "semantic_role": "measure", "semantic_type": "avg",
+         "source_column": "amount", "source_ref": "ds-orders"},
+    ],
+}
+
+
 @given("the store holds every existing report shape")
 def given_existing_reports(capture: Capture, repository_container) -> None:
-    pytest.fail(
-        "DISTILL scaffold — DELIVER implements: seed the representative set of "
-        "production-shaped reports (entity-only, dimension+measure, multi-measure) "
-        "through capture.container.metadata.create_report."
-    )
+    capture.container = repository_container
+
+    async def _seed() -> list[str]:
+        project = await repository_container.metadata.create_project(
+            name="normalize-projection-kernel", org_id="dev-org-001"
+        )
+        report_ids: list[str] = []
+        for shape_name, columns in _PRODUCTION_REPORT_SHAPES.items():
+            created = await repository_container.metadata.create_report(
+                project_id=project["id"],
+                org_id="dev-org-001",
+                name=shape_name,
+                sql_definition="SELECT 1",
+                report_type="fact",
+                columns_metadata=columns,
+            )
+            report_ids.append(created["id"])
+        return report_ids
+
+    capture.extras["report_ids"] = _run(capture, _seed())
 
 
 @then("every report hydrates through the typed projection kernel without error")
 def then_all_hydrate(capture: Capture) -> None:
-    pytest.fail(
-        "DISTILL scaffold — DELIVER implements: read each seeded report back and hydrate "
-        "its columns through the typed ProjectionColumn/Measure kernel; assert no "
-        "ValidationError is raised for any production shape."
-    )
+    from app.models.relation import hydrate_projection_columns
+
+    async def _read_all() -> list[list[dict]]:
+        return [
+            (await capture.container.metadata.get_report(report_id))["columns_metadata"]
+            for report_id in capture.extras["report_ids"]
+        ]
+
+    for columns_metadata in _run(capture, _read_all()):
+        hydrated = hydrate_projection_columns(columns_metadata)
+        assert len(hydrated) == len(columns_metadata)
 
 
 # ===========================================================================
