@@ -239,8 +239,11 @@ not the columns.
 - Polymorphic `(parent_type, parent_id)` reference: no single SQL cascade FK;
   cascade is repository-enforced + a CHECK constraint.
 - A renderer refactor (merge shared steps into the kernel visitor) with
-  behavioral-drift risk during the merge — mitigated by a characterization test
-  pinning byte-identical SQL before the merge (brownfield walking-skeleton rule).
+  behavioral-drift risk during the merge — mitigated by a self-contained in-test
+  equivalence assertion (the consolidated renderer produces the same SQL as the
+  separate compilers for a relation built in the test). There is no
+  legacy/production View or Report data, so no characterization snapshot or
+  walking-skeleton gate is used.
 
 ### Operational
 - No new runtime dependency; ibis already ratified (ADR-007) and extended
@@ -278,10 +281,11 @@ DISTILL/DELIVER):
 - **Reproducibility invariant.** The compiled SQL for a view/report is always
   derivable from its persisted component rows alone; no path reads SQL or a
   compiled ibis expression back as authority.
-- **Render equivalence across the migration.** For every existing view and
-  report, the SQL rendered from the normalized component rows is byte-identical
-  to the SQL rendered from the pre-migration JSON arrays (characterization test
-  pins this before the renderer merge).
+- **Render equivalence across the migration.** For a view or report built in a
+  test, the SQL rendered from the normalized component rows is byte-identical to
+  the SQL rendered from the embedded JSON arrays — a self-contained in-test
+  pre-vs-post equivalence (there is no legacy/production data to pin a snapshot
+  against).
 - **Join order honored.** Swapping the `sequence` of two `relation_joins` rows
   for the same parent produces different SQL; reordering filters, columns, grain
   keys, or aggregations does not.
@@ -307,9 +311,9 @@ Probes split by the wave that can execute them:
    breaks reproducibility.
 
 **DELIVER-gated (depend on the migration + normalized tables existing):**
-2. **Render-equivalence probe.** Pre-migration JSON-array render == post-migration
-   row render, byte-identical, for every existing view/report (the migration's
-   safety gate; a characterization test authored before the renderer merge).
+2. **Render-equivalence probe.** For an in-test fixture, the embedded-JSON-array
+   render == the normalized-row render, byte-identical — a self-contained
+   pre-vs-post assertion, not a characterization snapshot of existing relations.
 3. **Join-order probe.** `compile(joins) != compile(joins_with_two_swapped)`;
    `compile(filters) == compile(reordered_filters)` — order honored exactly where
    the schema says it is.

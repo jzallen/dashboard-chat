@@ -310,8 +310,9 @@ visitor keyed on the component discriminator, exactly as ADR-051 decision 4.
   kernel visitor, keep the report-only aggregate step as the extension. Risk of
   behavioral drift during the merge — mitigated by the existing ADR-026
   byte-identical-SQL discipline (the merged renderer must produce the same SQL
-  the two compilers produce for the same relation; pin with a characterization
-  test before the merge, per the brownfield walking-skeleton rule in CLAUDE.md).
+  the two compilers produce for the same relation), asserted as a self-contained
+  in-test pre-vs-post equivalence. No characterization snapshot or walking-skeleton
+  gate: there is no legacy/production View/Report data.
 
 ### Option 4C — Fully merge into one compiler with a mode branch
 
@@ -441,7 +442,7 @@ open), and one render-module home — each justified by "no existing alternative
 | **Modifiability (agent write path)** | ↑↑ `addFilter`/`addColumn` become single-row INSERTs instead of read-mutate-rewrite of a JSON array. |
 | **Analysability** | ↑ Per-component rows are SQL-queryable ("which relations filter on X?"); JSON arrays were opaque. |
 | **Security** | = Filter values still flow through ibis literals (ADR-026 MR-1 closure preserved — `sql_generator.py:328-364`); no new injection surface. Boundary validation moves *earlier* (discriminated unions), strictly improving. |
-| **Reliability / Correctness** | = SQL still always re-derived from persisted IR (ADR-026 hard invariant). Migration risk is the main negative, mitigated by expand/contract + characterization test before the renderer merge. |
+| **Reliability / Correctness** | = SQL still always re-derived from persisted IR (ADR-026 hard invariant). Migration risk is the main negative, mitigated by expand/contract + a self-contained in-test render-equivalence assertion (no characterization snapshot; no legacy data). |
 | **Performance** | ≈ Component-row load is N small rows vs one JSON blob per parent; one indexed query per relation. Negligible for the cardinalities here (tens of columns/filters per relation). |
 
 ---

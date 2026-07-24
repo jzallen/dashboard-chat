@@ -97,7 +97,10 @@ duplicates it).
   (reproducibility, render-equivalence byte-identical across the migration,
   join-order honored, boundary-rejection, renderer-completeness, single-row
   write, tenant scoping) are the behavioral specs to turn into BDD tests.
-  Render-equivalence is a characterization test that MUST exist before the
-  renderer merge (brownfield walking-skeleton rule).
+  Render-equivalence is proven as a self-contained in-test pre-vs-post assertion
+  (the consolidated renderer produces the same SQL as the separate compilers for
+  an in-test relation); there is no legacy data, so no characterization snapshot
+  or walking-skeleton gate — the RED acceptance test per scenario is the DELIVER
+  gate (see DISTILL `wave-decisions.md` DWD-1).
 - **No DEVOPS / platform-architect handoff:** no external integration, no new
   runtime dependency, no topology change.

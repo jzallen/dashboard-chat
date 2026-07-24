@@ -1,0 +1,277 @@
+{
+  "roadmap": {
+    "project_id": "normalize-view-report-operations",
+    "created_at": "2026-07-24T02:30:40Z",
+    "total_steps": 27,
+    "phases": 8
+  },
+  "phases": [
+    {
+      "id": "01",
+      "name": "Lift Report columns onto a typed discriminated-union kernel so malformed columns are rejected at the boundary",
+      "depends_on": [],
+      "steps": [
+        {
+          "id": "01-01",
+          "name": "Reject a column with an unknown semantic role",
+          "criteria": "Submitting a report whose column carries an unknown semantic_role via create_report returns a structured Failure/422 at the boundary and persists nothing.",
+          "test_file": "tests/acceptance/normalize-view-report-operations/report-typed-kernel.feature",
+          "scenario_name": "A report column with an unknown semantic role is rejected at the boundary"
+        },
+        {
+          "id": "01-02",
+          "name": "Reject an illegal role/type pairing via the typed union",
+          "criteria": "A report column with an illegal role/type pairing is rejected by the Pydantic discriminated union (not validate_columns_metadata), returning a structured error and persisting nothing.",
+          "test_file": "tests/acceptance/normalize-view-report-operations/report-typed-kernel.feature",
+          "scenario_name": "A report column with an illegal role and type pairing is rejected by the typed union"
+        },
+        {
+          "id": "01-03",
+          "name": "Load every existing report through the typed kernel",
+          "criteria": "Every existing report payload hydrates through the typed ProjectionColumn/Measure kernel without error (production-shape coverage).",
+          "test_file": "tests/acceptance/normalize-view-report-operations/report-typed-kernel.feature",
+          "scenario_name": "Every existing report loads through the typed projection kernel"
+        }
+      ]
+    },
+    {
+      "id": "02",
+      "name": "Consolidate the View/Report compilers into one kernel visitor + report extension with a build-time completeness check",
+      "depends_on": ["01"],
+      "steps": [
+        {
+          "id": "02-01",
+          "name": "Render the same SQL as the separate compilers",
+          "criteria": "For an in-test view/report, the consolidated kernel visitor + report extension renders the same DuckDB SQL as the separate ViewIbisCompiler/ReportIbisCompiler (self-contained pre-vs-post equivalence, no legacy snapshot).",
+          "test_file": "tests/acceptance/normalize-view-report-operations/kernel-visitor-renderer.feature",
+          "scenario_name": "The consolidated renderer produces the same SQL as the pre-consolidation compilers"
+        },
+        {
+          "id": "02-02",
+          "name": "Fail the build on an unhandled component discriminator",
+          "criteria": "A component discriminator with no entry in an active visitor fails at build/collection time (completeness check), not a silent skip.",
+          "test_file": "tests/acceptance/normalize-view-report-operations/kernel-visitor-renderer.feature",
+          "scenario_name": "An unhandled component discriminator fails the build instead of silently skipping"
+        },
+        {
+          "id": "02-03",
+          "name": "Render an entity-only report through the shared kernel path",
+          "criteria": "An entity-only report renders as the kernel visitor's output with no aggregation step (shared path, not a special-cased branch).",
+          "test_file": "tests/acceptance/normalize-view-report-operations/kernel-visitor-renderer.feature",
+          "scenario_name": "An entity-only report renders through the shared kernel path with no aggregation step"
+        }
+      ]
+    },
+    {
+      "id": "03",
+      "name": "Disaggregate filters into the shared relation_filters table, establishing the component-table repository + polymorphic cascade",
+      "depends_on": ["02"],
+      "steps": [
+        {
+          "id": "03-01",
+          "name": "Write exactly one filter row when adding a filter",
+          "criteria": "Adding one filter via the view update path writes exactly one relation_filters row (no whole-array rewrite).",
+          "test_file": "tests/acceptance/normalize-view-report-operations/relation-filters-normalized.feature",
+          "scenario_name": "Adding one filter writes exactly one filter row"
+        },
+        {
+          "id": "03-02",
+          "name": "Backfill every embedded filter into one keyed row",
+          "criteria": "The expand migration backfills each embedded filters JSON element into one relation_filters row keyed by (parent_type, parent_id); the renderer reads filters from rows.",
+          "test_file": "tests/acceptance/normalize-view-report-operations/relation-filters-normalized.feature",
+          "scenario_name": "The backfill turns every embedded filter into one keyed row"
+        },
+        {
+          "id": "03-03",
+          "name": "Keep rendered SQL unchanged when filters are reordered",
+          "criteria": "Reordering two filters leaves the rendered SQL unchanged (filters commutative; no order column).",
+          "test_file": "tests/acceptance/normalize-view-report-operations/relation-filters-normalized.feature",
+          "scenario_name": "Reordering two filters leaves the rendered SQL unchanged"
+        },
+        {
+          "id": "03-04",
+          "name": "Cascade-delete only the parent's own filter rows",
+          "criteria": "Deleting a parent relation removes only its own relation_filters rows and leaves other relations' rows intact (polymorphic cascade).",
+          "test_file": "tests/acceptance/normalize-view-report-operations/relation-filters-normalized.feature",
+          "scenario_name": "Deleting a relation removes only its own filter rows"
+        },
+        {
+          "id": "03-05",
+          "name": "Scope filter loads to the relation's tenant",
+          "criteria": "relation_filters rows carry an indexed org_id and loads are org_id-scoped.",
+          "test_file": "tests/acceptance/normalize-view-report-operations/relation-filters-normalized.feature",
+          "scenario_name": "Loading a relation's filters is scoped to its tenant"
+        }
+      ]
+    },
+    {
+      "id": "04",
+      "name": "Move view and report projected columns into one shared relation_columns table",
+      "depends_on": ["01", "03"],
+      "steps": [
+        {
+          "id": "04-01",
+          "name": "List views and reports projecting a shared column",
+          "criteria": "One query over relation_columns lists every view and report projecting a given output column (shared cross-role projection over ColumnRole).",
+          "test_file": "tests/acceptance/normalize-view-report-operations/relation-columns-normalized.feature",
+          "scenario_name": "One query lists every view and report projecting the same column"
+        },
+        {
+          "id": "04-02",
+          "name": "Keep rendered SQL unchanged when columns are reordered",
+          "criteria": "Reordering columns leaves the rendered SQL unchanged (position is presentation-only).",
+          "test_file": "tests/acceptance/normalize-view-report-operations/relation-columns-normalized.feature",
+          "scenario_name": "Reordering columns leaves the rendered SQL unchanged"
+        },
+        {
+          "id": "04-03",
+          "name": "Keep rendered SQL unchanged when position changes",
+          "criteria": "Changing a column's presentation position leaves the rendered SQL unchanged.",
+          "test_file": "tests/acceptance/normalize-view-report-operations/relation-columns-normalized.feature",
+          "scenario_name": "Changing a column's presentation position leaves the rendered SQL unchanged"
+        },
+        {
+          "id": "04-04",
+          "name": "Write exactly one column row when adding a column",
+          "criteria": "Adding one column writes exactly one relation_columns row (single-row insert).",
+          "test_file": "tests/acceptance/normalize-view-report-operations/relation-columns-normalized.feature",
+          "scenario_name": "Adding one column writes exactly one column row"
+        }
+      ]
+    },
+    {
+      "id": "05",
+      "name": "Normalize joins with an explicit declaration-ordered sequence, preserving compiled SQL",
+      "depends_on": ["03"],
+      "steps": [
+        {
+          "id": "05-01",
+          "name": "Produce different SQL when two joins' sequence is swapped",
+          "criteria": "Swapping two relation_joins.sequence values changes the rendered JOIN order (SQL differs).",
+          "test_file": "tests/acceptance/normalize-view-report-operations/relation-joins-normalized.feature",
+          "scenario_name": "Swapping two joins' sequence produces different SQL"
+        },
+        {
+          "id": "05-02",
+          "name": "Keep rendered SQL unchanged for declaration-ordered joins",
+          "criteria": "Joins read in sequence order render the same SQL as the equivalent embedded-array view built in the test (self-contained equivalence).",
+          "test_file": "tests/acceptance/normalize-view-report-operations/relation-joins-normalized.feature",
+          "scenario_name": "Joins read in declaration order keep the rendered SQL byte-identical"
+        },
+        {
+          "id": "05-03",
+          "name": "Assign join sequence from array position in the backfill",
+          "criteria": "The expand migration assigns join sequence by array position (ROW_NUMBER over the array index), not created_at.",
+          "test_file": "tests/acceptance/normalize-view-report-operations/relation-joins-normalized.feature",
+          "scenario_name": "The backfill assigns join sequence from array position not creation time"
+        }
+      ]
+    },
+    {
+      "id": "06",
+      "name": "Store a relation's grain as queryable rows, one row per parent",
+      "depends_on": ["03"],
+      "steps": [
+        {
+          "id": "06-01",
+          "name": "Query a relation's grain keys as rows",
+          "criteria": "A relation's grain keys are queryable as relation_grain rows.",
+          "test_file": "tests/acceptance/normalize-view-report-operations/relation-grain-normalized.feature",
+          "scenario_name": "A relation's grain keys are queryable as rows"
+        },
+        {
+          "id": "06-02",
+          "name": "Keep rendered SQL unchanged when grain keys are reordered",
+          "criteria": "Reordering grain keys leaves the rendered SQL unchanged (set-like; no order column).",
+          "test_file": "tests/acceptance/normalize-view-report-operations/relation-grain-normalized.feature",
+          "scenario_name": "Reordering grain keys leaves the rendered SQL unchanged"
+        },
+        {
+          "id": "06-03",
+          "name": "Produce exactly one grain row per relation",
+          "criteria": "The backfill produces exactly one relation_grain row per relation (1:1 with ViewGrain, per OQ-3).",
+          "test_file": "tests/acceptance/normalize-view-report-operations/relation-grain-normalized.feature",
+          "scenario_name": "The backfill produces exactly one grain row per relation"
+        }
+      ]
+    },
+    {
+      "id": "07",
+      "name": "Add the report-only relation_aggregations table and enforce report rules over typed rows",
+      "depends_on": ["04", "06"],
+      "steps": [
+        {
+          "id": "07-01",
+          "name": "Reject a measure with no dimension over typed rows",
+          "criteria": "A report with a measure and no dimension is rejected over typed rows (ReportRequiresDimension), returning a structured 422.",
+          "test_file": "tests/acceptance/normalize-view-report-operations/relation-aggregations-normalized.feature",
+          "scenario_name": "A report with a measure and no dimension is rejected over typed rows"
+        },
+        {
+          "id": "07-02",
+          "name": "Reject a report sourcing another report",
+          "criteria": "A report whose source_refs point at another report is rejected by the shared composition service (InvalidReportReference).",
+          "test_file": "tests/acceptance/normalize-view-report-operations/relation-aggregations-normalized.feature",
+          "scenario_name": "A report sourcing another report is rejected by the composition service"
+        },
+        {
+          "id": "07-03",
+          "name": "Write exactly one aggregation row for a valid measure",
+          "criteria": "Binding a valid measure writes exactly one relation_aggregations row (report-only) binding the measure to its aggregation function.",
+          "test_file": "tests/acceptance/normalize-view-report-operations/relation-aggregations-normalized.feature",
+          "scenario_name": "Binding a valid measure writes exactly one aggregation row"
+        },
+        {
+          "id": "07-04",
+          "name": "Keep rendered SQL unchanged when aggregations are reordered",
+          "criteria": "Reordering aggregations leaves the rendered SQL unchanged (independent aggregates).",
+          "test_file": "tests/acceptance/normalize-view-report-operations/relation-aggregations-normalized.feature",
+          "scenario_name": "Reordering aggregations leaves the rendered SQL unchanged"
+        }
+      ]
+    },
+    {
+      "id": "08",
+      "name": "Drop the embedded-JSON columns after one safe release, leaving one source of truth",
+      "depends_on": ["03", "04", "05", "06", "07"],
+      "steps": [
+        {
+          "id": "08-01",
+          "name": "Keep rendered SQL unchanged after dropping the JSON columns",
+          "criteria": "After one safe release, the contract migration drops views.{columns,joins,filters,grain} and reports.columns_metadata; rendering an in-test fixture produces SQL unchanged from before the drop (proves nothing still reads JSON).",
+          "test_file": "tests/acceptance/normalize-view-report-operations/drop-embedded-json-columns.feature",
+          "scenario_name": "Dropping the embedded component columns keeps the rendered SQL unchanged"
+        },
+        {
+          "id": "08-02",
+          "name": "Provide a rollback that re-adds and re-backfills the columns",
+          "criteria": "The contract migration provides a rollback path that re-adds the dropped columns and re-backfills them from the normalized rows.",
+          "test_file": "tests/acceptance/normalize-view-report-operations/drop-embedded-json-columns.feature",
+          "scenario_name": "The contract migration has a rollback path that re-adds and re-backfills the columns"
+        }
+      ]
+    }
+  ],
+  "implementation_scope": {
+    "source_directories": [
+      "backend/app/models/relation/",
+      "backend/app/repositories/metadata/",
+      "backend/app/use_cases/view/",
+      "backend/app/use_cases/report/",
+      "backend/migrations/versions/"
+    ],
+    "test_directories": [
+      "tests/acceptance/normalize-view-report-operations/",
+      "backend/tests/"
+    ],
+    "excluded_patterns": [
+      "__init__.py",
+      "__pycache__/**"
+    ]
+  },
+  "validation": {
+    "status": "pending",
+    "reviewer": "nw-software-crafter-reviewer",
+    "approved_at": "pending"
+  }
+}
