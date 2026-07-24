@@ -27,7 +27,6 @@ them are rewritten to patch the per-context controllers directly.
 from app.use_cases import organization as organization_use_cases  # noqa: F401
 from app.use_cases import query_engine as query_engine_use_cases  # noqa: F401
 from app.use_cases import report as report_use_cases  # noqa: F401
-from app.use_cases import view as view_use_cases  # noqa: F401
 from app.use_cases.exceptions import DomainException  # noqa: F401
 from app.use_cases.memory import get_project_memory as get_project_memory_uc  # noqa: F401
 from app.use_cases.session import create_session as create_session_uc  # noqa: F401
@@ -45,7 +44,6 @@ from .conversation_controller import ConversationController
 from .organization_controller import OrganizationController
 from .query_engine_controller import QueryEngineController
 from .report_controller import ReportController
-from .view_controller import ViewController
 
 
 class HTTPController:
@@ -86,12 +84,10 @@ class HTTPController:
     # deliberately not rolled up here. See assistant_audit_controller.py for the DI pattern that
     # supersedes the http_controller late-binding shim.
 
-    # Analytics Authoring — Views (Seam 5a)
-    list_views = staticmethod(ViewController.list_views)
-    post_view = staticmethod(ViewController.post_view)
-    get_view = staticmethod(ViewController.get_view)
-    patch_view = staticmethod(ViewController.patch_view)
-    delete_view = staticmethod(ViewController.delete_view)
+    # Analytics Authoring — Views routed directly via ViewController
+    # (app/routers/views.py); deliberately not rolled up here. See
+    # view_controller.py for the DI pattern that supersedes the http_controller
+    # late-binding shim.
 
     # Analytics Authoring — Reports (Seam 5b)
     list_reports = staticmethod(ReportController.list_reports)

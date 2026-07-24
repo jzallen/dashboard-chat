@@ -5,6 +5,13 @@
 #   make restart   down, then up
 #   make status    show what is running
 #   make logs      tail both logs
+#   make deps      install the pinned cyrus-ai (npm ci; reapplies patches/)
+#   make cli ARGS="self-add-repo …"   run the local cyrus binary
+#
+# The daemon is a *local* dependency (package.json here), not a global install:
+# patches/ is reapplied by patch-package on every install, which a global
+# `npm i -g cyrus-ai` cannot do. Always invoke it through $(CYRUS_BIN) — a
+# globally installed `cyrus` on PATH would be the unpatched copy.
 #
 # The pump's queue URL is resolved from the CloudFormation stack output by default;
 # override any variable on the command line, e.g.
@@ -23,32 +30,45 @@ QUEUE_URL  ?=
 HERE       := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 PUMP_LOG   ?= /tmp/cyrus-pump.out
 CYRUS_LOG  ?= $(CYRUS_HOME)/daemon.out
+CYRUS_BIN  := $(HERE)/node_modules/.bin/cyrus
 
 # Match the pump processes (uv wrapper + python -m proxy) without matching the
 # matcher itself: the literal pattern "[-]m proxy" does not match the regex it
 # encodes, so the shell running pgrep/pkill is never a false positive.
 PUMP_PATTERN := [-]m proxy
 
-.PHONY: help up down restart status logs start-cyrus stop-cyrus start-pump stop-pump
+.PHONY: help up down restart status logs deps cli start-cyrus stop-cyrus start-pump stop-pump
 .DEFAULT_GOAL := help
 
 help:
-	@echo "make up | down | restart | status | logs"
+	@echo "make up | down | restart | status | logs | deps | cli ARGS=…"
 	@echo "  vars: QUEUE_URL (auto from stack $(STACK)), REGION=$(REGION), PORT=$(PORT), CYRUS_URL=$(CYRUS_URL)"
 
-up: start-cyrus start-pump status
+up: deps start-cyrus start-pump status
+
+# npm ci runs patch-package via postinstall, so patches/ is always reapplied.
+deps: $(CYRUS_BIN)
+
+$(CYRUS_BIN): package-lock.json package.json $(wildcard patches/*.patch)
+	@cd "$(HERE)" && npm ci --no-audit --no-fund
+	@touch "$(CYRUS_BIN)"
+
+# One-off cyrus subcommands (self-auth-linear, self-add-repo, …) against the
+# patched local install: make cli ARGS="self-add-repo https://github.com/you/r.git"
+cli: deps
+	@cd "$(CYRUS_HOME)" && "$(CYRUS_BIN)" $(ARGS)
 
 down: stop-pump stop-cyrus
 
 restart: down up
 
-start-cyrus:
+start-cyrus: deps
 	@if curl -s --max-time 2 -o /dev/null http://localhost:$(PORT)/status 2>/dev/null; then \
 	  echo "cyrus: already running on :$(PORT)"; \
 	else \
 	  echo "cyrus: starting…"; \
 	  cd "$(CYRUS_HOME)" && JSII_SILENCE_WARNING_DEPRECATED_NODE_VERSION=1 \
-	    setsid nohup cyrus > "$(CYRUS_LOG)" 2>&1 < /dev/null & disown; \
+	    setsid nohup "$(CYRUS_BIN)" > "$(CYRUS_LOG)" 2>&1 < /dev/null & disown; \
 	  for i in $$(seq 1 40); do \
 	    curl -s --max-time 2 -o /dev/null http://localhost:$(PORT)/status 2>/dev/null && { echo "cyrus: up on :$(PORT)"; break; }; \
 	    sleep 1; \
@@ -87,6 +107,8 @@ stop-pump:
 status:
 	@printf "cyrus: "; curl -s --max-time 2 -o /dev/null -w "up (HTTP %{http_code} on :$(PORT))\n" http://localhost:$(PORT)/status 2>/dev/null || echo "down"
 	@printf "pump:  "; pids=$$(pgrep -af "$(PUMP_PATTERN)" | grep -v "bin/bash" | awk '{print $$1}' | tr '\n' ' '); [ -n "$$pids" ] && echo "up (pids $$pids)" || echo "down"
+	@printf "bin:   "; if [ -x "$(CYRUS_BIN)" ]; then printf "local (patched)"; else printf "MISSING — run: make deps"; fi; \
+	  g=$$(command -v cyrus 2>/dev/null); if [ -n "$$g" ]; then echo " !! unpatched global also on PATH: $$g"; else echo; fi
 
 logs:
 	@echo "== cyrus ($(CYRUS_LOG)) =="; tail -n 20 "$(CYRUS_LOG)" 2>/dev/null; \

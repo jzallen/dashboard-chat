@@ -1,0 +1,15 @@
+{
+	"name": "cyrus-toolchain",
+	"version": "0.0.0",
+	"private": true,
+	"description": "Local install of the cyrus-ai daemon so its patches survive reinstalls. Deliberately not a root npm workspace member — this is devops tooling, not part of the Dashboard Chat application.",
+	"scripts": {
+		"postinstall": "patch-package"
+	},
+	"dependencies": {
+		"cyrus-ai": "0.2.65"
+	},
+	"devDependencies": {
+		"patch-package": "^8.0.0"
+	}
+}

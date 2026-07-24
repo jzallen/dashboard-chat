@@ -1,0 +1,39 @@
+diff --git a/node_modules/cyrus-claude-runner/dist/home-directory-restrictions.js b/node_modules/cyrus-claude-runner/dist/home-directory-restrictions.js
+index 4399374..18d9dbe 100644
+--- a/node_modules/cyrus-claude-runner/dist/home-directory-restrictions.js
++++ b/node_modules/cyrus-claude-runner/dist/home-directory-restrictions.js
+@@ -21,7 +21,24 @@ import { join, relative, resolve } from "node:path";
+  *
+  * Claude Code requires an extra leading / for absolute paths in tool patterns.
+  * See: https://docs.anthropic.com/en/docs/claude-code/settings#read-edit
++ *
++ * LOCAL PATCH (not upstream — reapply after `npm i -g cyrus-ai`):
++ * Home-relative paths listed in CYRUS_HOME_READ_EXEMPT (colon-separated,
++ * default ".claude/skills") are exempted from the jail so sessions can read
++ * shared agent skills. The exemption is deliberately narrow: siblings inside
++ * an exempted path's ancestors stay denied, so ~/.claude/.credentials.json
++ * and ~/.claude/history.jsonl remain unreadable. Set CYRUS_HOME_READ_EXEMPT=""
++ * to restore upstream behavior.
+  */
++const DEFAULT_HOME_READ_EXEMPT = ".claude/skills";
++function exemptRelPaths() {
++    const raw = process.env.CYRUS_HOME_READ_EXEMPT ?? DEFAULT_HOME_READ_EXEMPT;
++    return raw
++        .split(":")
++        .map((entry) => entry.trim())
++        .filter(Boolean)
++        .map((entry) => entry.split("/").filter(Boolean));
++}
+ export function buildHomeDirectoryDisallowedTools(cwd, additionalAllowedPaths = []) {
+     const home = homedir();
+     // Collect all paths that should be accessible, as segment arrays relative to home.
+@@ -34,6 +51,9 @@ export function buildHomeDirectoryDisallowedTools(cwd, additionalAllowedPaths =
+     if (allRelPaths.length === 0) {
+         return [];
+     }
++    // Exempt paths join the allow set only once the jail is known to be active,
++    // so a cwd outside the home directory still short-circuits above.
++    allRelPaths.push(...exemptRelPaths());
+     const disallowed = [];
+     // Recursively process a directory. `relevantPaths` contains the remaining
+     // path segments (relative to `dir`) for each allowed destination.
