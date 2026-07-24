@@ -27,7 +27,6 @@ them are rewritten to patch the per-context controllers directly.
 from app.use_cases import organization as organization_use_cases  # noqa: F401
 from app.use_cases import query_engine as query_engine_use_cases  # noqa: F401
 from app.use_cases import report as report_use_cases  # noqa: F401
-from app.use_cases import sql_access as sql_access_use_cases  # noqa: F401
 from app.use_cases import view as view_use_cases  # noqa: F401
 from app.use_cases.exceptions import DomainException  # noqa: F401
 from app.use_cases.memory import get_project_memory as get_project_memory_uc  # noqa: F401
@@ -46,7 +45,6 @@ from .conversation_controller import ConversationController
 from .organization_controller import OrganizationController
 from .query_engine_controller import QueryEngineController
 from .report_controller import ReportController
-from .sql_access_controller import SQLAccessController
 from .view_controller import ViewController
 
 
@@ -102,12 +100,10 @@ class HTTPController:
     patch_report = staticmethod(ReportController.patch_report)
     delete_report = staticmethod(ReportController.delete_report)
 
-    # External SQL Access Provisioning (Seam 6)
-    enable_sql_access = staticmethod(SQLAccessController.enable_sql_access)
-    disable_sql_access = staticmethod(SQLAccessController.disable_sql_access)
-    get_sql_access = staticmethod(SQLAccessController.get_sql_access)
-    sync_sql_access = staticmethod(SQLAccessController.sync_sql_access)
-    regenerate_sql_credentials = staticmethod(SQLAccessController.regenerate_sql_credentials)
+    # External SQL Access Provisioning — routed directly via SQLAccessController
+    # (app/routers/sql_access.py); deliberately not rolled up here. See
+    # sql_access_controller.py for the DI pattern that supersedes the http_controller
+    # late-binding shim.
 
     # Query Engine Fleet Admin (Seam 7)
     list_query_engines = staticmethod(QueryEngineController.list_query_engines)

@@ -138,9 +138,7 @@ class UpdateTransformsProtocol(Protocol):
 class PreviewCleaningTransformProtocol(Protocol):
     """Call interface for the preview-cleaning-transform use case."""
 
-    async def __call__(
-        self, dataset_id: str, target_column: str, expression_config: dict
-    ) -> Result: ...
+    async def __call__(self, dataset_id: str, target_column: str, expression_config: dict) -> Result: ...
 
 
 class SearchDatasetsProtocol(Protocol):
@@ -190,9 +188,7 @@ class DatasetController:
         *,
         list_datasets_for_project_func: ListDatasetsForProjectProtocol = dataset_use_cases.list_datasets_for_project,
     ) -> tuple[dict, int]:
-        result = await list_datasets_for_project_func(
-            project_id, cursor=cursor, page_size=page_size, archived=archived
-        )
+        result = await list_datasets_for_project_func(project_id, cursor=cursor, page_size=page_size, archived=archived)
         match result:
             case Success(datasets_page):
                 resp = wrap_jsonapi_list(
