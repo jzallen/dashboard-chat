@@ -1,0 +1,65 @@
+# <!-- DES-ENFORCEMENT : exempt -->
+[project]
+name = "dashboard-chat-acceptance-normalize-view-report-operations"
+version = "0.0.1"
+description = "Acceptance tests for normalize-view-report-operations (ADR-052)."
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0.0,<9.0.0",
+    "pytest-bdd>=7.0.0,<9.0.0",
+    "pytest-asyncio>=0.23.0,<1.0.0",
+    # DWD-1 in this feature's distill/wave-decisions.md: walking-skeleton
+    # strategy C-local — real SQLAlchemy + in-memory SQLite + real
+    # ibis->DuckDB SQL rendering. The repository layer's real adapter is the
+    # AsyncSession bound to an aiosqlite engine (same engine
+    # backend/tests/conftest.py uses); the renderer's real adapter is
+    # ibis.to_sql(dialect="duckdb"). No compose stack is required, so this
+    # suite has no asyncpg / no MinIO / no httpx dependency. We install
+    # backend as an editable path dep so `from app.repositories import
+    # RepositoryContainer` and `from app.use_cases.view.sql_generator import
+    # ViewIbisCompiler` resolve, and transitive imports (ibis, pydantic,
+    # returns, etc.) come along for the ride.
+    "sqlalchemy>=2.0",
+    "aiosqlite>=0.19",
+    "uuid-utils>=0.6.0",
+    "dashboard-chat-backend",
+]
+
+[tool.uv.sources]
+dashboard-chat-backend = { path = "../../../backend", editable = true }
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+# Mirrors tests/acceptance/refactor-metadata-repository-split/pyproject.toml so
+# the session-scoped db_engine + repository_container fixtures share a loop with
+# the test functions that consume them. Without alignment, function-scoped
+# async fixtures get fresh per-test loops and the second test that consumes the
+# engine hits "Event loop is closed."
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+markers = [
+    "walking_skeleton: walking-skeleton scenario (real-IO render-equivalence characterization over real seeded relations)",
+    "real-io: scenario uses the real SQLAlchemy + SQLite adapter and real ibis->DuckDB rendering (no in-memory doubles)",
+    "characterization: scenario pins current rendered SQL as a golden snapshot (behavior net for the refactor)",
+    "boundary_validation: scenario asserts a malformed component is rejected at the use-case boundary and never persisted",
+    "renderer_consolidation: scenario asserts the kernel-visitor merge preserves rendered SQL and enforces completeness",
+    "component_normalized: scenario asserts a relation_* component table's write/read/cascade/order semantics",
+    "polymorphic_cascade: scenario asserts a parent delete removes exactly its own component rows",
+    "report_rules: scenario asserts a report invariant (measure-requires-dimension, no-mart-to-mart) over typed rows",
+    "contract_migration: scenario asserts the drop-JSON contract half + rollback path (@infrastructure)",
+    "driving_port: scenario invokes through RepositoryContainer.metadata and/or the create_view/create_report use-case functions",
+    "pending: scenario authored but not yet enabled — DELIVER unpends per phase per roadmap.json's scenarios_to_unskip",
+]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    # Default: skip @pending scenarios. The walking-skeleton characterization
+    # runs first; every phase-01..08 milestone scenario carries @pending and
+    # unpends per the roadmap phases.
+    "-m", "not pending",
+]
