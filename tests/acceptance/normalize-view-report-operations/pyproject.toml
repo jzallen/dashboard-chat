@@ -11,8 +11,7 @@ dev = [
     "pytest>=7.0.0,<9.0.0",
     "pytest-bdd>=7.0.0,<9.0.0",
     "pytest-asyncio>=0.23.0,<1.0.0",
-    # DWD-1 in this feature's distill/wave-decisions.md: walking-skeleton
-    # strategy C-local — real SQLAlchemy + in-memory SQLite + real
+    # Real substrate for this suite — real SQLAlchemy + in-memory SQLite + real
     # ibis->DuckDB SQL rendering. The repository layer's real adapter is the
     # AsyncSession bound to an aiosqlite engine (same engine
     # backend/tests/conftest.py uses); the renderer's real adapter is
@@ -43,9 +42,7 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 markers = [
-    "walking_skeleton: walking-skeleton scenario (real-IO render-equivalence characterization over real seeded relations)",
     "real-io: scenario uses the real SQLAlchemy + SQLite adapter and real ibis->DuckDB rendering (no in-memory doubles)",
-    "characterization: scenario pins current rendered SQL as a golden snapshot (behavior net for the refactor)",
     "boundary_validation: scenario asserts a malformed component is rejected at the use-case boundary and never persisted",
     "renderer_consolidation: scenario asserts the kernel-visitor merge preserves rendered SQL and enforces completeness",
     "component_normalized: scenario asserts a relation_* component table's write/read/cascade/order semantics",
@@ -53,13 +50,12 @@ markers = [
     "report_rules: scenario asserts a report invariant (measure-requires-dimension, no-mart-to-mart) over typed rows",
     "contract_migration: scenario asserts the drop-JSON contract half + rollback path (@infrastructure)",
     "driving_port: scenario invokes through RepositoryContainer.metadata and/or the create_view/create_report use-case functions",
-    "pending: scenario authored but not yet enabled — DELIVER unpends per phase per roadmap.json's scenarios_to_unskip",
+    "pending: scenario authored but not yet enabled — DELIVER enables one scenario at a time",
 ]
 addopts = [
     "-ra",
     "--strict-markers",
-    # Default: skip @pending scenarios. The walking-skeleton characterization
-    # runs first; every phase-01..08 milestone scenario carries @pending and
-    # unpends per the roadmap phases.
+    # Default: skip @pending scenarios. Every milestone scenario carries
+    # @pending; DELIVER enables one scenario at a time.
     "-m", "not pending",
 ]

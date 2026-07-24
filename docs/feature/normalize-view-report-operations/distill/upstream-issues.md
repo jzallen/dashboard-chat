@@ -8,39 +8,48 @@
 
 ## Findings
 
-**None — reconciliation passed, 0 contradictions.**
+**One back-propagation overturn — the characterization / walking-skeleton gate is superseded (awaiting SSOT amendment).**
 
-DISCUSS (`user-stories.md`, `story-map.md`, `prioritization.md`,
-`wave-decisions.md`) and DESIGN (`domain-model.md`, `c4-component.md`,
-`wave-decisions.md`, ADR-052) were sufficient to derive every acceptance
-scenario without a single back-propagation question. No DISCOVER/DESIGN
-assumption was overturned in DISTILL.
+A product-owner decision overturned a DESIGN-time assumption: there is **no legacy/production View or Report data** (View/Report are display-only in the UI; the Agent→View/Report generation path is untested). Therefore the "render-equivalence characterization test pinning byte-identical SQL of existing/seeded relations, authored as a brownfield **walking-skeleton** gate before the renderer merge" is no longer valid. It is replaced by a **self-contained in-test pre-vs-post equivalence** (for a fixture built in the test, the consolidated renderer must produce the same SQL as the separate compilers), and there is **no walking skeleton** — the gate is a RED acceptance test per scenario (DISTILL DWD-1).
+
+The render-equivalence *property* is unchanged; only its framing (characterization-of-legacy + walking-skeleton gate) is dropped. The following upstream artifacts still carry the old framing and should be amended to match (ADR-052 is `Proposed`, so amendable — flagged for the design owner, not silently rewritten here):
+
+- `docs/decisions/adr-052-normalize-view-report-operations-ir.md` — §Consequences (l242–243), l283, l312: "characterization test pinning byte-identical SQL before the merge (brownfield walking-skeleton rule)".
+- `docs/feature/normalize-view-report-operations/design/wave-decisions.md` l100–101 (DISTILL hand-off) and `design/evaluation.md` l313–314, l444: same characterization/walking-skeleton framing.
+
+Everything else: DISCUSS (`user-stories.md`, `story-map.md`, `prioritization.md`, `wave-decisions.md`) and DESIGN (`domain-model.md`, `c4-component.md`) were sufficient to derive every acceptance scenario without further back-propagation.
 
 ## Checks run
 
-1. **Story ↔ slice ↔ Linear mapping.** DISCUSS defined 9 carpaccio slices
-   (`slices/slice-00..slice-08`) and grouped stories onto them in `story-map.md`
-   — a Release Slice groups one or more stories, not inherently 1:1 — tracking to
-   Linear stories DC-80..DC-88. Verified each slice brief's `Traces:` line against
-   the matching story `Traces:` line in `story-map.md` and against the acceptance
-   `.feature` tags. No drift. (DELIVER will map roadmap steps to scenarios; the
-   roadmap does not exist yet.)
+1. **Story ↔ slice ↔ Linear mapping.** DISCUSS defined the carpaccio slices and
+   grouped stories onto them in `story-map.md` — a Release Slice groups one or
+   more stories, not inherently 1:1 — tracking to Linear stories DC-81..DC-88. The
+   render-characterization walking-skeleton slice (slice 00 / DC-80) was DROPPED:
+   the product owner directs a RED acceptance test per scenario as the DELIVER
+   gate (not a vertical walking-skeleton slice), and render-equivalence survives
+   as a self-contained in-test pre-vs-post property rather than a golden snapshot,
+   since there is NO legacy/production View/Report data and View/Report are
+   display-only. The remaining 8 stories (01–08) each own one acceptance
+   `.feature`. Verified each story brief's `Traces:` line against the matching
+   story `Traces:` line in `story-map.md` and against the acceptance `.feature`
+   tags. No drift. (DELIVER maps one roadmap step per scenario; the roadmap does
+   not exist yet.)
 
 2. **AC/probe coverage closure.** `user-stories.md` §"Requirements completeness"
    asserts every ADR-052 AC1–AC7 and probe P1–P5 maps to ≥1 story. Cross-checked
-   against ADR-052 §"Acceptance Criteria" + §"Earned Trust" and against the
-   scenario set: every AC/probe has ≥1 acceptance scenario. No orphan AC, no
+   against ADR-052 §"Acceptance Criteria" + §"Earned Trust" and against the 27
+   scenarios: every AC/probe has ≥1 acceptance scenario. AC1 (reproducible render)
+   is covered by story 02's pre-vs-post in-test equivalence scenario (the
+   consolidated renderer produces the same SQL as the separate compilers for the
+   same in-test relation), not by a characterization snapshot. No orphan AC, no
    orphan scenario.
 
 3. **Dependency-chain consistency.** The `blocked by` lines across
-   `prioritization.md`, `story-map.md`, and each slice brief agree: 00 gates 02;
-   01 + 03 gate 04; 03 gates 05, 06; 04 + 06 gate 07; 03–07 gate 08. This is the
-   ordering DISTILL surfaces for the DELIVER roadmap to encode. The one nuance —
-   02 is `blocked by 00, 01` in the story/prioritization but only `blocked by 00`
-   in the story-map slice table — is not a contradiction: story-map lists the hard
-   render-safety gate (00), the story lists both the gate and the typed-column
-   prerequisite (01). Both are surfaced for DELIVER (slice 02 depends on slice 01's
-   typed columns; slice 00 is the hard manual-review gate). Recorded here for the
+   `prioritization.md`, `story-map.md`, and each story brief agree: 01 + 03 gate
+   04; 03 gates 05, 06; 04 + 06 gate 07; 03–07 gate 08. This is the ordering
+   DISTILL surfaces for the DELIVER roadmap to encode. Story 02 (renderer
+   consolidation) depends on story 01's typed columns. These are genuine data/code
+   dependencies between stories, not characterization gates. Recorded here for the
    audit trail.
 
 4. **Open-question routing honoured.** OQ-1 (normalize `source_refs`) is a
@@ -66,7 +75,7 @@ assumption was overturned in DISTILL.
    cases) was spot-checked against the actual files. All line references
    resolve; the `report_ibis_compiler.py` entity-only branch (l108–113) and the
    `ViewIbisCompiler.generate_executable` path (l124–152) confirm the
-   render-equivalence baseline the walking skeleton pins.
+   render-equivalence baseline story 02's in-test pre-vs-post comparison asserts.
 
 ## Skipped waves
 
@@ -83,9 +92,11 @@ aiosqlite + in-process ibis), trivially covered by every scenario's setup.
 ## uv.lock
 
 Generated successfully via `cd tests/acceptance/normalize-view-report-operations
-&& uv lock` (uv 0.x, CPython 3.11.15; 75 packages resolved). The suite was
-synced and the walking-skeleton scenario executed — it is RED-by-assertion at the
-`render_characterization` scaffold, not BROKEN. No uv unavailability to report.
+&& uv lock` (uv 0.x, CPython 3.11.15; 75 packages resolved). The suite was synced
+and collects cleanly — 27 scenarios, all `@pending`, deselected by default under
+`-m "not pending"`; every milestone step binds to a `pytest.fail` DISTILL
+scaffold, so scenarios are RED-by-assertion, not BROKEN. No uv unavailability to
+report.
 
 ## Format note
 

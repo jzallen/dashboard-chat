@@ -1,11 +1,11 @@
 # <!-- DES-ENFORCEMENT : exempt -->
-# Phase 02 (slice 02, DC-82) — Kernel visitor + report extension.
+# Story 02 (DC-82) — Kernel visitor + report extension.
 #
 # The View/Report compilers' shared steps collapse into one kernel visitor the
 # report extension composes; a render dispatch catalog enforces build-time
-# completeness. BLOCKED BY Phase 00 (the characterization gate must be green
-# before this merge). The snapshot must stay byte-identical. All scenarios
-# @pending until Phase 02 lands.
+# completeness. The consolidated renderer must produce the same SQL as the
+# separate compilers for the same in-test relation. All scenarios @pending until
+# this story lands.
 
 @renderer_consolidation @driving_port @pending
 Feature: Every relation renders through one kernel visitor with a completeness check
@@ -14,9 +14,9 @@ Feature: Every relation renders through one kernel visitor with a completeness c
   visitor that the report extension composes
   So that a kernel change is one edit and an unhandled component fails the build.
 
-  Scenario: The consolidated renderer produces byte-identical SQL to the characterization snapshot
+  Scenario: The consolidated renderer produces the same SQL as the pre-consolidation compilers
     Given the renderer is consolidated behind the kernel visitor and report extension
-    Then the consolidated renderer reproduces the characterization snapshot byte-for-byte
+    Then the consolidated renderer produces the same SQL as the separate View and Report compilers for the same in-test relation
     And no render path reads compiled SQL back as authority
 
   Scenario: An unhandled component discriminator fails the build instead of silently skipping

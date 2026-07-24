@@ -1,10 +1,11 @@
 # <!-- DES-ENFORCEMENT : exempt -->
-# Phase 06 (slice 06, DC-86) — relation_grain normalized (one row per parent).
+# Story 06 (DC-86) — relation_grain normalized (one row per parent).
 #
 # Grain (time column + dimension keys) stored as queryable rows, ONE row per
 # parent (OQ-3 resolved 1:1 — ViewGrain is a single immutable VO per view;
-# Report has no grain). Set-like: reorder leaves SQL unchanged. BLOCKED BY
-# Phase 03. All scenarios @pending until Phase 06 lands.
+# Report has no grain). Set-like: reorder leaves SQL unchanged. Depends on the
+# shared component-table repository (story 03). All scenarios @pending until this
+# story lands.
 
 @component_normalized @driving_port @pending
 Feature: A relation's grain is normalized into queryable rows

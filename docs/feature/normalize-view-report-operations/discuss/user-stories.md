@@ -17,27 +17,6 @@ Elevator Pitch referencing a real entry point.
 
 ---
 
-## Story 00 — See the SQL every relation compiles to today (walking skeleton)
-
-As an **engineer about to refactor the renderer**, I want a characterization
-snapshot of the SQL every existing view and report compiles to, so I can prove no
-later slice changes rendered output by accident.
-
-### Elevator Pitch
-Before: there is no record of what SQL a given view/report produces — a renderer change could silently alter output and no test would catch it.
-After: run `cd backend && uv run pytest tests/.../test_render_characterization.py` → sees a golden snapshot of `view <id> → SELECT …` / `report <id> → SELECT …` for every seeded relation, and any drift fails the test with a diff.
-Decision enabled: the engineer decides it is safe to merge a renderer/persistence change because the snapshot is byte-identical.
-
-### Acceptance criteria
-- Given every seeded view and report, when the characterization suite runs, then it emits and pins the `ibis.to_sql(dialect="duckdb")` output for each. *(AC2 baseline)*
-- Given a deliberate change to rendered SQL, when the suite runs, then it fails with a per-relation diff (not a pass-through). *(AC2)*
-- Given the snapshot, when re-run with no code change, then it is deterministic (stable ordering, no timestamps). *(AC1)*
-- Snapshot is captured from real seeded/dev relations, not fabricated fixtures.
-
-Traces: AC1, AC2, P2 · Walking skeleton (brownfield) · Hard gate before Story 02.
-
----
-
 ## Story 01 — Reject a malformed report column at the boundary
 
 As a **modeler authoring a report**, I want an invalid column (unknown
@@ -67,16 +46,16 @@ so a kernel change is one edit and an unhandled component fails the build.
 
 ### Elevator Pitch
 Before: `ViewIbisCompiler` and `ReportIbisCompiler` duplicate the build-source/map-types/project steps; a kernel change means editing both and they can drift.
-After: run `cd backend && uv run pytest tests/.../test_render_characterization.py` after the merge → sees the snapshot byte-identical, and adding an unhandled component discriminator makes `pytest` fail at collection/build time.
+After: run `cd backend && uv run pytest tests/.../test_render_equivalence.py` after the merge → the pre-normalization and post-normalization render paths produce identical SQL for a fixture built in the test, and adding an unhandled component discriminator makes `pytest` fail at collection/build time.
 Decision enabled: the engineer adds a new component or render target by editing one catalog/visitor and trusts the completeness check to flag any gap.
 
 ### Acceptance criteria
-- Given the consolidated renderer (kernel visitor + report extension composing it), when the characterization suite runs, then output is byte-identical to Story 00's snapshot. *(AC2, P2)*
+- Given a relation fixture built in the test, when it is rendered through both the pre-normalization compiler path and the consolidated kernel-visitor path, then the two produce identical SQL (in-test render-equivalence property, no legacy snapshot). *(AC2, P2)*
 - Given a component discriminator with no entry in an active visitor, when the build/test runs, then it fails — not a silent skip. *(AC5, P1)*
 - Given an entity-only report, when rendered, then it is "the kernel visitor's output with no aggregation step," not a special-cased branch. *(ADR-052 decision 4)*
 - No path reads compiled SQL or a compiled ibis expression back as authority. *(AC1)*
 
-Traces: AC1, AC2, AC5, P1, P2 · ADR-052 decision 4 · **blocked by Story 00**.
+Traces: AC1, AC2, AC5, P1, P2 · ADR-052 decision 4 · **blocked by Story 01**.
 
 ---
 
@@ -118,7 +97,7 @@ Decision enabled: an operator traces a column's blast radius across the whole mo
 - Given views and reports, when migrated, then both write `ProjectionColumn` rows to `relation_columns` (shared `ColumnRole` entity/dimension/time/measure). *(ADR-052 decision 1)*
 - Given `relation_columns.position`, when columns are reordered, then rendered SQL is unaffected (position is presentation-only). *(AC3 negative arm)*
 - Given an added column, when written, then it is a single-row INSERT. *(AC6)*
-- Character snapshot byte-identical after the read path swaps to rows. *(AC2)*
+- Given a fixture built in the test, when rendered from JSON versus from `relation_columns` rows, then the SQL is identical (in-test render-equivalence). *(AC2)*
 - Tenant scoping + polymorphic cascade per Story 03. *(AC7, P5)*
 
 Traces: AC2, AC6, AC7 · **blocked by Stories 01, 03** · proves the shared-projection claim.
@@ -133,13 +112,13 @@ normalization and reordering joins changes the result deterministically.
 
 ### Elevator Pitch
 Before: join order is implicit in `views.joins` JSON array position — fragile and non-queryable.
-After: run the characterization suite after migration → sees join SQL byte-identical (sequence backfilled by array position), and swapping two `relation_joins.sequence` values changes the rendered `JOIN` order.
+After: run the in-test render-equivalence check after migration → the JSON path and the row path produce identical join SQL (sequence backfilled by array position), and swapping two `relation_joins.sequence` values changes the rendered `JOIN` order.
 Decision enabled: the engineer trusts that normalization preserved join semantics, and can reorder joins by editing a `sequence` value.
 
 ### Acceptance criteria
 - Given the migration, when joins backfill, then `sequence = ROW_NUMBER() OVER (PARTITION BY parent_id ORDER BY <array index>)` — array position, not `created_at`. *(ADR-052 decision 5)*
 - Given two `relation_joins` rows with swapped `sequence`, when rendered, then the SQL differs. *(AC3, P3)*
-- Given joins read in `sequence` order, when rendered, then char snapshot byte-identical. *(AC2, P2)*
+- Given a fixture built in the test, when joins read in `sequence` order, then the row path renders identical SQL to the JSON path (in-test render-equivalence). *(AC2, P2)*
 - `relation_joins` indexes `(parent_id, sequence)`; rows carry indexed `org_id`. *(AC7)*
 
 Traces: AC2, AC3, AC7, P2, P3 · **blocked by Story 03** · proves array-position == declaration-order.
@@ -159,7 +138,7 @@ Decision enabled: the operator inspects and compares grain across relations with
 ### Acceptance criteria
 - Given the migration, when grain backfills, then it produces one row per parent (≅ `ViewGrain` 1:1 — confirm OQ-3 at DISTILL). *(ADR-052 OQ-3)*
 - Given grain keys reordered, when rendered, then SQL unchanged (set-like, no order column). *(AC3 negative arm)*
-- Char snapshot byte-identical after read path swaps to rows. *(AC2)*
+- Given a fixture built in the test, when rendered from the JSON path versus from `relation_grain` rows, then the SQL is identical (in-test render-equivalence). *(AC2)*
 - Tenant scoping + cascade per Story 03. *(AC7, P5)*
 
 Traces: AC2, AC7 · **blocked by Story 03** · resolves OQ-3.
@@ -182,7 +161,7 @@ Decision enabled: the modeler fixes the grain or the source before the report is
 - Given a report sourcing another report, when submitted, then `InvalidReportReference` rejects it via a first-class method on the shared composition service (peer to View's circular-dependency arm). *(AC4)*
 - Given a valid measure, when written, then exactly one `relation_aggregations` row (report-only) binds measure → aggregation function. *(ADR-052 decision 1, AC6)*
 - Aggregations reordered → rendered SQL unchanged (independent aggregates). *(AC3 negative arm)*
-- Char snapshot byte-identical; tenant scoping + cascade per Story 03. *(AC2, AC7, P5)*
+- Given a fixture built in the test, when rendered from the JSON path versus from `relation_aggregations` rows, then the SQL is identical (in-test render-equivalence); tenant scoping + cascade per Story 03. *(AC2, AC7, P5)*
 
 Traces: AC2, AC4, AC6, AC7 · **blocked by Stories 04, 06** · resolves OQ-2 (report_type structural vs label) at DISTILL.
 
@@ -199,7 +178,7 @@ release, so the schema holds one source of truth and the write-both bridge is re
 
 ### Acceptance criteria
 - Given Stories 03–07 shipped and read-from-rows confirmed in production for one release, when this migration runs, then `views.{columns,joins,filters,grain}` and `reports.columns_metadata` are dropped.
-- Given the drop, when any relation renders, then char snapshot byte-identical (proves nothing still reads JSON). *(AC2)*
+- Given the drop, when a fixture built in the test renders, then it produces the same SQL as before the drop (proves nothing still reads JSON). *(AC2)*
 - A rollback path exists (re-add columns + re-backfill from rows) for the release window. *(ADR-052 decision 5)*
 
 Traces: AC2 · **blocked by Stories 03, 04, 05, 06, 07** + one-release gate.
@@ -210,14 +189,18 @@ Traces: AC2 · **blocked by Stories 03, 04, 05, 06, 07** + one-release gate.
 
 | ADR-052 AC / probe | Covered by |
 |---|---|
-| AC1 reproducibility | 00, 02 |
-| AC2 render-equivalence | 00, 02, 04, 05, 06, 07, 08 |
+| AC1 reproducibility | 02 |
+| AC2 render-equivalence | 02, 04, 05, 06, 07, 08 (in-test pre-vs-post render-equivalence property, per story) |
 | AC3 join-order-honored | 03, 04, 05, 06, 07 (positive in 05; negative arms elsewhere) |
 | AC4 boundary-validation | 01, 07 |
 | AC5 renderer-completeness | 02 |
 | AC6 single-row-write | 03, 04, 07 |
 | AC7 tenant-scoping | 03, 04, 05, 06, 07 |
-| P1–P5 probes | 00/02 (P1,P2), 05 (P3), 01/07 (P4), 03–07 (P5) |
+| P1–P5 probes | 02 (P1, P2), 05 (P3), 01/07 (P4), 03–07 (P5) |
 
 Every ADR-052 acceptance criterion and Earned-Trust probe maps to at least one
-story. Completeness: **8/8 stories carry verifiable AC; every AC/probe covered.**
+story. Render-equivalence (AC2/P2) is proven **per story** as a self-contained
+in-test property — each story compares its own pre-normalization render path against
+its post-normalization render path for a fixture built inside the test — not against
+a legacy characterization snapshot. Completeness: **8/8 stories carry verifiable AC;
+every AC/probe covered.**

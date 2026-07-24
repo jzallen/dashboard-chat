@@ -1,14 +1,11 @@
 # <!-- DES-ENFORCEMENT : exempt -->
 """Acceptance-test configuration for normalize-view-report-operations (ADR-052).
 
-DWD-1: walking-skeleton strategy C-local — real SQLAlchemy + in-memory SQLite +
-real ibis->DuckDB rendering. The repository layer's real adapter is the
-SQLAlchemy session bound to an in-memory SQLite engine (the same engine
-``backend/tests/conftest.py`` uses); the renderer's real adapter is
-``ibis.to_sql(dialect="duckdb")``. No compose stack is required; no in-memory
-doubles are used. If the real SQLite adapter or the real ibis renderer were
-swapped for a stub, the render-equivalence characterization would silently pass
-and prove nothing about the refactor's wiring (Mandate 6 litmus test).
+Real substrate — real SQLAlchemy + in-memory SQLite + real ibis->DuckDB
+rendering. The repository layer's real adapter is the SQLAlchemy session bound to
+an in-memory SQLite engine (the same engine ``backend/tests/conftest.py`` uses);
+the renderer's real adapter is ``ibis.to_sql(dialect="duckdb")``. No compose
+stack is required; no in-memory doubles are used.
 
 Fixtures here:
 - ``db_engine`` — session-scoped aiosqlite engine + schema. Mirrors
@@ -52,7 +49,7 @@ from steps.relation_steps import *  # noqa: E402,F401,F403
 
 
 # ---------------------------------------------------------------------------
-# Real-IO fixtures (DWD-1)
+# Real-IO fixtures
 # ---------------------------------------------------------------------------
 
 

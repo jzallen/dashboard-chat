@@ -6,7 +6,7 @@ the consuming "users" are the agent write-path, the M/Power-Query parser, and th
 SQL renderer; their job is already validated by ADR-052 and DC-77.
 **Builds on:** DESIGN wave (ADR-052, `domain-model.md`, `c4-component.md`,
 `evaluation.md`, `wave-decisions.md`). Decisions are not re-litigated here; this map
-slices them into shippable increments.
+organizes them into a user-activity backbone and outcome-sliced releases.
 
 ---
 
@@ -20,57 +20,130 @@ slices them into shippable increments.
 This is the prerequisite for reconciling the M → IR → ibis flow at the View/Report
 tiers (the DC-77 follow-on).
 
+**Personas on this map:**
+
+- **Modeler** — a data modeler who authors and evolves a View/Report by acting
+  through the Agent (chat tools), the UI, or the API. Wants malformed shapes caught
+  at the boundary and wants to query/target individual components.
+- **Renderer engineer** — the engineer who maintains the View/Report → ibis → SQL
+  renderer. Wants one kernel to edit and a build that fails loudly on an unhandled
+  component.
+
 ---
 
-## Backbone (user activities, left → right)
+## User Story Map
 
-| A. See today's SQL | B. Make Report type-safe | C. Render from one kernel | D. Normalize each component | E. Retire the JSON |
+The map reads **left → right** across the **backbone** (the sequence of activities a
+persona performs to author and evolve a relation), and **top → bottom** down the
+**ribs** (the user stories that realize each activity). The horizontal **release
+bands** cut the ribs into shippable outcomes.
+
+### Backbone (user activities, left → right)
+
+| A. Author a well-formed report | B. Trust one renderer | C. Refine components individually | D. Guard report semantics | E. Live on one source of truth |
 |---|---|---|---|---|
-| Pin the SQL each relation compiles to today | Lift Report's `columns_metadata` dict-soup onto the typed kernel | Collapse two compilers into kernel-visitor + report-extension | Disaggregate each JSON array into a `relation_*` table, expand/contract | Drop the embedded-JSON columns after one safe release |
+| The modeler submits report columns and gets malformed shapes rejected at the boundary, on a typed kernel. | The renderer engineer maintains a single kernel visitor so a kernel change is one edit and gaps fail the build. | The modeler adds/queries filters, columns, joins, and grain as individually-addressable rows instead of rewriting JSON blobs. | The modeler gets fact-report rules (measure-needs-dimension, no mart-to-mart) enforced over typed rows at submit time. | The engineer runs the model on one schema after the embedded-JSON columns are retired. |
 
-The backbone is ordered by **safety dependency**, not by table: establish the
-characterization net (A) → pay the typing debt that the renderer consumes (B) →
-consolidate the renderer behind that net (C) → swap persistence one component at a
-time under the consolidated renderer (D) → contract (E).
+The backbone is ordered by the modeler's authoring flow, from *first make the shape
+sound* (A) through *make the renderer trustworthy* (B), *let each component be
+edited on its own* (C), *enforce the report-specific semantics* (D), to *collapse
+onto a single source of truth* (E).
+
+### Ribs (user stories under each activity)
+
+```
+BACKBONE →   A. Author a       B. Trust one     C. Refine components        D. Guard report   E. Live on one
+             well-formed        renderer          individually                semantics         source of truth
+             report
+
+RIBS ↓       01 Report-typed   02 Kernel        03 relation_filters         07 relation_       08 Drop
+             kernel               visitor +         (pattern-prover)            aggregations       embedded-JSON
+             (reject malformed    report                                       + report rules     columns
+             report column)       extension      04 relation_columns
+                                                     (cross-role query)
+
+                                                 05 relation_joins
+                                                     (honor join order)
+
+                                                 06 relation_grain
+                                                     (queryable grain)
+```
+
+Each rib carries a short user-value phrase:
+
+- **01 Report-typed kernel** *(→ DC-81)* — "reject a malformed report column at the
+  moment I submit it, before it can reach the renderer."
+- **02 Kernel visitor + report extension** *(→ DC-82)* — "maintain one renderer, so a
+  kernel change is one edit and an unhandled component fails the build."
+- **03 relation_filters** *(→ DC-83)* — "add a filter as a single row and query which
+  relations filter on column X."
+- **04 relation_columns** *(→ DC-84)* — "query which relations project column X across
+  both views and reports in one place."
+- **05 relation_joins** *(→ DC-85)* — "trust join order is preserved, and reorder joins
+  by editing a sequence value."
+- **06 relation_grain** *(→ DC-86)* — "inspect and compare a relation's grain as rows,
+  not opaque JSON."
+- **07 relation_aggregations + report rules** *(→ DC-87)* — "get a dimensionless or
+  mart-to-mart report rejected at the boundary with a clear error."
+- **08 Drop embedded-JSON columns** *(→ DC-88, `@infrastructure`)* — "run the model on
+  one schema once the JSON bridge is no longer read."
 
 ---
 
-## Walking skeleton (brownfield equivalent)
+## Release-slice bands (grouped by outcome)
 
-Slice 00 — the **render-equivalence characterization harness**. ADR-052 + the
-DESIGN handoff make this a hard gate: *the render-equivalence characterization
-test MUST exist before the renderer merge.* It is the brownfield walking skeleton —
-the safety net every later slice leans on. It ships observable value on its own
-(an engineer can dump and inspect the exact SQL any relation compiles to today).
+The bands slice the ribs horizontally by the outcome each release delivers, not by
+table. Each band is an independently valuable increment.
+
+### R1 — Type-safety & unified rendering
+
+**Outcome:** Report joins View on one typed kernel, and the model renders through a
+single visitor. Malformed report columns are rejected at the boundary and a renderer
+change is one edit with a build-time completeness check.
+
+- **01 — Report-typed kernel** (activity A)
+- **02 — Kernel visitor + report extension** (activity B)
+
+### R2 — Normalized component tables
+
+**Outcome:** Each component (filters, columns, joins, grain, aggregations) becomes an
+individually-addressable, queryable row. Adds are single-row writes; components are
+queryable across relations; join order is honored; report semantics are enforced over
+typed rows.
+
+- **03 — `relation_filters`** (activity C, pattern-prover)
+- **04 — `relation_columns`** (activity C)
+- **05 — `relation_joins`** (activity C)
+- **06 — `relation_grain`** (activity C)
+- **07 — `relation_aggregations` + report rules** (activity D)
+
+### R3 — Contract
+
+**Outcome:** The embedded-JSON columns are retired after one safe release; the schema
+holds a single source of truth and the write-both bridge is removed.
+
+- **08 — Drop embedded-JSON columns** (activity E, `@infrastructure`)
 
 ---
 
-## Slices (elephant carpaccio — each ships end-to-end, ≤1 day)
+## No walking skeleton (intentional omission)
 
-| # | Slice | Activity | Ships (observable) | Learning hypothesis (disproves X if it fails) |
-|---|---|---|---|---|
-| 00 | Render-SQL characterization snapshot | A | `pytest` golden snapshot of every view/report's compiled SQL; inspectable per relation | **Render is a pure function of persisted state.** If two "equivalent" relations snapshot differently, the renderer carries hidden state. |
-| 01 | Report projection on the typed kernel | B | `POST /api/projects/{id}/reports` with unknown `semantic_role` → structured 422, not a render-time crash | **`columns_metadata` is as regular as `column_validation` assumed.** If real reports fail to load through the discriminated union, production shapes are irregular. |
-| 02 | Kernel visitor + report extension | C | Char snapshot byte-identical; an unhandled component discriminator fails the build | **The two compilers' shared steps are truly identical.** If the snapshot drifts on merge, the "duplication" was divergence. |
-| 03 | `relation_filters` normalized | D | `SELECT * FROM relation_filters WHERE column='X'` returns rows; `addFilter` is a single-row INSERT | **The expand/contract + polymorphic `(parent_type,parent_id)` + repo-enforced cascade pattern holds.** If it doesn't hold for filters, it won't for the other four. |
-| 04 | `relation_columns` normalized | D | One `SELECT` lists every view *and* report projecting column X | **View columns and Report (entity/dimension/measure) columns fit one `ProjectionColumn` row.** If not, Option B's shared projection is wrong. |
-| 05 | `relation_joins` normalized | D | Swapping two joins' `sequence` changes the SQL; reordering filters does not | **JSON array position == declaration order the compiler honors.** If array-position backfill changes the rendered SQL, the assumed order was wrong. |
-| 06 | `relation_grain` normalized | D | Grain keys are queryable rows; char snapshot unchanged | **Grain is one-row-per-parent (≅ `ViewGrain` 1:1).** If a relation needs multiple grain rows, OQ-3's cardinality assumption breaks. |
-| 07 | `relation_aggregations` normalized (report-only) + report rules on rows | D | Report with a measure but no dimension → structured rejection; report sourcing a report → rejected | **Report rules are expressible over typed rows without dict-probing.** If they still need raw-dict access, the kernel promotion is incomplete. |
-| 08 | Contract: drop embedded-JSON columns | E | Migration removes `views.{columns,joins,filters,grain}` + `reports.columns_metadata`; all reads already off JSON | *(@infrastructure — contract half; rides the release after 03–07 confirmed in production)* |
+This map **deliberately draws no walking-skeleton line.** The product owner has
+excluded it for this feature.
 
----
+**Rationale (recorded):** Claude does not handle vertical (thin end-to-end) slices
+well. Instead, this feature generates a **RED acceptance test per Scenario before
+implementation**, and lets the **RED acceptance suite serve as the gate** — the
+suite going green story-by-story is the safety mechanism a walking skeleton would
+otherwise provide. There is therefore no "thinnest end-to-end slice" rib on this map.
 
-## Carpaccio taste tests
-
-| Test | Verdict |
-|---|---|
-| Any slice ships 4+ new components? | **PASS** — each table slice ships exactly one `relation_*` table + its write/read path. |
-| Every slice depends on a new abstraction shipped later? | **PASS** — the shared component-table repository abstraction ships *first* and standalone in slice 03 (the pattern-prover); 04–07 reuse it. |
-| Does any slice disprove a pre-commitment? | **PASS** — 00 (render purity), 02 (compiler equivalence), 03 (shared-table pattern), 04 (shared projection), 05 (array-order==declaration-order) each disprove a named design bet. |
-| Slices using only synthetic data? | **PASS** — every slice's AC runs against existing seeded/dev views and reports (production-shaped data), not fabricated rows. The char snapshot (00) is captured from real relations. |
-| 2+ slices identical except scale? | **NOTED, not merged.** 03–07 share a *pattern* but differ materially: filters are commutative (no order), columns carry `position` + are cross-role, joins carry correctness-bearing `sequence`, grain tests cardinality, aggregations are report-only + carry the report invariants. Slice 03 carries the pattern-proving learning; 04/06 are the lowest-risk replications (flagged in `prioritization.md`). |
-| Any slice with no user-visible output? | Slice 08 only (`@infrastructure`). It is the contract half of expand/contract, not a value slice — it cannot release on its own and is gated behind one production release of 03–07. |
+There is also **no characterization / legacy-pin premise.** View and Report are
+display-only in the UI today and the Agent → View/Report generation path has *not*
+been integration-tested; there is **no production or legacy View/Report data** to pin
+a render snapshot against. Render-equivalence is therefore proven **only** as a
+self-contained in-test property — comparing the pre-normalization render path against
+the post-normalization render path for a fixture **built inside the test** — never as
+a golden snapshot of pre-existing seeded relations.
 
 ---
 
@@ -85,6 +158,7 @@ the safety net every later slice leans on. It ships observable value on its own
 
 ## Open questions routed to DISTILL/DELIVER (carried from ADR-052)
 
-- **OQ-2** `fact`/`dimension` `report_type` — structural or label? → DISTILL (slice 07).
-- **OQ-3** `relation_grain` cardinality — one row per parent vs per key → DISTILL (slice 06).
-- **OQ-4** polymorphic-cascade enforcement — repo path + CHECK vs trigger → DELIVER (slice 03 establishes, each slice inherits).
+- **OQ-1** normalizing `source_refs` into `relation_sources` — separable follow-on, out of scope here.
+- **OQ-2** `fact`/`dimension` `report_type` — structural or label? → DISTILL (Story 07).
+- **OQ-3** `relation_grain` cardinality — one row per parent vs per key → DISTILL (Story 06).
+- **OQ-4** polymorphic-cascade enforcement — repo path + CHECK vs trigger → DELIVER (Story 03 establishes, each later story inherits).

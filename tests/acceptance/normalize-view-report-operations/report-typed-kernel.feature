@@ -1,11 +1,11 @@
 # <!-- DES-ENFORCEMENT : exempt -->
-# Phase 01 (slice 01, DC-81) — Report projection on the typed kernel.
+# Story 01 (DC-81) — Report projection on the typed kernel.
 #
 # Report's columns_metadata dict-soup is lifted onto Pydantic discriminated
 # unions over semantic_role (mirroring ViewFilterVariant over operator). A
 # malformed column is rejected at the create-report use-case boundary, never at
-# render time; validate_columns_metadata retires. Storage stays JSON this phase.
-# All scenarios @pending until Phase 01 lands.
+# render time; validate_columns_metadata retires. Storage stays JSON this story.
+# All scenarios @pending until this story lands.
 
 @boundary_validation @driving_port @pending
 Feature: A malformed report column is rejected at the boundary by the typed kernel

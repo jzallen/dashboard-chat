@@ -17,7 +17,7 @@
 
 **Acceptance criteria**
 - Swapping two `relation_joins.sequence` → different SQL. *(AC3, P3)*
-- Joins read in `sequence` order → char snapshot byte-identical. *(AC2, P2)*
+- Joins read in `sequence` order → same SQL as the equivalent embedded-array view built in the test. *(AC2, P2)*
 - Backfill uses array position. *(decision 5)*
 - `(parent_id, sequence)` indexed; indexed `org_id`. *(AC7)*
 

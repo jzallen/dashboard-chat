@@ -1,12 +1,13 @@
 # <!-- DES-ENFORCEMENT : exempt -->
-# Phase 07 (slice 07, DC-87) — relation_aggregations (report-only) + report
-# rules on typed rows.
+# Story 07 (DC-87) — relation_aggregations (report-only) + report rules on typed
+# rows.
 #
 # Report-only aggregation table binds measure -> aggregation function. Report
 # rules (measure-requires-dimension, no-mart-to-mart) enforced over typed rows,
 # not dict probes; no-mart-to-mart is a first-class method on the shared
-# composition service. report_type stays a semantic label (OQ-2). BLOCKED BY
-# Phases 04 + 06. All scenarios @pending until Phase 07 lands.
+# composition service. report_type stays a semantic label (OQ-2). Depends on the
+# shared relation_columns (story 04) and relation_grain (story 06). All scenarios
+# @pending until this story lands.
 
 @component_normalized @report_rules @driving_port @pending
 Feature: Report aggregations are normalized and report rules run over typed rows

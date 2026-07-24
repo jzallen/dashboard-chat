@@ -17,7 +17,7 @@
 - Disproves "the two compilers' shared steps are truly identical" if the char snapshot drifts on merge.
 
 **Acceptance criteria**
-- Char snapshot byte-identical post-merge. *(AC2, P2)*
+- Consolidated renderer produces the same SQL as the separate compilers for an in-test relation. *(AC2, P2)*
 - Unhandled discriminator fails build/test, not silent skip. *(AC5, P1)*
 - Entity-only report renders via the shared path. *(decision 4)*
 - No path reads compiled SQL/ibis back as authority. *(AC1)*

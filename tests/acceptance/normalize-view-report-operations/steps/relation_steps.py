@@ -13,15 +13,14 @@ Driving-port discipline (Mandate 1):
     are NEVER imported into these step bodies. The container + use-case functions
     are the entry points.
 
-Walking-skeleton (render-equivalence characterization) steps are wired for real.
-Every phase-01..08 milestone step body is a DISTILL scaffold raising
+Every milestone step body is a DISTILL scaffold raising
 ``pytest.fail("DISTILL scaffold — DELIVER implements: <intent>")``; DELIVER
-replaces each with a real implementation per roadmap.json's phase scopes.
+replaces each with a real implementation per the DELIVER roadmap (one step per
+scenario).
 """
 from __future__ import annotations
 
 import asyncio
-import uuid
 from collections.abc import Coroutine
 from dataclasses import dataclass, field
 from typing import Any, TypeVar
@@ -71,155 +70,6 @@ def _run(capture: Capture, coro: Coroutine[Any, Any, _T]) -> _T:
     """Drive a coroutine on the session loop pinned by the capture fixture."""
     loop: asyncio.AbstractEventLoop = capture.extras["_loop"]
     return loop.run_until_complete(coro)
-
-
-# ===========================================================================
-# Walking skeleton — render-SQL characterization snapshot (Phase 00)
-# ===========================================================================
-#
-# The walking skeleton seeds a representative view and report through the
-# driving port, renders each to real DuckDB SQL through the real compilers, and
-# pins the result as a golden snapshot. The render + snapshot pinning is owned
-# by the production characterization harness at
-# ``app.use_cases.relation.render_characterization`` (a Mandate-7 RED scaffold
-# DELIVER implements in Phase 00) — driving the render through a production
-# entry point keeps the outer loop honest (Iron Rule: the harness is code the
-# refactor must keep working, not test-only glue).
-
-
-@given("a fresh relation store seeded with a representative view and report")
-def given_seeded_relations(capture: Capture, repository_container, db_session) -> None:
-    """Seed one view and one report through the driving port.
-
-    The Org/Project prerequisites are seeded directly on the test ``db_session``
-    (background setup, not the behavior under test); the view and report are
-    created through ``RepositoryContainer.metadata.create_view`` /
-    ``create_report`` — the public persistence surface — so the relations are
-    real rows the renderer reads back, not fabricated fixtures.
-    """
-    capture.container = repository_container
-
-    org_id = "dev-org-001"
-    project_id = str(uuid.uuid4())
-
-    async def _seed() -> None:
-        from app.repositories.metadata import OrganizationRecord, ProjectRecord
-
-        db_session.add(OrganizationRecord(id=org_id, name="Org-1"))
-        await db_session.flush()
-        db_session.add(
-            ProjectRecord(id=project_id, name="P1", org_id=org_id, created_by="acceptance-user")
-        )
-        await db_session.flush()
-
-        view = await repository_container.metadata.create_view(
-            project_id=project_id,
-            org_id=org_id,
-            name="orders_view",
-            sql_definition="",
-            source_refs=[{"id": "ds1", "type": "dataset", "name": "orders"}],
-            columns=[
-                {
-                    "name": "amount",
-                    "source_ref": "ds1",
-                    "source_column": "amount",
-                    "display_type": "decimal",
-                    "grain_role": None,
-                    "alias": None,
-                }
-            ],
-            joins=[],
-            filters=[],
-            grain=None,
-            materialization="ephemeral",
-        )
-        report = await repository_container.metadata.create_report(
-            project_id=project_id,
-            org_id=org_id,
-            name="orders_report",
-            report_type="fact",
-            sql_definition="SELECT 1",
-            source_refs=[{"id": "ds1", "type": "dataset", "name": "orders"}],
-            columns_metadata=[
-                {
-                    "name": "region",
-                    "source_column": "region",
-                    "semantic_role": "dimension",
-                    "semantic_type": "category",
-                },
-                {
-                    "name": "total",
-                    "source_column": "amount",
-                    "semantic_role": "measure",
-                    "semantic_type": "sum",
-                },
-            ],
-            materialization="view",
-        )
-        capture.seeded_relations["view"] = view
-        capture.seeded_relations["report"] = report
-
-    _run(capture, _seed())
-
-
-@when("the characterization harness renders every seeded relation to SQL")
-def when_render_all_relations(capture: Capture) -> None:
-    """Render each seeded relation through the production characterization harness.
-
-    The harness re-hydrates each relation from its persisted rows and emits
-    ``ibis.to_sql(dialect="duckdb")`` per relation — the reproducibility
-    invariant (AC1) means the SQL is derivable from persisted state alone.
-    """
-    from app.use_cases.relation.render_characterization import render_all_relations
-
-    capture.snapshot = _run(
-        capture,
-        render_all_relations(
-            capture.container,
-            [capture.seeded_relations["view"], capture.seeded_relations["report"]],
-        ),
-    )
-
-
-@then("each relation pins a non-empty compiled SQL string")
-def then_snapshot_pinned_per_relation(capture: Capture) -> None:
-    assert capture.snapshot, "harness produced no snapshot"
-    for key, sql in capture.snapshot.items():
-        assert isinstance(sql, str) and sql.strip(), f"relation {key!r} rendered empty SQL"
-
-
-@then("a deliberate change to a relation's rendered SQL fails the snapshot with a per-relation diff")
-def then_deliberate_change_diffs(capture: Capture) -> None:
-    """A mutated render must be detected against the pinned baseline.
-
-    The harness compares a re-render against the pinned baseline and returns the
-    set of drifted relation keys; a deliberate single-relation change must
-    surface exactly that relation (proving the net is not a pass-through).
-    """
-    from app.use_cases.relation.render_characterization import diff_against_baseline
-
-    baseline = dict(capture.snapshot)
-    mutated = dict(baseline)
-    first_key = next(iter(mutated))
-    mutated[first_key] = mutated[first_key] + "\n-- deliberate drift"
-
-    drifted = diff_against_baseline(baseline=baseline, current=mutated)
-    assert drifted == {first_key}, f"expected exactly {first_key!r} to drift, got {drifted!r}"
-
-
-@then("re-rendering with no change reproduces the identical snapshot")
-def then_rerun_deterministic(capture: Capture) -> None:
-    """Re-render must be byte-identical (deterministic: no timestamps, stable order)."""
-    from app.use_cases.relation.render_characterization import render_all_relations
-
-    second = _run(
-        capture,
-        render_all_relations(
-            capture.container,
-            [capture.seeded_relations["view"], capture.seeded_relations["report"]],
-        ),
-    )
-    assert second == capture.snapshot, "re-render drifted — rendering is not deterministic"
 
 
 # ===========================================================================
@@ -299,17 +149,21 @@ def then_all_hydrate(capture: Capture) -> None:
 @given("the renderer is consolidated behind the kernel visitor and report extension")
 def given_consolidated_renderer(capture: Capture, repository_container) -> None:
     pytest.fail(
-        "DISTILL scaffold — DELIVER implements: seed relations as in the walking "
-        "skeleton; bind capture.container; the consolidated renderer is now the kernel "
+        "DISTILL scaffold — DELIVER implements: build a representative view and report "
+        "in the test; bind capture.container; the consolidated renderer is now the kernel "
         "visitor + report extension composing it."
     )
 
 
-@then("the consolidated renderer reproduces the characterization snapshot byte-for-byte")
-def then_snapshot_byte_identical(capture: Capture) -> None:
+@then(
+    "the consolidated renderer produces the same SQL as the separate View and Report "
+    "compilers for the same in-test relation"
+)
+def then_consolidated_matches_separate_compilers(capture: Capture) -> None:
     pytest.fail(
-        "DISTILL scaffold — DELIVER implements: render every seeded relation through the "
-        "consolidated path and assert equality with the Phase 00 pinned snapshot."
+        "DISTILL scaffold — DELIVER implements: for the same in-test relation, render it "
+        "through the consolidated kernel-visitor path and through the pre-consolidation "
+        "separate View and Report compilers; assert the two SQL strings are equal."
     )
 
 
@@ -583,11 +437,14 @@ def when_read_joins_in_sequence(capture: Capture) -> None:
     )
 
 
-@then("the rendered SQL is byte-identical to the characterization snapshot")
-def then_snapshot_byte_identical_joins(capture: Capture) -> None:
+@then(
+    "the rendered SQL is the same as rendering the equivalent embedded-array view built "
+    "in the test"
+)
+def then_sequence_render_matches_embedded_array(capture: Capture) -> None:
     pytest.fail(
         "DISTILL scaffold — DELIVER implements: assert the sequence-ordered render equals "
-        "the Phase 00 pinned snapshot for that relation."
+        "the render of the equivalent embedded-array view constructed in the test."
     )
 
 
@@ -759,7 +616,7 @@ def then_sql_unchanged_agg(capture: Capture) -> None:
 # ===========================================================================
 
 
-@given("a store where phases 03 to 07 have run read-from-rows for one release")
+@given("a store where stories 03 to 07 have run read-from-rows for one release")
 def given_json_columns_present(capture: Capture, repository_container) -> None:
     pytest.fail(
         "DISTILL scaffold — DELIVER implements: seed relations with both JSON columns and "
@@ -775,11 +632,15 @@ def when_run_contract_migration(capture: Capture) -> None:
     )
 
 
-@then("the embedded component columns are gone and the rendered SQL is byte-identical")
+@then(
+    "the embedded component columns are gone and the rendered SQL is unchanged from before "
+    "the columns were dropped, for the same in-test fixture"
+)
 def then_json_columns_dropped(capture: Capture) -> None:
     pytest.fail(
         "DISTILL scaffold — DELIVER implements: assert the JSON columns no longer exist and "
-        "every relation's render equals the Phase 00 snapshot (proves nothing still reads JSON)."
+        "every relation's render equals its render captured before the drop, for the same "
+        "in-test fixture (proves nothing still reads JSON)."
     )
 
 

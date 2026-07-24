@@ -1,10 +1,11 @@
 # <!-- DES-ENFORCEMENT : exempt -->
-# Phase 04 (slice 04, DC-84) — relation_columns normalized (shared projection).
+# Story 04 (DC-84) — relation_columns normalized (shared projection).
 #
 # Both view and report projected columns move into one shared relation_columns
 # table (shared ColumnRole entity/dimension/time/measure). position is
-# presentation-only. BLOCKED BY Phases 01 + 03. All scenarios @pending until
-# Phase 04 lands.
+# presentation-only. Depends on the typed projection kernel (story 01) and the
+# shared component-table repository (story 03). All scenarios @pending until this
+# story lands.
 
 @component_normalized @driving_port @pending
 Feature: Projected columns are normalized into one shared table across views and reports

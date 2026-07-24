@@ -20,7 +20,7 @@
 
 **Acceptance criteria**
 - After one release of read-from-rows for slices 03–07, JSON columns dropped.
-- Char snapshot byte-identical after the drop. *(AC2)*
+- Rendered SQL unchanged from before the drop, for the same in-test fixture. *(AC2)*
 - Rollback path exercised in a test. *(decision 5)*
 
 **Dependencies:** blocked by 03, 04, 05, 06, 07 + one-release gate. **Blocks:** —.

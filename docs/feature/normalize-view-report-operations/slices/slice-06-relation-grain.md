@@ -18,7 +18,7 @@
 **Acceptance criteria**
 - Backfill produces grain rows (confirm cardinality at DISTILL). *(OQ-3)*
 - Reordering grain keys → SQL unchanged. *(AC3 negative)*
-- Char snapshot byte-identical after read swaps to rows. *(AC2)*
+- Rendered SQL unchanged from the embedded render after the read path swaps to rows (in-test fixture). *(AC2)*
 - Tenant scoping + cascade per slice 03. *(AC7, P5)*
 
 **Dependencies:** blocked by 03. **Blocks:** 07. **Effort:** ~0.5 day.

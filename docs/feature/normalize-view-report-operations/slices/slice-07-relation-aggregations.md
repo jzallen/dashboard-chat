@@ -21,7 +21,7 @@
 - Report sourcing a report → `InvalidReportReference` via composition service. *(AC4)*
 - Valid measure → single `relation_aggregations` row. *(decision 1, AC6)*
 - Reordering aggregations → SQL unchanged. *(AC3 negative)*
-- Char snapshot byte-identical; tenant scoping + cascade per slice 03. *(AC2, AC7, P5)*
+- Rendered SQL unchanged from the embedded-array render for the same in-test fixture; tenant scoping + cascade per slice 03. *(AC2, AC7, P5)*
 
 **Dependencies:** blocked by 04, 06. **Blocks:** 08. **Effort:** ~1 day.
 **Reference class:** slice 03 pattern + report invariants (`create_report.py:109-131`).

@@ -19,7 +19,7 @@
 - `SELECT … WHERE output_name='X'` returns both views and reports. *(cross-role query)*
 - Reordering columns / changing `position` → SQL unchanged. *(AC3 negative)*
 - Added column = single-row INSERT. *(AC6)*
-- Char snapshot byte-identical; tenant scoping + cascade per slice 03. *(AC2, AC7, P5)*
+- Rendered SQL unchanged from the embedded-array render for the same in-test fixture; tenant scoping + cascade per slice 03. *(AC2, AC7, P5)*
 
 **Dependencies:** blocked by 01, 03. **Blocks:** 07. **Effort:** ~1 day.
 **Reference class:** slice 03 pattern (lower risk replication, + cross-role + `position`).
