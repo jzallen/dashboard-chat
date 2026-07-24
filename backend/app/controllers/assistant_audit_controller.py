@@ -62,6 +62,15 @@ class ToggleAuditEntryProtocol(Protocol):
 class AssistantAuditController:
     """Controller for the assistant-audit read + create + toggle endpoints."""
 
+    # TODO: Audit entries are only ever produced as a side effect of another
+    # operation — the agent persisting a transform tool-call (create), or a
+    # transform being enabled/disabled (toggle) — never a standalone user edit.
+    # Exposing create/toggle as their own HTTP write endpoints therefore models
+    # audit as an independently-mutated resource, which it is not. Consider
+    # letting the originating use cases write entries through the audit
+    # repository directly and retiring the POST/PATCH surface, leaving this
+    # controller with the read that backs the UI.
+
     @staticmethod
     async def list_audit_entries(
         project_id: str,
