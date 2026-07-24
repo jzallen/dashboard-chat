@@ -138,7 +138,8 @@ replaces it) and the one-time OAuth callback (which uses `http://localhost:3456/
 
 Prereqs are already on the devpod (Node 20, `gh`, `jq`, `claude`). Setup:
 
-1. **Install:** `npm install -g cyrus-ai`
+1. **Install:** `make deps` (see [The daemon is a local dependency](#the-daemon-is-a-local-dependency)).
+   Do **not** `npm install -g cyrus-ai` — a global copy shadows the patched one.
 2. **Config:** settings live in `~/.cyrus/.env` (Cyrus loads it on startup). The
    local-mode plumbing is `LINEAR_DIRECT_WEBHOOKS=true`, `CYRUS_BASE_URL=http://localhost:3456`,
    `CYRUS_SERVER_PORT=3456`, and `WEBHOOK_IP_VALIDATION=false` (so the localhost pump
@@ -148,11 +149,12 @@ Prereqs are already on the devpod (Node 20, `gh`, `jq`, `claude`). Setup:
      Client credentials + Webhooks, subscribe to **Agent session events**, callback
      `http://localhost:3456/callback`.
    - `CLAUDE_CODE_OAUTH_TOKEN` (via `claude setup-token`) **or** `ANTHROPIC_API_KEY`.
-3. **Authorize + add a repo + run:**
+3. **Authorize + add a repo + run** — via `make cli`, so the patched local binary is
+   used rather than whatever `cyrus` resolves to on `PATH`:
    ```bash
-   cyrus self-auth-linear                                # browser → localhost callback
-   cyrus self-add-repo https://github.com/you/repo.git   # something to route issues to
-   cyrus                                                  # listens on :3456
+   make cli ARGS="self-auth-linear"                                # browser → localhost callback
+   make cli ARGS="self-add-repo https://github.com/you/repo.git"   # something to route issues to
+   make up                                                          # daemon + pump, listens on :3456
    ```
 4. **Point the pump at it** — the canary secret MUST equal Cyrus's `LINEAR_WEBHOOK_SECRET`:
    ```bash
@@ -170,6 +172,49 @@ Caveats to expect:
   processing, capture a genuine `AgentSessionEvent` (assign an issue to Cyrus in Linear,
   watch its logs) and update `_CANARY_BODY` in `webhook_feeds/canary_feed.py` to match.
   This is how we close the last open item below.
+
+### The daemon is a local dependency
+
+`cyrus-ai` is pinned in this directory's `package.json` and installed into
+`cyrus/node_modules/`, **not** globally. The reason is `patches/`: we carry a
+local patch against `cyrus-claude-runner`, and a patch only survives reinstalls
+if some install step reapplies it. `patch-package` does that from `postinstall`
+— but `postinstall` hooks belong to a *consuming project*, and a global
+`npm i -g` has no consumer. Local install is what makes the patch durable;
+`npm ci` alone is enough to reproduce a patched daemon from scratch.
+
+This `package.json` is deliberately **not** a member of the root `workspaces`
+array, so the root `npm install` and the turbo graph never see it. It is devops
+tooling for the box, not part of the application.
+
+- `make deps` installs (via `npm ci`, which reapplies `patches/`). `make up`
+  depends on it, so the daemon can't start from an unpatched tree.
+- `make cli ARGS="…"` runs one-off subcommands against the local binary.
+- `make status` prints a `bin:` line and **warns if a global `cyrus` is on
+  `PATH`** — that would be an unpatched copy racing the local one.
+
+**Never `npm i -g cyrus-ai`.** If you do, `make status` will flag it; remove it
+with `npm uninstall -g cyrus-ai`.
+
+#### What the patch does
+
+`cyrus-claude-runner` jails a delegated session's `Read` access: at session start
+it enumerates `$HOME` and denies everything that isn't an ancestor of the session
+worktree or a configured `allowedDirectory`. That correctly blocks `~/.ssh` and
+friends, but it also blocked `~/.claude`, so sessions couldn't read the shared
+agent skills kept there — and the allow-list is hardcoded in `EdgeWorker`, with
+no config knob to widen it.
+
+`patches/cyrus-claude-runner+0.2.65.patch` adds `CYRUS_HOME_READ_EXEMPT`
+(colon-separated, home-relative, default `.claude/skills`). Exempt paths join the
+allow set, which makes `~/.claude` a *passthrough* directory: the walk descends
+into it and denies its other children individually, so `.credentials.json`,
+`history.jsonl`, `projects/` and `settings.json` stay unreadable. Setting
+`CYRUS_HOME_READ_EXEMPT=""` reproduces upstream behavior exactly.
+
+To rebase after a cyrus upgrade: edit the file under `node_modules/`, run
+`npx patch-package cyrus-claude-runner`, and delete the stale
+`+<old-version>.patch`.
 
 ---
 
