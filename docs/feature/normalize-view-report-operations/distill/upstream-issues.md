@@ -8,14 +8,14 @@
 
 ## Findings
 
-**One back-propagation overturn — the characterization / walking-skeleton gate is superseded (awaiting SSOT amendment).**
+**One back-propagation overturn — the characterization / walking-skeleton gate is superseded (RESOLVED: upstream artifacts amended).**
 
 A product-owner decision overturned a DESIGN-time assumption: there is **no legacy/production View or Report data** (View/Report are display-only in the UI; the Agent→View/Report generation path is untested). Therefore the "render-equivalence characterization test pinning byte-identical SQL of existing/seeded relations, authored as a brownfield **walking-skeleton** gate before the renderer merge" is no longer valid. It is replaced by a **self-contained in-test pre-vs-post equivalence** (for a fixture built in the test, the consolidated renderer must produce the same SQL as the separate compilers), and there is **no walking skeleton** — the gate is a RED acceptance test per scenario (DISTILL DWD-1).
 
-The render-equivalence *property* is unchanged; only its framing (characterization-of-legacy + walking-skeleton gate) is dropped. The following upstream artifacts still carry the old framing and should be amended to match (ADR-052 is `Proposed`, so amendable — flagged for the design owner, not silently rewritten here):
+The render-equivalence *property* is unchanged; only its framing (characterization-of-legacy + walking-skeleton gate) was dropped. The upstream artifacts have been **amended to match** (ADR-052 was `Proposed`; the property is preserved, the characterization/walking-skeleton gate removed):
 
-- `docs/decisions/adr-052-normalize-view-report-operations-ir.md` — §Consequences (l242–243), l283, l312: "characterization test pinning byte-identical SQL before the merge (brownfield walking-skeleton rule)".
-- `docs/feature/normalize-view-report-operations/design/wave-decisions.md` l100–101 (DISTILL hand-off) and `design/evaluation.md` l313–314, l444: same characterization/walking-skeleton framing.
+- `docs/decisions/adr-052-normalize-view-report-operations-ir.md` — §Negative trade-offs, §Acceptance Criteria (render equivalence), and §Earned Trust (render-equivalence probe) reframed to a self-contained in-test pre-vs-post equivalence.
+- `docs/feature/normalize-view-report-operations/design/wave-decisions.md` (DISTILL hand-off) and `design/evaluation.md` (Option 4B cons + reliability row): same reframe.
 
 Everything else: DISCUSS (`user-stories.md`, `story-map.md`, `prioritization.md`, `wave-decisions.md`) and DESIGN (`domain-model.md`, `c4-component.md`) were sufficient to derive every acceptance scenario without further back-propagation.
 
