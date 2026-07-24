@@ -243,7 +243,7 @@ class DatasetController:
         *,
         archive_dataset_func: ArchiveDatasetProtocol = dataset_use_cases.archive_dataset,
     ) -> tuple[dict, int]:
-        """Move a dataset to cold storage (MR-7)."""
+        """Move a dataset to cold storage."""
         result = await archive_dataset_func(dataset_id)
         match result:
             case Success(archived_dataset):
@@ -257,7 +257,7 @@ class DatasetController:
         *,
         restore_dataset_func: RestoreDatasetProtocol = dataset_use_cases.restore_dataset,
     ) -> tuple[dict, int]:
-        """Bring a dataset back from cold storage (MR-7)."""
+        """Bring a dataset back from cold storage."""
         result = await restore_dataset_func(dataset_id)
         match result:
             case Success(restored_dataset):
@@ -330,12 +330,15 @@ class DatasetController:
         *,
         create_transforms_func: CreateTransformsProtocol = dataset_use_cases.create_transforms,
     ) -> tuple[dict, int]:
+        """Batch-create transforms on a dataset.
+
+        TODO: signals success with a bare ``{"ok": True}`` rather than a JSON:API
+        document; align with the other controllers' envelope when API contracts are
+        next revised.
+        """
         result = await create_transforms_func(dataset_id, transforms)
         match result:
             case Success():
-                # TODO: non-JSON:API envelope — returns a bare {"ok": True} rather than a
-                # JSON:API resource/meta document. Align with the other controllers' response
-                # shape when API contracts are next revised.
                 return {"ok": True}, 201
             case Failure(error):
                 return error_response(error)
@@ -347,12 +350,15 @@ class DatasetController:
         *,
         update_transforms_func: UpdateTransformsProtocol = dataset_use_cases.update_transforms,
     ) -> tuple[dict, int]:
+        """Batch-update transforms (including soft-delete via status='deleted').
+
+        TODO: signals success with a bare ``{"ok": True}`` rather than a JSON:API
+        document; align with the other controllers' envelope when API contracts are
+        next revised.
+        """
         result = await update_transforms_func(dataset_id, updates)
         match result:
             case Success():
-                # TODO: non-JSON:API envelope — returns a bare {"ok": True} rather than a
-                # JSON:API resource/meta document. Align with the other controllers' response
-                # shape when API contracts are next revised.
                 return {"ok": True}, 200
             case Failure(error):
                 return error_response(error)
@@ -365,12 +371,15 @@ class DatasetController:
         *,
         preview_transform_func: PreviewCleaningTransformProtocol = dataset_use_cases.preview_cleaning_transform,
     ) -> tuple[dict, int]:
+        """Preview a cleaning transform without persisting anything.
+
+        TODO: wraps the preview in a bare ``{"data": ...}`` rather than a JSON:API
+        document; align with the other controllers' envelope when API contracts are
+        next revised.
+        """
         result = await preview_transform_func(dataset_id, target_column, expression_config)
         match result:
             case Success(preview):
-                # TODO: non-JSON:API envelope — wraps the preview in a bare {"data": ...}
-                # rather than a JSON:API resource/meta document. Align with the other
-                # controllers' response shape when API contracts are next revised.
                 return {"data": preview}, 200
             case Failure(error):
                 return error_response(error)
@@ -387,12 +396,15 @@ class DatasetController:
         *,
         search_datasets_func: SearchDatasetsProtocol = search_datasets_module.search_datasets,
     ) -> tuple[dict, int]:
+        """Search datasets by name within a project.
+
+        TODO: returns the matches in a bare ``{"data": [...]}`` rather than a JSON:API
+        list document (no type/id/attributes, links, or meta); align with the other
+        controllers' envelope when API contracts are next revised.
+        """
         result = await search_datasets_func(project_id, query, user=user)
         match result:
             case Success(matches):
-                # TODO: non-JSON:API envelope — returns the matches in a bare {"data": [...]}
-                # rather than a JSON:API list document (no type/id/attributes, links, or meta).
-                # Align with the other controllers' response shape when API contracts are next revised.
                 return {"data": matches}, 200
             case Failure(error):
                 return error_response(error)

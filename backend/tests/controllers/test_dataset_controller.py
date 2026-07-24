@@ -249,7 +249,7 @@ async def test_patch_dataset__when_given_body_kwargs__collapses_them_into_update
 
 
 # ---------------------------------------------------------------------------
-# archive_dataset / restore_dataset (MR-7 cold storage)
+# archive_dataset / restore_dataset (cold storage)
 # ---------------------------------------------------------------------------
 
 
@@ -412,12 +412,22 @@ async def test_post_upload__when_given_all_args__forwards_them_as_keywords_to_us
 
 
 async def test_post_transforms__when_use_case_succeeds__returns_201_with_ok_true():
+    async def fake_create_transforms(dataset_id, transforms_input):
+        return Success(None)
+
+    result = await DatasetController.post_transforms(
+        "d1", [{"column": "c", "expression": {"op": "TRIM"}}], create_transforms_func=fake_create_transforms
+    )
+
+    assert result == ({"ok": True}, 201)
+
+
+async def test_post_transforms__when_given_dataset_id_and_transforms__forwards_them_to_use_case():
     fake = AsyncMock(return_value=Success(None))
     transforms = [{"column": "c", "expression": {"op": "TRIM"}}]
 
-    result = await DatasetController.post_transforms("d1", transforms, create_transforms_func=fake)
+    await DatasetController.post_transforms("d1", transforms, create_transforms_func=fake)
 
-    assert result == ({"ok": True}, 201)
     fake.assert_awaited_once_with("d1", transforms)
 
 
@@ -425,10 +435,12 @@ async def test_post_transforms__when_dataset_not_found__returns_404_error_envelo
     async def fake_create_transforms(dataset_id, transforms_input):
         return Failure(DatasetNotFound("d1"))
 
-    body, status = await DatasetController.post_transforms("d1", [], create_transforms_func=fake_create_transforms)
+    result = await DatasetController.post_transforms("d1", [], create_transforms_func=fake_create_transforms)
 
-    assert status == 404
-    assert body["errors"][0]["title"] == "Dataset Not Found"
+    assert result == (
+        {"errors": [{"status": "404", "title": "Dataset Not Found", "detail": "Dataset with ID 'd1' not found"}]},
+        404,
+    )
 
 
 async def test_post_transforms__when_expression_invalid__returns_400_error_envelope():
@@ -441,12 +453,22 @@ async def test_post_transforms__when_expression_invalid__returns_400_error_envel
 
 
 async def test_patch_transforms__when_use_case_succeeds__returns_200_with_ok_true():
+    async def fake_update_transforms(dataset_id, updates):
+        return Success(None)
+
+    result = await DatasetController.patch_transforms(
+        "d1", [{"id": "t1", "expression": {}}], update_transforms_func=fake_update_transforms
+    )
+
+    assert result == ({"ok": True}, 200)
+
+
+async def test_patch_transforms__when_given_dataset_id_and_updates__forwards_them_to_use_case():
     fake = AsyncMock(return_value=Success(None))
     updates = [{"id": "t1", "expression": {}}]
 
-    result = await DatasetController.patch_transforms("d1", updates, update_transforms_func=fake)
+    await DatasetController.patch_transforms("d1", updates, update_transforms_func=fake)
 
-    assert result == ({"ok": True}, 200)
     fake.assert_awaited_once_with("d1", updates)
 
 
