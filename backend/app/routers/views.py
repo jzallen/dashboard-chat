@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
 from app.auth.types import AuthUser
-from app.controllers import HTTPController
+from app.controllers.view_controller import ViewController
 
 from .deps import authorize_project_access
 from .schemas.view import ViewCreate, ViewUpdate
@@ -18,7 +18,7 @@ async def list_views(
 ):
     """List all views for a project."""
     _user, project = auth
-    body, status_code = await HTTPController.list_views(project["id"], project=project)
+    body, status_code = await ViewController.list_views(project["id"], project=project)
     return JSONResponse(content=body, status_code=status_code)
 
 
@@ -29,7 +29,7 @@ async def create_view(
 ):
     """Create a new view."""
     _user, project = auth
-    body, status_code = await HTTPController.post_view(project["id"], project=project, **data.model_dump())
+    body, status_code = await ViewController.post_view(project["id"], project=project, **data.model_dump())
     return JSONResponse(content=body, status_code=status_code)
 
 
@@ -40,7 +40,7 @@ async def get_view(
 ):
     """Get a single view by ID."""
     _user, project = auth
-    body, status_code = await HTTPController.get_view(view_id, project=project)
+    body, status_code = await ViewController.get_view(view_id, project=project)
     return JSONResponse(content=body, status_code=status_code)
 
 
@@ -53,7 +53,7 @@ async def update_view(
     """Update a view."""
     _user, project = auth
     view_kwargs = data.model_dump(exclude_unset=True)
-    body, status_code = await HTTPController.patch_view(view_id, project=project, **view_kwargs)
+    body, status_code = await ViewController.patch_view(view_id, project=project, **view_kwargs)
     return JSONResponse(content=body, status_code=status_code)
 
 
@@ -64,5 +64,5 @@ async def delete_view(
 ):
     """Delete a view."""
     _user, project = auth
-    body, status_code = await HTTPController.delete_view(view_id, project=project)
+    body, status_code = await ViewController.delete_view(view_id, project=project)
     return JSONResponse(content=body, status_code=status_code)
