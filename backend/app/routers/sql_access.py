@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
 from app.auth.types import AuthUser
-from app.controllers import HTTPController
+from app.controllers.sql_access_controller import SQLAccessController
 
 from .deps import authorize_project_access
 
@@ -17,7 +17,7 @@ async def enable_sql_access(
 ):
     """Enable external SQL access for a project."""
     user, project = auth
-    body, status_code = await HTTPController.enable_sql_access(project["id"], user=user, project=project)
+    body, status_code = await SQLAccessController.enable_sql_access(project["id"], user=user, project=project)
     return JSONResponse(content=body, status_code=status_code)
 
 
@@ -27,7 +27,7 @@ async def disable_sql_access(
 ):
     """Disable external SQL access for a project."""
     _user, project = auth
-    body, status_code = await HTTPController.disable_sql_access(project["id"], project=project)
+    body, status_code = await SQLAccessController.disable_sql_access(project["id"], project=project)
     if status_code == 204:
         return JSONResponse(content=None, status_code=204)
     return JSONResponse(content=body, status_code=status_code)
@@ -39,7 +39,7 @@ async def get_sql_access(
 ):
     """Get SQL access connection details for a project."""
     _user, project = auth
-    body, status_code = await HTTPController.get_sql_access(project["id"], project=project)
+    body, status_code = await SQLAccessController.get_sql_access(project["id"], project=project)
     return JSONResponse(content=body, status_code=status_code)
 
 
@@ -49,7 +49,7 @@ async def sync_sql_access(
 ):
     """Sync external SQL access views with current dataset state."""
     _user, project = auth
-    body, status_code = await HTTPController.sync_sql_access(project["id"], project=project)
+    body, status_code = await SQLAccessController.sync_sql_access(project["id"], project=project)
     return JSONResponse(content=body, status_code=status_code)
 
 
@@ -59,7 +59,7 @@ async def regenerate_sql_credentials(
 ):
     """Regenerate SQL access credentials for a project."""
     _user, project = auth
-    body, status_code = await HTTPController.regenerate_sql_credentials(project["id"], project=project)
+    body, status_code = await SQLAccessController.regenerate_sql_credentials(project["id"], project=project)
     headers = {}
     if status_code == 429 and isinstance(body, dict) and "retry_after" in body:
         headers["Retry-After"] = str(body["retry_after"])
