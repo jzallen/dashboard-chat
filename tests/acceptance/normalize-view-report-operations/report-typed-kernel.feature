@@ -7,17 +7,19 @@
 # render time; validate_columns_metadata retires. Storage stays JSON this story.
 # All scenarios @pending until this story lands.
 
-@boundary_validation @driving_port @pending
+@boundary_validation @driving_port
 Feature: A malformed report column is rejected at the boundary by the typed kernel
   As a modeler authoring a report,
   I want an invalid column rejected the moment I submit it
   So that a malformed projection can never reach the renderer and produce a broken mart.
 
+  @pending
   Scenario: A report column with an unknown semantic role is rejected at the boundary
     Given a report definition whose column carries an unknown semantic role "sparkle"
     When the report is submitted through the create-report use case
     Then the report is rejected at the boundary and nothing is persisted
 
+  @pending
   Scenario: A report column with an illegal role and type pairing is rejected by the typed union
     Given a report definition pairing an illegal semantic role and semantic type
     When the report is submitted through the create-report use case
