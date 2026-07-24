@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.types import AuthUser
 from app.controllers import HTTPController, wrap_jsonapi_single
+from app.controllers.assistant_audit_controller import AssistantAuditController
 from app.controllers.project_controller import ProjectController
 from app.use_cases.exceptions import DomainException
 from app.use_cases.project import export_dbt_project, get_dbt_manifest
@@ -50,7 +51,7 @@ async def list_project_datasets(
     """List sparse datasets for a project with cursor-based pagination.
 
     By default archived (cold-storage) datasets are excluded; pass ``?archived=true`` to
-    return ONLY the cold-storage list (MR-7).
+    return ONLY the cold-storage list.
     """
     _user, _ = auth
     body, status_code = await HTTPController.list_project_datasets(
@@ -70,7 +71,7 @@ async def list_audit_entries_route(
     joined ``transform_id``/``enabled`` (present iff the entry is transform-type).
     """
     user, project = auth
-    body, status_code = await HTTPController.list_audit_entries(project["id"], org_id=user.org_id)
+    body, status_code = await AssistantAuditController.list_audit_entries(project["id"], org_id=user.org_id)
     return JSONResponse(content=body, status_code=status_code)
 
 
@@ -79,7 +80,7 @@ async def create_audit_entry_route(
     data: AuditEntryCreate,
     auth: tuple[AuthUser, dict] = Depends(authorize_project_access),
 ):
-    """Persist an assistant-audit entry (rich-catalog §2.7 Option A).
+    """Persist an assistant-audit entry.
 
     The agent POSTs the full entry after executing a transform tool; the
     returned ``id`` is then threaded back as ``assistant_audit_entry_id`` on the
@@ -87,7 +88,7 @@ async def create_audit_entry_route(
     reversed FK).
     """
     user, project = auth
-    body, status_code = await HTTPController.create_audit_entry(
+    body, status_code = await AssistantAuditController.create_audit_entry(
         project["id"],
         node_id=data.node_id,
         node_kind=data.node_kind,
@@ -103,7 +104,7 @@ async def toggle_audit_entry_route(
     data: AuditEntryToggle,
     auth: tuple[AuthUser, dict] = Depends(authorize_project_access),
 ):
-    """Toggle a transform-type assistant-audit entry (rich-catalog §2.5-2.6).
+    """Toggle a transform-type assistant-audit entry.
 
     Enables/disables the ``Transform`` pointing UP at the entry (the reversed FK),
     which recompiles the dataset's staging SQL on read. Returns the toggled entry
@@ -111,7 +112,7 @@ async def toggle_audit_entry_route(
     log-only entries, 404 for missing/out-of-scope.
     """
     user, _project = auth
-    body, status_code = await HTTPController.toggle_audit_entry(
+    body, status_code = await AssistantAuditController.toggle_audit_entry(
         audit_entry_id,
         enabled=data.enabled,
         org_id=user.org_id,
