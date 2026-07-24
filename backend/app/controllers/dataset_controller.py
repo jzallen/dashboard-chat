@@ -333,6 +333,9 @@ class DatasetController:
         result = await create_transforms_func(dataset_id, transforms)
         match result:
             case Success():
+                # TODO: non-JSON:API envelope — returns a bare {"ok": True} rather than a
+                # JSON:API resource/meta document. Align with the other controllers' response
+                # shape when API contracts are next revised.
                 return {"ok": True}, 201
             case Failure(error):
                 return error_response(error)
@@ -347,6 +350,9 @@ class DatasetController:
         result = await update_transforms_func(dataset_id, updates)
         match result:
             case Success():
+                # TODO: non-JSON:API envelope — returns a bare {"ok": True} rather than a
+                # JSON:API resource/meta document. Align with the other controllers' response
+                # shape when API contracts are next revised.
                 return {"ok": True}, 200
             case Failure(error):
                 return error_response(error)
@@ -362,6 +368,9 @@ class DatasetController:
         result = await preview_transform_func(dataset_id, target_column, expression_config)
         match result:
             case Success(preview):
+                # TODO: non-JSON:API envelope — wraps the preview in a bare {"data": ...}
+                # rather than a JSON:API resource/meta document. Align with the other
+                # controllers' response shape when API contracts are next revised.
                 return {"data": preview}, 200
             case Failure(error):
                 return error_response(error)
@@ -381,6 +390,9 @@ class DatasetController:
         result = await search_datasets_func(project_id, query, user=user)
         match result:
             case Success(matches):
+                # TODO: non-JSON:API envelope — returns the matches in a bare {"data": [...]}
+                # rather than a JSON:API list document (no type/id/attributes, links, or meta).
+                # Align with the other controllers' response shape when API contracts are next revised.
                 return {"data": matches}, 200
             case Failure(error):
                 return error_response(error)
